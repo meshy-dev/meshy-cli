@@ -1,0 +1,134 @@
+name: ci
+
+# Pre-merge gates. release.yml runs the same checks at tag time, which is too
+# late: without this workflow a broken commit lands on main and is only caught
+# when someone cuts a release.
+#
+# Branch protection should require the `ci` job (not the individual legs) — that
+# context stays stable when the Node matrix changes.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to a PR makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The toolchain pins pnpm 11, which itself requires Node >= 22.13 (it loads
+  # node:sqlite), so build and test can only run on 22. Whether the *published
+  # CLI* honours engines.node is a separate question — see the smoke job.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4   # version comes from package.json#packageManager
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # --frozen-lockfile also fails on lockfile drift, which is a review gate
+      # in its own right.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm run build
+
+      - name: Built dist reports the package.json version
+        run: |
+          test "$(node dist/index.js --version)" = "$(node -p "require('./package.json').version")"
+
+      - name: Pack the tarball the smoke job installs
+        run: pnpm pack --pack-destination "$RUNNER_TEMP"
+
+      # package.json#files regressions are invisible until a user installs the
+      # published tarball and finds the skills missing.
+      - name: Published tarball ships dist and skills
+        run: |
+          listing="$(tar -tzf "$RUNNER_TEMP"/meshy-cli-*.tgz)"
+          for path in package/dist/index.js package/skills/meshy-cli/SKILL.md package/README.md; do
+            echo "$listing" | grep -qx "$path" \
+              || { echo "::error::$path missing from the published tarball"; exit 1; }
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/meshy-cli-*.tgz
+          retention-days: 1
+
+  # Installs the packed tarball the way a user would, on every Node version
+  # engines.node claims to support. This is what keeps that claim honest: the
+  # build toolchain cannot run on 20, but the shipped CLI must.
+  smoke:
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarball
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install globally from the tarball
+        run: npm install -g ./meshy-cli-*.tgz
+
+      - name: Version matches the packed package.json
+        run: |
+          packed="$(tar -xzOf ./meshy-cli-*.tgz package/package.json | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")"
+          test "$(meshy --version)" = "$packed"
+
+      - name: Both binaries start
+        run: |
+          meshy --help > /dev/null
+          meshy-cli --help > /dev/null
+          meshy balance --help > /dev/null
+
+      # stdout must stay machine-parseable: an error path that prints prose to
+      # stdout instead of stderr breaks every agent consuming this CLI.
+      - name: Errors emit JSON on stdout and exit non-zero
+        env:
+          MESHY_API_KEY: ""
+          MESHY_CLI_NO_UPDATE_NOTIFIER: "1"
+        run: |
+          set +e
+          out="$(meshy balance 2>/dev/null)"
+          code=$?
+          set -e
+          test "$code" -ne 0 || { echo "::error::missing credentials should exit non-zero"; exit 1; }
+          echo "$out" | node -e 'JSON.parse(require("fs").readFileSync(0,"utf8"))' \
+            || { echo "::error::stdout was not valid JSON: $out"; exit 1; }
+
+      - name: Skills ship with the install
+        run: |
+          root="$(npm root -g)/meshy-cli"
+          test -f "$root/skills/meshy-cli/SKILL.md" \
+            || { echo "::error::skills missing from the global install"; exit 1; }
+
+  # Single required context for branch protection.
+  ci:
+    if: always()
+    needs: [check, smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All gates passed
+        run: |
+          test "${{ needs.check.result }}" = "success" \
+            || { echo "::error::check failed (${{ needs.check.result }})"; exit 1; }
+          test "${{ needs.smoke.result }}" = "success" \
+            || { echo "::error::smoke failed (${{ needs.smoke.result }})"; exit 1; }

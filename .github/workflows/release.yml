@@ -1,0 +1,83 @@
+name: release
+
+# Tag-driven npm release: pushing vX.Y.Z (where X.Y.Z matches
+# package.json#version) typechecks, tests, builds, and publishes
+# `meshy-cli` plus its scoped alias `@meshy-ai/cli` — no manual steps.
+#
+# Releases are cut from the PUBLIC repo only. This file is mirrored into it by
+# sync-public.yml, so the job carries its own guard: tagging the internal
+# development repo must never publish. Deleting the file here instead would not
+# work — the mirror is a full copy, so the deletion would propagate.
+#
+# One-time setup (in the public repo):
+#   1. An npm automation token with publish rights on `meshy-cli` and the
+#      `@meshy-ai` scope is stored as its `NPM_TOKEN` secret.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # Never publish from the internal development repo.
+    if: github.repository != 'taichi-dev/meshy-cli'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4   # version comes from package.json#packageManager
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test
+      - run: pnpm run build
+
+      - name: Built dist reports the package.json version
+        run: |
+          test "$(node dist/index.js --version)" = "$(node -p "require('./package.json').version")"
+
+      - name: Tag must match package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${pkg} — bump package.json first"
+            exit 1
+          fi
+
+      # Both publish steps skip versions that already exist on the registry,
+      # so re-running the workflow after a half-published release (e.g. the
+      # unscoped package went out but the alias failed on scope/token setup)
+      # resumes at the missing package instead of erroring on the first.
+      - name: Publish meshy-cli
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          if npm view "meshy-cli@$v" version >/dev/null 2>&1; then
+            echo "meshy-cli@$v already published — skipping"
+          else
+            npm publish --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish scoped alias @meshy-ai/cli (same version)
+        run: |
+          npm pkg set name="@meshy-ai/cli"
+          v="$(node -p "require('./package.json').version")"
+          if npm view "@meshy-ai/cli@$v" version >/dev/null 2>&1; then
+            echo "@meshy-ai/cli@$v already published — skipping"
+          else
+            npm publish --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

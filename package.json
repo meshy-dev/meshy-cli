@@ -1,0 +1,65 @@
+{
+  "name": "meshy-cli",
+  "version": "0.1.0",
+  "description": "Official command-line interface for the Meshy AI API — text-to-3D, image-to-3D, remesh, rigging, animate, retexture, 2D images, multi-color print, balance.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@11.18.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meshy-dev/meshy-cli.git"
+  },
+  "homepage": "https://github.com/meshy-dev/meshy-cli#readme",
+  "bugs": {
+    "url": "https://github.com/meshy-dev/meshy-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "meshy",
+    "meshy-ai",
+    "cli",
+    "3d",
+    "text-to-3d",
+    "image-to-3d",
+    "rigging",
+    "animation"
+  ],
+  "bin": {
+    "meshy-cli": "./dist/index.js",
+    "meshy": "./dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    ".env.example",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "tsx --test tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "prepare": "test -f dist/index.js || npm run build",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "sharp": "^0.34.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
