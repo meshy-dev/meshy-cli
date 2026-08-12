@@ -1,30 +1,21 @@
 name: release
 
-# Tag-driven npm release: pushing vX.Y.Z (where X.Y.Z matches
-# package.json#version) typechecks, tests, builds, and publishes
-# `meshy-cli` plus its scoped alias `@meshy-ai/cli` — no manual steps.
+# Manual npm publish. Run it by hand from the Actions tab ("Run workflow") —
+# there is no tag-driven trigger, so a push or tag never publishes on its own.
+# It typechecks, tests, builds, and publishes `meshy-cli` plus its scoped alias
+# `@meshy-ai/cli` at whatever version package.json currently declares.
 #
-# Releases are cut from the PUBLIC repo only. This file is mirrored into it by
-# sync-public.yml, so the job carries its own guard: tagging the internal
-# development repo must never publish. Deleting the file here instead would not
-# work — the mirror is a full copy, so the deletion would propagate.
-#
-# One-time setup (in the public repo):
-#   1. An npm automation token with publish rights on `meshy-cli` and the
-#      `@meshy-ai` scope is stored as its `NPM_TOKEN` secret.
+# One-time setup: an npm automation token with publish rights on `meshy-cli`
+# and the `@meshy-ai` scope, stored as the `NPM_TOKEN` secret.
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   publish:
-    # Never publish from the internal development repo.
-    if: github.repository != 'taichi-dev/meshy-cli'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,15 +36,6 @@ jobs:
       - name: Built dist reports the package.json version
         run: |
           test "$(node dist/index.js --version)" = "$(node -p "require('./package.json').version")"
-
-      - name: Tag must match package.json version
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg="$(node -p "require('./package.json').version")"
-          if [ "$tag" != "$pkg" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${pkg} — bump package.json first"
-            exit 1
-          fi
 
       # Both publish steps skip versions that already exist on the registry,
       # so re-running the workflow after a half-published release (e.g. the
