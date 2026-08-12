@@ -350,26 +350,6 @@ meshy-cli/
 - **Stdout is reserved for command output.** Logs and errors go to stderr so
   pipes (`| jq`, `-o file`) stay clean.
 
-## Releasing
-
-Versions are tag-driven and fully automated — there is no manual publish
-step. `package.json` is the single source of truth for the version (the CLI
-reads it at startup, and a test asserts `VERSION === package.json#version`).
-
-```bash
-# 1. bump the version (also updates the lockfile-free metadata)
-npm version patch        # or minor / major
-# 2. push the commit and the tag
-git push && git push --tags
-```
-
-Pushing the `vX.Y.Z` tag runs
-[`.github/workflows/release.yml`](.github/workflows/release.yml):
-typecheck → test → build → verify tag == `package.json#version` →
-`npm publish --access public` for both `meshy-cli` and the scoped alias
-`@meshy-ai/cli`. One-time prerequisites: the repo must be public and an
-`NPM_TOKEN` secret with publish rights must be configured.
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
