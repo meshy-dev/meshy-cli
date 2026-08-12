@@ -321,8 +321,7 @@ meshy-cli/
 │       ├── global-options.ts  # mirror --format etc. onto subcommands
 │       └── logger.ts        # leveled stderr logger
 ├── tests/                   # node:test unit + integration tests
-├── skills/                  # agent-facing markdown skill (published with the package)
-├── internal-assets/         # not published, not mirrored — see its README
+├── skills/                  # agent-facing skill: SKILL.md + bundled animation catalog (published)
 ├── package.json
 ├── tsconfig.json
 └── README.md

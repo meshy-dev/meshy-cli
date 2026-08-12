@@ -69,16 +69,27 @@ These are API rules, not preferences — ignoring them produces failed tasks:
 
 ## Finding an animation id
 
-`--action-id` is an integer from Meshy's animation library. Look it up from the
-public catalog — no key required:
+`--action-id` is an integer from Meshy's animation library. This skill bundles
+the full catalog as `animation-library.json` next to this file — 678 actions,
+each with `action_id`, `name`, `category`, `sub_category`, `is_free`,
+`preview_url`, and a hand-written `description` the API does not return. Pick an
+action by what it depicts, offline and with no key:
+
+```bash
+# from this skill's directory
+jq -r '.[] | select(.category=="Fighting") | "\(.action_id)\t\(.name)\t\(.description)"' \
+  animation-library.json
+```
+
+Categories: WalkAndRun, BodyMovements, DailyActions, Fighting, Dancing.
+
+The bundled catalog can lag as Meshy adds actions. For the authoritative live
+list (ids + names, no descriptions) hit the public endpoint — no key required:
 
 ```bash
 curl -s "https://api.meshy.ai/web/public/animations/resources" \
   | jq -r '.result.list[] | select(.category=="Fighting") | "\(.id)\t\(.name)"'
 ```
-
-Categories: WalkAndRun, BodyMovements, DailyActions, Fighting, Dancing.
-`?category=Fighting` narrows the response; other query parameters are ignored.
 
 ## When something fails
 
