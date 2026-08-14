@@ -66,6 +66,13 @@ These are API rules, not preferences — ignoring them produces failed tasks:
   explicitly asked for.
 - `image-to-3d` defaults to an untextured draft mesh; `--should-texture true`
   (what `make` uses) produces a textured model in one task.
+- **The model set is not the same on every endpoint.** The image-driven
+  endpoints run Meshy 7 by default; `text-to-3d` has no Meshy 7 at all and its
+  default is still Meshy 6. So `--ultra-mode` (an extra Meshy 7 geometry pass,
+  billed on top) exists on `image-to-3d` alone, and `retexture`'s
+  `--multiview-image-urls` needs Meshy 7 — it takes 1-4 views of **the same
+  object**, not 1-4 style references, and cannot be combined with
+  `--text-style-prompt` or `--image-style-url`.
 
 ## Finding an animation id
 

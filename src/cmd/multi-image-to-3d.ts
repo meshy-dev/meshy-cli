@@ -1,5 +1,9 @@
 /**
  * multi-image-to-3d — https://docs.meshy.ai/en/api/multi-image-to-3d
+ *
+ * No model flag, same as the other 3D generation commands: the server default
+ * "latest" applies, which is meshy-7 here. Note ultra_mode does NOT exist on
+ * this endpoint (the API silently ignores it) — it is single-image only.
  */
 
 import { Option } from "commander";
@@ -85,7 +89,7 @@ const spec: ResourceCommandSpec = {
       // Draft-first, matching image-to-3d: white mesh by default, texturing
       // is its own step; texture knobs ride only when texturing is on (the
       // API rejects them otherwise), then game-ready values apply. No model
-      // choice — the server default (latest = meshy-6) applies.
+      // choice — the server default (latest = meshy-7) applies.
       const texturing = opts.shouldTexture === true;
       return {
         should_texture: false,

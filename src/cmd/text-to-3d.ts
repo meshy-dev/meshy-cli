@@ -7,8 +7,10 @@
  * The flag surface is deliberately minimal: topology and polycount are
  * remesh's job, resizing is resize's job, deprecated parameters
  * (symmetry_mode, lowpoly) are gone, and there is no model choice — the
- * server default (latest = meshy-6) applies. The `--data` escape hatch
- * still reaches anything the API accepts.
+ * server default "latest" applies. Unlike the image-driven endpoints, this
+ * one has no meshy-7: its model set is meshy-5 / meshy-6 / latest, and
+ * "latest" is still Meshy 6. The `--data` escape hatch still reaches
+ * anything the API accepts.
  */
 
 import { Option } from "commander";
@@ -82,7 +84,8 @@ const spec: ResourceCommandSpec = {
     toDefaults(opts) {
       // Game-ready refine defaults: full PBR map set and 4k textures, priced
       // the same as the API's bare defaults. The model is not a choice —
-      // the server default (latest = meshy-6) applies; override via --data.
+      // the server default (latest, still Meshy 6 on this endpoint) applies;
+      // override via --data.
       // GLB-only output — omitting target_formats makes the API produce
       // every format.
       const refine = opts.mode === "refine";

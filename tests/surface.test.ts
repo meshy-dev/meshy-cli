@@ -11,6 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { Command } from "commander";
 import { buildRootCommand } from "../src/root.js";
+import { retextureSpec } from "../src/cmd/retexture.js";
 
 const root = buildRootCommand();
 
@@ -84,7 +85,7 @@ test("image-to-3d gained the smart-topology surface and task chaining", () => {
 
 test("the mode is the model: no model flag on the 3D generation commands", () => {
   // After culling meshy-5/meshy-t1, each mode has exactly one model
-  // (standard → meshy-6, smart-topology → meshy-t2), so --ai-model is gone
+  // (standard → meshy-7, smart-topology → meshy-t2), so --ai-model is gone
   // from 3D generation — the 2D image commands keep theirs. text-to-3d also
   // lost --model-type (lowpoly was the t1-era engine).
   for (const resource of ["text-to-3d", "image-to-3d", "multi-image-to-3d"]) {
@@ -94,6 +95,40 @@ test("the mode is the model: no model flag on the 3D generation commands", () =>
   for (const resource of ["text-to-image", "image-to-image"]) {
     assert.ok(createFlags(resource).has("--ai-model"), `${resource} lost --ai-model`);
   }
+});
+
+test("the Meshy 7 surface: ultra-mode is single-image only, multi-view is retexture only", () => {
+  // ultra_mode exists on /image-to-3d and nowhere else — the API silently
+  // ignores it on multi-image-to-3d, which is worse than rejecting it, so the
+  // flag must not appear there and invite the assumption that it worked.
+  assert.ok(createFlags("image-to-3d").has("--ultra-mode"), "image-to-3d is missing --ultra-mode");
+  for (const resource of ["text-to-3d", "multi-image-to-3d", "retexture"]) {
+    assert.ok(!createFlags(resource).has("--ultra-mode"), `${resource} should not have --ultra-mode`);
+  }
+  // multiview_image_urls is retexture's third style input, not a generation flag.
+  assert.ok(
+    createFlags("retexture").has("--multiview-image-urls"),
+    "retexture is missing --multiview-image-urls",
+  );
+  for (const resource of ["image-to-3d", "multi-image-to-3d"]) {
+    assert.ok(
+      !createFlags(resource).has("--multiview-image-urls"),
+      `${resource} should not have --multiview-image-urls`,
+    );
+  }
+});
+
+test("multi-view retexture pins ai_model meshy-7 — the endpoint rejects 'latest'", () => {
+  // Verified against production: /retexture answers
+  // "multiview_image_urls requires ai_model meshy-7" for an omitted ai_model
+  // AND for "latest". Dropping this pin is a guaranteed 400, so it is a wire
+  // contract rather than the usual leave-it-to-the-server default.
+  const defaults = retextureSpec.create.toDefaults!;
+  assert.equal(defaults({ multiviewImageUrls: ["a.png"] }).ai_model, "meshy-7");
+  // Every other style input keeps the no-model-choice contract.
+  assert.equal(defaults({ textStylePrompt: "gold" }).ai_model, undefined);
+  assert.equal(defaults({ multiviewImageUrls: [] }).ai_model, undefined);
+  assert.equal(defaults({}).ai_model, undefined);
 });
 
 test("2D image commands default to gpt-image-2 and share the aspect-ratio surface", () => {

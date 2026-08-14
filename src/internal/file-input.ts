@@ -22,8 +22,9 @@ export const IMAGE_FIELDS = {
     "imageStyleUrl",  // retexture
   ] as const,
   list: [
-    "imageUrls",           // multi-image-to-3d
-    "referenceImageUrls",  // image-to-image
+    "imageUrls",            // multi-image-to-3d
+    "referenceImageUrls",   // image-to-image
+    "multiviewImageUrls",   // retexture
   ] as const,
 };
 

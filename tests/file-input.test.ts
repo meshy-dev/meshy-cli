@@ -145,6 +145,23 @@ test("resolveImageFields — list flag expands each entry (mix of local + URL)",
   }
 });
 
+test("resolveImageFields — retexture's multi-view list resolves local paths too", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "meshy-img-"));
+  const front = join(dir, "front.png");
+  writeFileSync(front, await tinyPng());
+
+  const restore = installFetch(() => new Response(null, { status: 200 }));
+  try {
+    const opts = { multiviewImageUrls: [front, "https://example.com/back.png"] };
+    await resolveImageFields(opts);
+    const urls = opts.multiviewImageUrls as string[];
+    assert.match(urls[0]!, /^data:image\/png;base64,/);
+    assert.equal(urls[1], "https://example.com/back.png");
+  } finally {
+    restore();
+  }
+});
+
 test("resolveImageFields — data: URIs rejected with helpful message", async () => {
   await assert.rejects(
     () => resolveImageFields({ imageUrl: "data:image/png;base64,iVBORw0KGgo=" }),
