@@ -129,6 +129,12 @@ meshy-cli image-to-3d create --image-url https://example.com/cat.png
 # smart topology: component-aware low-poly with a native polycount
 meshy-cli image-to-3d create --image-url cat.png --model-type smart-topology --target-polycount 10000
 
+# ultra: an extra Meshy 7 geometry pass for finer surface detail (standard mode, single image)
+meshy-cli image-to-3d create --image-url cat.png --ultra-mode true
+
+# retexture from several views of the same object instead of one style reference
+meshy-cli retexture create --input-task-id <id> --multiview-image-urls front.png,side.png,back.png
+
 # fire-and-forget (--async): returns the task_id immediately, query later
 TASK=$(meshy-cli text-to-image create --prompt "mountain landscape" --async | jq -r .task_id)
 meshy-cli text-to-image get  "$TASK"
@@ -217,7 +223,7 @@ overwrite. Without `-o`, the CLI keeps its pre-download JSON behavior
 
 Flags that take a media source (`--image-url`, `--image-urls`,
 `--reference-image-urls`, `--texture-image-url`, `--image-style-url`,
-`--model-url`) accept:
+`--multiview-image-urls`, `--model-url`) accept:
 
 - **http(s) URLs** — preflighted with HEAD so unreachable sources fail fast.
 - **Local file paths** — absolute or relative to cwd. MIME-sniffed via magic

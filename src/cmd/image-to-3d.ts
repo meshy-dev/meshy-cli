@@ -2,11 +2,14 @@
  * image-to-3d — https://docs.meshy.ai/en/api/image-to-3d
  *
  * The mode IS the model — there is no model flag:
- *   - standard → meshy-6 (server default "latest") — full-detail generation;
+ *   - standard → meshy-7 (server default "latest") — full-detail generation;
  *     polycount is remesh's job afterwards.
  *   - smart-topology → meshy-t2 (server default) — component-aware low-poly
  *     with a native --target-polycount; the budget pick for game-ready
  *     geometry.
+ *
+ * --ultra-mode rides on standard only: the API gates ultra_mode on meshy-7,
+ * so pairing it with smart-topology is rejected here rather than on the wire.
  */
 
 import { Option } from "commander";
@@ -34,13 +37,18 @@ const spec: ResourceCommandSpec = {
         .addOption(
           new Option(
             "--model-type <kind>",
-            "standard (default; meshy-6 full-detail generation) | smart-topology (meshy-t2 component-aware low-poly: clean topology, separated parts)",
+            "standard (default; meshy-7 full-detail generation) | smart-topology (meshy-t2 component-aware low-poly: clean topology, separated parts)",
           ).choices(["standard", "smart-topology"]),
         )
         .option(
           "--target-polycount <n>",
           "smart-topology only: target triangle count, 100-15000 (default: 10000). For standard outputs use remesh",
           parseInt10,
+        )
+        .option(
+          "--ultra-mode <bool>",
+          "standard mode only: extra Meshy 7 pass for finer surface detail (default: false; billed on top of the mesh)",
+          parseBool,
         )
         .option(
           "--should-texture <bool>",
@@ -87,6 +95,12 @@ const spec: ResourceCommandSpec = {
           "--target-polycount applies to --model-type smart-topology only; for standard outputs chain `remesh` afterwards",
         );
       }
+      // ultra_mode is gated on meshy-7, which only standard mode resolves to.
+      if (opts.ultraMode === true && smart) {
+        throw new UsageError(
+          "--ultra-mode applies to --model-type standard only (it needs meshy-7; smart-topology runs meshy-t2)",
+        );
+      }
       // The API rejects texture knobs on untextured runs; catch it before the wire.
       if (opts.shouldTexture !== true && !opts.data) {
         for (const [flag, value] of [
@@ -106,6 +120,7 @@ const spec: ResourceCommandSpec = {
         input_task_id: opts.inputTaskId,
         model_type: opts.modelType,
         target_polycount: opts.targetPolycount,
+        ultra_mode: opts.ultraMode,
         should_texture: opts.shouldTexture,
         enable_pbr: opts.enablePbr,
         texture_prompt: opts.texturePrompt,
@@ -122,10 +137,11 @@ const spec: ResourceCommandSpec = {
       // texturing is its own step, and the API rejects texture knobs on
       // untextured runs, so they ride only when texturing is on — then the
       // game-ready defaults apply: full PBR map set, 4k base color. The
-      // model is not a choice — it follows the mode (standard → meshy-6,
+      // model is not a choice — it follows the mode (standard → meshy-7,
       // smart-topology → meshy-t2, both server defaults). Smart topology
-      // gets the rigging-friendly 10k polycount. GLB-only output — omitting
-      // target_formats makes the API produce every format.
+      // gets the rigging-friendly 10k polycount. ultra_mode stays off unless
+      // asked for: it bills extra. GLB-only output — omitting target_formats
+      // makes the API produce every format.
       const texturing = opts.shouldTexture === true;
       return {
         should_texture: false,
