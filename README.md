@@ -1,6 +1,6 @@
 # meshy-cli
 
-A small, well-structured command-line interface for the [Meshy AI API](https://docs.meshy.ai/) — text-to-3D, image-to-3D (standard and smart-topology), remesh, convert, resize, rigging, animation, retexture, 2D image generation, multi-color print output, and the `balance` endpoint. Built for humans and AI agents.
+A small, well-structured command-line interface for the [Meshy AI API](https://docs.meshy.ai/) — text-to-3D, image-to-3D (standard and smart-topology), text-to-motion, remesh, convert, resize, rigging, animation, retexture, 2D image generation, multi-color print output, and the `balance` endpoint. Built for humans and AI agents.
 
 Two layers. `meshy make` chains the documented flows so that one command
 produces one model. Underneath, a per-endpoint command for every resource
@@ -126,6 +126,10 @@ meshy-cli text-to-3d create --mode refine  --preview-task-id <id>
 # image → 3D
 meshy-cli image-to-3d create --image-url https://example.com/cat.png
 
+# text → standalone motion clip (Prime/FBX by default; Swift produces BVH)
+meshy-cli text-to-motion create --prompt "a character waving" --duration 3
+meshy-cli text-to-motion create --prompt "a quick dodge to the left" --duration 2.5 --mode swift
+
 # smart topology: component-aware low-poly with a native polycount
 meshy-cli image-to-3d create --image-url cat.png --model-type smart-topology --target-polycount 10000
 
@@ -164,6 +168,7 @@ each one in full.
 | `resize` | `/resize` | [docs](https://docs.meshy.ai/en/api/resize) |
 | `rigging` | `/rigging` | [docs](https://docs.meshy.ai/en/api/rigging) |
 | `animate` | `/animations` | [docs](https://docs.meshy.ai/en/api/animations) |
+| `text-to-motion` | `/text-to-motion` | [docs](https://docs.meshy.ai/en/api/text-to-motion) |
 | `retexture` | `/retexture` | [docs](https://docs.meshy.ai/en/api/retexture) |
 | `text-to-image` | `/text-to-image` | [docs](https://docs.meshy.ai/en/api/text-to-image) |
 | `image-to-image` | `/image-to-image` | [docs](https://docs.meshy.ai/en/api/image-to-image) |

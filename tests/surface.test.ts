@@ -151,6 +151,21 @@ test("rigging carries no texture flag and documents its bundled animations", () 
   assert.match(sub(root, "rigging").description(), /walking and running/i);
 });
 
+test("text-to-motion exposes the v1 motion contract", () => {
+  const cmd = sub(root, "text-to-motion");
+  for (const verb of ["create", "get", "wait", "delete", "list"]) {
+    sub(cmd, verb);
+  }
+  const create = sub(cmd, "create");
+  const flags = createFlags("text-to-motion");
+  for (const flag of ["--prompt", "--mode", "--duration"]) {
+    assert.ok(flags.has(flag), `text-to-motion is missing ${flag}`);
+  }
+  const mode = create.options.find((o) => o.long === "--mode");
+  assert.deepEqual(mode?.argChoices, ["prime", "swift"]);
+  assert.match(mode?.description ?? "", /default: prime/);
+});
+
 test("descriptions and flag help stay lean: no credit prices in the command surface", () => {
   // Pricing lives in the skills (linked to https://docs.meshy.ai/en/api/pricing),
   // not in --help output that rides along in every agent context. "credit

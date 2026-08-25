@@ -36,6 +36,7 @@ import { retextureCommand } from "./cmd/retexture.js";
 import { riggingCommand } from "./cmd/rigging.js";
 import { textTo3dCommand } from "./cmd/text-to-3d.js";
 import { textToImageCommand } from "./cmd/text-to-image.js";
+import { textToMotionCommand } from "./cmd/text-to-motion.js";
 
 const ROOT_LONG = `meshy-cli — command-line interface for the Meshy AI API.
 
@@ -52,7 +53,7 @@ EXAMPLES:
     meshy make "a red sports car" --max-credits 25 # refuse if the estimate is over
 
     # every endpoint, one at a time
-    meshy resources                                # index of the 16 commands
+    meshy resources                                # index of the 17 commands
     meshy text-to-3d create --mode preview --prompt "a red sports car"
     meshy image-to-3d get <task-id>
     meshy delete <task-id>                         # unified: works for any task
@@ -75,7 +76,7 @@ AUTHENTICATION:
     separate credentials.dev.json, so staging cannot clobber a production login.
 
 RESOURCE COMMANDS:
-    All 16 endpoint commands stay available and stay supported — they are
+    All 17 endpoint commands stay available and stay supported — they are
     indexed by \`meshy resources\` instead of listed here, so this help does not
     grow with the API. \`meshy resources --help\` also carries the shared
     create/get/list/wait/delete verb contract.
@@ -138,6 +139,7 @@ export function buildRootCommand(): Command {
     animateCommand,
     retextureCommand,
     textToImageCommand,
+    textToMotionCommand,
     imageToImageCommand,
     multiColorPrintCommand,
     analyzePrintabilityCommand,

@@ -28,6 +28,7 @@ export const RESOURCES: ResourceEntry[] = [
   { name: "animate", summary: "apply an animation clip to a rigged mesh" },
   { name: "retexture", summary: "regenerate textures" },
   { name: "text-to-image", summary: "2D image generation" },
+  { name: "text-to-motion", summary: "generate a standalone skeletal motion clip from text" },
   { name: "image-to-image", summary: "2D image editing" },
   { name: "multi-color-print", summary: "color-separated 3D print output" },
   { name: "analyze-printability", summary: "inspect a model for 3D-printing issues (free)" },

@@ -111,6 +111,24 @@ test("enumerateArtifacts — animate-style result.*_url", () => {
   assert.deepEqual(keys, ["animation_fbx_url", "animation_glb_url"]);
 });
 
+test("enumerateArtifacts — text-to-motion uses motion_format for the extension", () => {
+  const arts = enumerateArtifacts(
+    task({
+      result: {
+        motion_url: "https://example.com/motion-clip",
+        motion_format: "bvh",
+        duration_ms: 3000,
+        mode: "swift",
+      },
+    }),
+  );
+  assert.deepEqual(arts, [{
+    key: "motion_url",
+    url: "https://example.com/motion-clip",
+    preferredExt: "bvh",
+  }]);
+});
+
 test("downloadArtifacts — single 2D file, content-type matches user ext, no conversion", async () => {
   const url = "https://cdn.example.com/img_0";
   const png = await tinyPngBytes();

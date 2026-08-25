@@ -100,6 +100,27 @@ test("MeshyClient.imageTo3d.create — POSTs to v1 with JSON body", async () => 
   }
 });
 
+test("MeshyClient.textToMotion — uses the v1 text-to-motion family", async () => {
+  const { calls, restore } = installFetch(() => jsonResponse({ result: "motion-task-1" }));
+  try {
+    const client = new MeshyClient(buildConfig());
+    const id = await client.textToMotion.create({
+      prompt: "a character waving",
+      mode: "prime",
+      duration: 3,
+    });
+    assert.equal(id, "motion-task-1");
+    assert.equal(calls[0]!.url, "https://api.example.com/v1/text-to-motion");
+    assert.deepEqual(JSON.parse(calls[0]!.body!), {
+      prompt: "a character waving",
+      mode: "prime",
+      duration: 3,
+    });
+  } finally {
+    restore();
+  }
+});
+
 test("MeshyClient — retrieve percent-encodes task ids with unusual characters", async () => {
   const { calls, restore } = installFetch(() =>
     jsonResponse({ id: "abc/slash", status: "SUCCEEDED", type: "image-to-3d", progress: 100 }),

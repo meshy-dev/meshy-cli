@@ -29,12 +29,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4   # version comes from package.json#packageManager
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+
+      # The enterprise Actions policy only permits GitHub-owned Marketplace
+      # actions. Corepack reads the pinned pnpm version from package.json.
+      - run: corepack enable
 
       # --frozen-lockfile also fails on lockfile drift, which is a review gate
       # in its own right.

@@ -1,6 +1,6 @@
 ---
 name: meshy-cli
-description: "Generate 3D models and 2D images with the Meshy API through the meshy-cli command — text-to-3D, image-to-3D, remesh, rigging, animation, retexture, printability. Use for any Meshy asset request."
+description: "Generate 3D models, motion clips, and 2D images with the Meshy API through the meshy-cli command — text-to-3D, image-to-3D, text-to-motion, remesh, rigging, animation, retexture, printability. Use for any Meshy asset request."
 license: MIT
 compatibility: Requires meshy-cli on PATH and a stored credential or MESHY_API_KEY; network access to api.meshy.ai
 metadata:
@@ -32,7 +32,7 @@ than starting over, or the finished step is paid for twice.
 
 ## Everything else
 
-`meshy resources` indexes the 16 endpoint commands; each carries the same verbs:
+`meshy resources` indexes the 17 endpoint commands; each carries the same verbs:
 
 ```bash
 meshy <resource> create [flags] [--data '<json>'] [--async] [--timeout <s>]
@@ -60,6 +60,9 @@ These are API rules, not preferences — ignoring them produces failed tasks:
   its result before calling `animate`.
 - **`animate` takes a rigging task id**, not a model task id, plus an integer
   `--action-id`.
+- **`text-to-motion` produces a standalone skeletal clip**, not an animated
+  character. Pass a 2–10 second duration in 0.5-second increments. Prime is the
+  default (FBX, 10 credits); Swift returns BVH (3 credits).
 - **`repair-printability` drops textures and invalidates UVs.** Run it before
   texturing, or re-`retexture` afterwards.
 - **`multi-image-to-3d` is beta**; use `image-to-3d` unless multi-view input was
