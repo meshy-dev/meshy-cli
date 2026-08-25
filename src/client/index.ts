@@ -18,6 +18,7 @@ import { RiggingEndpoint } from "./endpoints/rigging.js";
 import { TaskEndpoint, type HttpFetch } from "./endpoints/base.js";
 import { TextTo3DEndpoint } from "./endpoints/text-to-3d.js";
 import { TextToImageEndpoint } from "./endpoints/text-to-image.js";
+import { TextToMotionEndpoint } from "./endpoints/text-to-motion.js";
 import { mapHttpError, MeshyApiError } from "./errors.js";
 import type { MeshyConfig } from "../internal/config.js";
 import { logger } from "../internal/logger.js";
@@ -87,6 +88,7 @@ export class MeshyClient {
   readonly animate: AnimateEndpoint;
   readonly retexture: RetextureEndpoint;
   readonly textToImage: TextToImageEndpoint;
+  readonly textToMotion: TextToMotionEndpoint;
   readonly imageToImage: ImageToImageEndpoint;
   readonly multiColorPrint: MultiColorPrintEndpoint;
   readonly analyzePrintability: AnalyzePrintabilityEndpoint;
@@ -111,6 +113,7 @@ export class MeshyClient {
     this.animate = new AnimateEndpoint(this.v1Fetch);
     this.retexture = new RetextureEndpoint(this.v1Fetch);
     this.textToImage = new TextToImageEndpoint(this.v1Fetch);
+    this.textToMotion = new TextToMotionEndpoint(this.v1Fetch);
     this.imageToImage = new ImageToImageEndpoint(this.v1Fetch);
     this.multiColorPrint = new MultiColorPrintEndpoint(this.v1Fetch);
     this.analyzePrintability = new AnalyzePrintabilityEndpoint(this.v1Fetch);
@@ -129,6 +132,7 @@ export class MeshyClient {
       case "animate": return this.animate;
       case "retexture": return this.retexture;
       case "text-to-image": return this.textToImage;
+      case "text-to-motion": return this.textToMotion;
       case "image-to-image": return this.imageToImage;
       case "multi-color-print": return this.multiColorPrint;
       case "analyze-printability": return this.analyzePrintability;
@@ -159,6 +163,7 @@ export const RESOURCE_NAMES = [
   "animate",
   "retexture",
   "text-to-image",
+  "text-to-motion",
   "image-to-image",
   "multi-color-print",
   "analyze-printability",

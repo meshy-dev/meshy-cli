@@ -71,10 +71,14 @@ export function enumerateArtifacts(task: Task): Artifact[] {
 
   // Rigging / animate-style endpoints nest outputs under `result`.
   if (task.result && typeof task.result === "object") {
+    const motionFormat = task.result["motion_format"];
     for (const [key, value] of Object.entries(task.result)) {
       if (typeof value !== "string" || !/^https?:/.test(value)) continue;
       const extMatch = key.match(/_(fbx|glb|usdz|obj|png|jpg|jpeg|webp)_url$/i);
-      const preferredExt = extMatch ? extMatch[1]!.toLowerCase() : "";
+      let preferredExt = extMatch ? extMatch[1]!.toLowerCase() : "";
+      if (key === "motion_url" && (motionFormat === "fbx" || motionFormat === "bvh")) {
+        preferredExt = motionFormat;
+      }
       out.push({ key, url: value, preferredExt });
     }
   }
