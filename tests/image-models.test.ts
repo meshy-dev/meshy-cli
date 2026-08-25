@@ -21,11 +21,11 @@ test("checkImageCombo — multi-view excludes aspect-ratio", () => {
   checkImageCombo({ aiModel: "nano-banana", generateMultiView: true });
 });
 
-test("checkImageCombo — gpt-image-2 accepts only 1:1, 3:2, 2:3", () => {
-  for (const ratio of ["1:1", "3:2", "2:3"]) {
+test("checkImageCombo — gpt-image-2 accepts square, widescreen, and native ratios", () => {
+  for (const ratio of ["1:1", "16:9", "9:16", "3:2", "2:3"]) {
     checkImageCombo({ aiModel: "gpt-image-2", aspectRatio: ratio });
   }
-  for (const ratio of ["16:9", "9:16", "4:3", "3:4"]) {
+  for (const ratio of ["4:3", "3:4"]) {
     assert.throws(
       () => checkImageCombo({ aiModel: "gpt-image-2", aspectRatio: ratio }),
       /not supported by gpt-image-2/,
