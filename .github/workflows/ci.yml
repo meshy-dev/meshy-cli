@@ -21,17 +21,16 @@ permissions:
   contents: read
 
 jobs:
-  # The toolchain pins pnpm 11, which itself requires Node >= 22.13 (it loads
-  # node:sqlite), so build and test can only run on 22. Whether the *published
-  # CLI* honours engines.node is a separate question — see the smoke job.
+  # Build on the minimum supported LTS runtime. The smoke matrix also covers
+  # the current release line so forward-compatibility regressions surface early.
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
 
       # The enterprise Actions policy only permits GitHub-owned Marketplace
       # actions. Corepack reads the pinned pnpm version from package.json.
@@ -61,28 +60,27 @@ jobs:
               || { echo "::error::$path missing from the published tarball"; exit 1; }
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tarball
           path: ${{ runner.temp }}/meshy-cli-*.tgz
           retention-days: 1
 
-  # Installs the packed tarball the way a user would, on every Node version
-  # engines.node claims to support. This is what keeps that claim honest: the
-  # build toolchain cannot run on 20, but the shipped CLI must.
+  # Installs the packed tarball the way a user would on the minimum supported
+  # LTS runtime and the current Node release line.
   smoke:
     needs: check
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22]
+        node: [24, 26]
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: tarball
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
 
