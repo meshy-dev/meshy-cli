@@ -12,7 +12,7 @@ The flag surface is deliberately curated rather than a 1:1 mirror of the API: de
 
 ## Install
 
-Requires Node 20+.
+Requires Node 24+.
 
 ```bash
 npm i -g meshy-cli       # installs `meshy-cli` and `meshy`
