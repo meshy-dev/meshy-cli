@@ -59,12 +59,19 @@ meshy <resource> list [--page-size <n>] --output-schema v1
 - `create` blocks until the task is terminal; `--async` submits **exactly one
   POST** and returns `result.submission.task_id` — parse ids from stdout, never
   from text shown in chat. `wait <id>` polls (`--timeout 0` = one query, exit 8 on
-  timeout with the task kept); `stream <id> --format ndjson` follows Server-Sent
-  Events (one line per event, last line `event:"outcome"`).
+  timeout with the last status kept; a reply that lands after the deadline is a
+  timeout, not a success); `stream <id> --format ndjson` follows Server-Sent
+  Events (one line per event, last line `event:"outcome"`, which carries the `-o`
+  download manifest).
 - **Never re-run a create after exit 10** (`submission_unknown`): the request was
   sent and the server may have created the task. Run the `error.recovery.command`
   (`… list`) and reconcile first. Pass `--operation-id <your-id>` to a create so a
-  repeat of the same request replays the recorded outcome instead of billing again.
+  repeat of the same request replays the recorded outcome instead of billing again;
+  a different key/account, payload or image under the same id is refused (exit 2).
+- **An error after `create` was accepted still names the task**: read
+  `result.task_id` / `result.submission.task_id` and `result.next` from any
+  non-zero exit (11 local I/O, 1 polling failure, 130 interrupt) before deciding
+  anything; never create again because a later step failed.
 - `--save-json <file>` stores the raw API task (use it as the input of `download`,
   `inspect faces` and `project record`); `--include-raw` puts the raw response under
   `result.task.raw`; `--project <dir>` records the task in a project folder.

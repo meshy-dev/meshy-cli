@@ -62,6 +62,12 @@ export interface MeshyConfig {
    * Derived from the stored profile kind when credentialSource is "file".
    */
   credentialKind: CredentialKind;
+  /**
+   * Stable account subject for an OAuth profile (user id), used to bind the
+   * operation journal to the account rather than to a rotating token. Unset for
+   * API keys (the key itself is digested) and for profiles without a user id.
+   */
+  credentialSubject?: string;
 }
 
 export interface ConfigOverrides {
@@ -157,6 +163,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
   let credentialSource: CredentialSource = "flag";
   let credentialProfile: string | undefined;
   let credentialKind: CredentialKind = "api_key";
+  let credentialSubject: string | undefined;
 
   if (!PLACEHOLDER_KEYS.has(flagKey)) {
     apiKey = flagKey;
@@ -186,6 +193,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
       credentialSource = "file";
       credentialProfile = stored.profile;
       credentialKind = stored.kind;
+      credentialSubject = stored.userId;
     } else {
       throw authRequiredError(
         "No credentials found. Pass --api-key, export MESHY_API_KEY, or log in.",
@@ -208,6 +216,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
     envFilePath,
     credentialsFile: credFile,
     credentialKind,
+    credentialSubject,
   };
 
   setLogLevel(cfg.logLevel);

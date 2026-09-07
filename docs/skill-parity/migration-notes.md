@@ -115,6 +115,20 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 | `rigging list` | usage error | works | see 2.9 |
 | everything else (flags, payload defaults, `-o` download layout, `meta.json`, auth) | unchanged | unchanged | legacy output preserved; v1 is opt-in |
 
+### 3.1 Corrections from Codex review round 1 (visible in both schemas)
+
+| Behaviour | before the fix | after | Finding |
+| --- | --- | --- | --- |
+| `create`/`make -o <existing file>` or `--save-json <existing file>` | refused after the task ran (exit 2 / 11) | refused **before** the POST, exit 11, "nothing was submitted" | F01 |
+| failure after the server accepted a task (save, poll 5xx, download, record) | `result: null` / bare API error | same exit code, `result.task_id` + `submission` + `next` kept | F01, F02 |
+| `wait`: reply arriving after `--timeout` | reported as in-time success; one extra GET possible | exit 8 (`timed_out`), no GET after the deadline | F07 |
+| `--workspace` on `-o` (task verbs, `make`), `project`, `--project` | not enforced | exit 11 before any write | F03 |
+| `mesh prepare-print` material copy through a symlinked `materials/` | written outside | exit 11, nothing written | F04 |
+| `--operation-id` with another API key / account or another image of equal size | replayed the old task | `operation_conflict` (exit 2), no request | F05, F06 |
+| Creative Lab `--data.options` + `--options` | `--options` replaced the object | merged field by field | F08 |
+| downloaded OBJ/MTL references | pointed at server-side names | rewritten to the saved names, reported | F09 |
+| `stream --format ndjson -o` | assets not downloaded | downloaded; `outcome` carries the manifest | F10 |
+
 New global flags: `--output-schema`, `--api-key-file`, `--workspace`, `--no-update-check`,
 `--base-url-creative-lab`. New per-command flags on task verbs: `--save-json`,
 `--include-raw`, `--project`, `--stage`, `--operation-id`, `--stop-after-first` (make),

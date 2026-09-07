@@ -60,6 +60,19 @@ function removeQuietly(path: string): void {
   }
 }
 
+/** Create the target's directory; a parent that is a file (or unwritable) is a local_io error, not an internal one. */
+function ensureParentDir(target: string): void {
+  try {
+    mkdirSync(dirname(target), { recursive: true });
+  } catch (err) {
+    throw new CliError({
+      code: "local_io",
+      message: `cannot create directory ${dirname(target)}: ${err instanceof Error ? err.message : String(err)}`,
+      cause: err,
+    });
+  }
+}
+
 export function refuseOverwriteError(target: string): CliError {
   return new CliError({
     code: "local_io",
@@ -137,7 +150,7 @@ export function writeJsonFile(
   value: unknown,
   opts: PublishOptions & { mode?: number } = {},
 ): PublishResult {
-  mkdirSync(dirname(target), { recursive: true });
+  ensureParentDir(target);
   const tmp = tempPathFor(target);
   try {
     writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: opts.mode ?? 0o600 });
@@ -154,7 +167,7 @@ export function writeJsonFile(
 
 /** Copy an existing file to `target` under the same publish rules. */
 export function copyFilePublished(source: string, target: string, opts: PublishOptions = {}): PublishResult {
-  mkdirSync(dirname(target), { recursive: true });
+  ensureParentDir(target);
   const tmp = tempPathFor(target);
   try {
     copyFileSync(source, tmp);

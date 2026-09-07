@@ -227,11 +227,27 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   re-running the create. Reconcile with `list`, then decide.
 - `--operation-id <id>` replays the recorded outcome of an identical earlier
   request instead of submitting again; a different request under the same id is
-  refused. This is a local record, not a server-side idempotency key.
+  refused (`operation_conflict`, exit 2, naming what differs). "Identical" means
+  the same resource, API origin, credential — a one-way digest of the API key,
+  or the OAuth account — and payload, with every inline image or model hashed by
+  content. This is a local record, not a server-side idempotency key.
+- Local targets that would fail after the POST are checked before it: an
+  existing `--save-json` file, an `-o` path outside `--workspace`, a missing
+  `--project` all exit 11 with "nothing was submitted" and cost no request.
+- Once the server has accepted a task, every later failure — saving JSON,
+  polling (a 503), downloading, recording, Ctrl-C — still reports
+  `result.task_id`, `result.submission` and `result.next` (the `get`/`wait`/
+  `stream` commands that pick the task up). A bookkeeping problem never reads
+  as "no task was created".
 - `--async` returns after the POST (no polling). `get` is a query: any status
-  exits 0. `wait --timeout N` polls with a monotonic deadline (`0` = one query);
-  timeouts exit 8 with the last task kept. `stream` follows Server-Sent Events
-  with `--timeout` (total) and `--idle-timeout` (silence, keep-alives reset it).
+  exits 0. `wait --timeout N` polls with a monotonic deadline (`0` = one query)
+  that also bounds every in-flight GET: a response arriving after the deadline
+  is a timeout (exit 8, last status kept, `result.task` null when none arrived
+  in time), never a late success, and no request starts once the budget is
+  spent. `stream` follows Server-Sent Events with `--timeout` (total) and
+  `--idle-timeout` (silence, keep-alives reset it); `-o` downloads the assets
+  in every output format, and in `ndjson` the final `outcome` line carries the
+  download manifest.
 - Ctrl-C stops waiting or downloading (exit 130) and sends no DELETE; the
   envelope carries the task id and the command that resumes.
 
@@ -332,7 +348,13 @@ Sources are `--task-json` (an API task, a legacy `meta.json`, or a v1 envelope),
 `--url`, or `--resource` + `--task-id`; selectors are `--asset <key>` (repeatable),
 `--model-format`, `--kind`, `--all`. With several assets and no selector the
 command lists the candidates and exits 2 instead of guessing. Selecting an OBJ
-pulls its MTL and textures (`--geometry-only` to skip). Files are published
+pulls its MTL and textures (`--geometry-only` to skip); once the set has landed
+the OBJ's `mtllib` and the MTL's `map_*` references are rewritten to the names
+actually saved (`model.mtl`, `texture_0_base_color.png`, …) so the model loads
+from that directory — every link is listed under
+`result.downloads.material_links`, rewritten files carry `relinked: true` with
+their final sha256, and a reference that matches no downloaded file stays as
+written and is warned (`material_reference_unresolved`). Files are published
 exclusively (never overwritten without `--overwrite`), checked against the
 content type and magic bytes, kept inside the output directory (or `--workspace`),
 and listed with size and sha256 in `result.downloads.files`. Asset hosts never
@@ -371,7 +393,10 @@ limit you pass (`--max-faces` is required); a missing count is `unknown`, never
 0, and a failing verdict only *describes* a remesh. `prepare-print` rotates a
 Y-up OBJ to Z-up, scales it to the target height, centres it on XY and rests it
 on Z=0, preserving faces, UVs, normals (rotated only) and material references;
-it never overwrites without `--in-place`. `slicer open` launches only a
+it never overwrites without `--in-place`, and the MTL/texture copies it makes
+beside the output are proven — on real paths, before any directory is created —
+to lie inside the output directory (or `--workspace`), so a symlinked
+`materials/` cannot redirect them. `slicer open` launches only a
 registered slicer at its detected path with the file as a single argument — no
 shell, no default-application fallback; `launch_requested` is not proof that
 the import succeeded.
@@ -403,7 +428,7 @@ message before any task is created. GLB-only fields (`uv-unwrap`, `rigging`
 | `--output-schema legacy\|v1` | Stdout data model (existing commands default to `legacy`; new commands are `v1`) |
 | `--format json\|pretty\|ndjson` | Stdout rendering (default `json`) |
 | `-o, --output <path>` | Download artifacts to a file/directory (task commands); output file for `mesh prepare-print` |
-| `--workspace <dir>` | Confine every written file to this directory |
+| `--workspace <dir>` | Confine every written file to this directory: `download`, `-o` on task verbs and `make`, `--save-json`, `--project`/project folders, `mesh prepare-print` outputs and their copied materials — checked on real paths before anything is created |
 | `--no-update-check` | Skip the background npm version check in this process |
 | `-v, --verbose` | Debug logging to stderr |
 | `--log-level <level>` | `debug \| info \| warn \| error \| silent` |

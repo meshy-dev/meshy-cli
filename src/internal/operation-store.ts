@@ -9,9 +9,18 @@
  * instead of submitting again when the request fingerprints match, and refuses
  * with `operation_conflict` when they do not.
  *
+ * Identity of a request = resource + API origin + credential fingerprint +
+ * payload fingerprint. The credential fingerprint binds to the actual account:
+ * a keyed digest of the API key, or the stable OAuth subject (user id) — never
+ * the rotating access token, so a routine refresh is still the same identity
+ * while a different key under the same env variable is not. The payload
+ * fingerprint hashes media *content* (decoded bytes of every data URI), so two
+ * different images of the same size never collide.
+ *
  * This is a local record only. It is not a server-side idempotency key and it
  * cannot guarantee the server did not bill a request whose response was lost.
- * Nothing secret is stored: no key material, no base64 media, no signed URLs.
+ * Nothing secret is stored: no key material, no base64 media, no signed URLs —
+ * only one-way digests.
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -64,27 +73,76 @@ export function newOperationId(): string {
   return randomUUID();
 }
 
-/** `sha256(source|profile|origin)` — enough to detect a different identity, never reversible to a key. */
-export function credentialFingerprint(parts: { source: string; profile?: string | null; origin: string; kind?: string }): string {
-  return sha256(`${parts.source}|${parts.profile ?? ""}|${parts.kind ?? ""}|${parts.origin}`);
+export interface CredentialIdentityParts {
+  /** Where the credential came from: flag | env | env-file | file. */
+  source: string;
+  /** Stored profile name (credentialSource === "file"). */
+  profile?: string | null;
+  /** API origin the credential is used against. */
+  origin: string;
+  /** api_key | oauth. */
+  kind?: string;
+  /** The static API key itself (api_key kinds). Digested with a domain prefix; never stored. */
+  secret?: string | null;
+  /** Stable account subject for OAuth profiles (user id). Tokens rotate; the subject does not. */
+  subject?: string | null;
+}
+
+const CREDENTIAL_DIGEST_DOMAIN = "meshy-cli/credential-binding/v1";
+
+/**
+ * `sha256(source|profile|kind|origin|binding)` where the binding is a keyed
+ * digest of the API key, or the OAuth subject. Two different keys from the same
+ * source therefore have different fingerprints; a refreshed OAuth token keeps
+ * its fingerprint as long as the account is the same. Never reversible to a key.
+ */
+export function credentialFingerprint(parts: CredentialIdentityParts): string {
+  let binding: string;
+  if (parts.kind === "oauth") {
+    binding = parts.subject ? `subject:${parts.subject}` : "subject:unknown";
+  } else if (parts.secret) {
+    binding = `key:${sha256(`${CREDENTIAL_DIGEST_DOMAIN}|${parts.secret}`)}`;
+  } else {
+    binding = "key:none";
+  }
+  return sha256(`${parts.source}|${parts.profile ?? ""}|${parts.kind ?? ""}|${parts.origin}|${binding}`);
 }
 
 /**
- * Canonical JSON with data URIs reduced to their MIME and length so two
- * submissions of the same local file match while the journal never holds the
- * file content.
+ * Canonical JSON with every data URI replaced by `data:<mime>;sha256=<digest of
+ * the decoded bytes>`: two submissions of the same file match (whatever the
+ * base64 line wrapping), two different files of equal size do not, and the
+ * journal never holds the content itself.
  */
 export function payloadFingerprint(payload: unknown): string {
   return sha256(canonical(payload));
 }
 
+export function dataUriDigest(uri: string): string {
+  const comma = uri.indexOf(",");
+  const header = comma === -1 ? uri.slice(5) : uri.slice(5, comma);
+  const payload = comma === -1 ? "" : uri.slice(comma + 1);
+  const mime = (header.split(";")[0] ?? "").toLowerCase();
+  const isBase64 = /(^|;)base64$/i.test(header) || /;base64(;|$)/i.test(header);
+  let bytes: Buffer;
+  if (isBase64) {
+    bytes = Buffer.from(payload.replace(/\s+/g, ""), "base64");
+  } else {
+    let text = payload;
+    try {
+      text = decodeURIComponent(payload);
+    } catch {
+      /* keep the raw payload */
+    }
+    bytes = Buffer.from(text, "utf8");
+  }
+  return `data:${mime};sha256=${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
 function canonical(v: unknown): string {
   if (v === null || typeof v !== "object") {
-    if (typeof v === "string" && v.startsWith("data:")) {
-      const semi = v.indexOf(";");
-      const comma = v.indexOf(",");
-      const mime = v.slice(5, semi === -1 ? comma : Math.min(semi, comma === -1 ? v.length : comma));
-      return JSON.stringify(`data:${mime};len=${v.length}`);
+    if (typeof v === "string" && /^data:/i.test(v)) {
+      return JSON.stringify(dataUriDigest(v));
     }
     return JSON.stringify(v);
   }
@@ -131,16 +189,16 @@ export function beginOperation(root: string, operationId: string, identity: Oper
   return withFileLock(lockPath(root), () => {
     const existing = readOperation(root, operationId);
     if (existing) {
-      if (
-        existing.resource !== identity.resource ||
-        existing.api_origin !== identity.apiOrigin ||
-        existing.credential_fingerprint !== identity.credentialFingerprint ||
-        existing.payload_fingerprint !== identity.payloadFingerprint
-      ) {
+      const differs: string[] = [];
+      if (existing.resource !== identity.resource) differs.push("resource");
+      if (existing.api_origin !== identity.apiOrigin) differs.push("origin");
+      if (existing.credential_fingerprint !== identity.credentialFingerprint) differs.push("credential");
+      if (existing.payload_fingerprint !== identity.payloadFingerprint) differs.push("payload");
+      if (differs.length > 0) {
         throw new CliError({
           code: "operation_conflict",
-          message: `operation ${operationId} already exists for a different request (resource/origin/credential/payload differ); nothing was submitted`,
-          result: { submission: { state: existing.state, operation_id: operationId, task_id: existing.task_id } },
+          message: `operation ${operationId} already exists for a different request (${differs.join(", ")} differ); nothing was submitted — use a new --operation-id for a new request`,
+          result: { submission: { state: existing.state, operation_id: operationId, task_id: existing.task_id }, conflict: differs },
         });
       }
       return { outcome: "existing", record: existing };

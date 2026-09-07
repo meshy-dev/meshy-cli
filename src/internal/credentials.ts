@@ -319,6 +319,8 @@ export interface ResolvedStoredCredential {
   apiKey?: string;
   accessToken?: string;
   expiresAt?: number;
+  /** Stable account subject of an OAuth profile, when the token endpoint reported one. */
+  userId?: string;
 }
 
 /**
@@ -341,6 +343,7 @@ export function resolveStoredCredential(file: string): ResolvedStoredCredential 
     kind: "oauth",
     accessToken: profile.access_token,
     expiresAt: profile.expires_at,
+    ...(profile.user_id ? { userId: profile.user_id } : {}),
   };
 }
 

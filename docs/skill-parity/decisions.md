@@ -261,3 +261,111 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   frames) to the real stdout and capture only the CLI's string writes. Black-box
   behaviour is still asserted through `dist/index.js` subprocesses wherever exit
   codes or stderr matter.
+
+## D-029 Credential identity in the operation journal binds to the account
+
+- Codex review round 1 (F05): `credential_fingerprint` hashed only
+  source/profile/kind/origin, so two API keys exported through the same
+  `MESHY_API_KEY` were one identity and a repeated `--operation-id` replayed the
+  other account's task. It now includes a one-way digest of the API key
+  (`sha256("meshy-cli/credential-binding/v1|<key>")`) for static keys, and the
+  stable OAuth subject (`user_id` of the stored profile) for browser logins — never
+  the access token, so a routine refresh keeps the identity while a different user
+  under the same profile name does not. A profile without `user_id` binds to the
+  profile name only (documented limitation). No key material is stored; the
+  conflict message names what differs (`result.conflict`).
+
+## D-030 Media content is part of the payload fingerprint
+
+- Review F06: data URIs were reduced to `<mime>;len=<n>`, so two images of equal
+  encoded length collided and a changed picture reused the old task. The
+  fingerprint now hashes the *decoded bytes* of every data URI
+  (`data:<mime>;sha256=<hex>`): the same file re-inlined (even with different
+  base64 line wrapping) matches, different content of any length does not, and the
+  journal still never holds the content. The previous test asserting the collision
+  was wrong and was replaced.
+
+## D-031 The wait deadline bounds every request
+
+- Review F07: `pollUntilTerminal` passed only the abort signal to each GET and
+  judged the deadline after the response, so a reply arriving late could be
+  reported as an in-time SUCCEEDED and one more GET could start after the budget.
+  Each request now carries `timeoutMs = min(remaining budget, read timeout)`; a
+  deadline-bound request that times out *is* the timeout (exit 8), the sleep never
+  overshoots, and no request starts once the budget is spent. `PollResult.task` is
+  `null` only when no response arrived in time — the caller still knows the task id
+  and reports it (`result.task_id`, `result.next`, legacy `{id, timed_out:true}`).
+  `--timeout 0` keeps its single-query semantics bounded by the transport read
+  timeout, not by a zero budget.
+
+## D-032 `--workspace` is the root of every write, checked before the POST
+
+- Review F03: the v1 `-o` path handed the legacy downloader the output directory
+  as its own root, `project` ignored the flag, and `make` never looked at it.
+  `downloadArtifacts` now takes the workspace as root (directory, every planned
+  file and the sidecar are proven inside it before `mkdir`), `project
+  init/record/rebuild-index` confine `--root`/`--project`, task verbs confine
+  `--project`, `mesh prepare-print` confines its output and every copied
+  dependency (D-033), `download --project` confines the project. Without a
+  workspace the command's own root (output directory / project directory) applies
+  as before. `create` and `make` check `-o`, `--save-json` and `--project` *before*
+  the billable POST (containment, symlink leaf, existing file, initialised
+  project): a detectable conflict is exit 11 with "nothing was submitted" and zero
+  requests.
+
+## D-033 Dependency copies are proven inside the write root on real paths
+
+- Review F04: `copyDependency` only lstat'ed the leaf, so `<target>/materials`
+  being a symlink to another directory let `materials/a.mtl` land outside the
+  workspace. Every planned copy target is now resolved with `resolveWithinRoot`
+  against the write root (workspace, else the output directory) — deepest existing
+  ancestor realpath'd, no symlink leaf — before any directory is created, and again
+  immediately before the copy is published. The report keeps the planned path
+  (beside the output) so `copied` stays consistent with `output`.
+
+## D-034 An accepted task survives every later failure; one submission state machine
+
+- Review F01/F02: after the server returned a task id, `--save-json` on an existing
+  file, a 503 while polling, and (in `make`) a journal write failure all produced
+  `result: null` or `submission_unknown`. Every post-acceptance step now runs in
+  the task's context (`withTaskContext`): the thrown error keeps its own
+  classification (code, HTTP status, hint, recovery, exit code) and its partial
+  result (files written, a failed download manifest), and always carries
+  `result.task_id`, `result.submission` and `result.next`. `make` uses the same
+  `submitCreate` primitive as the resource commands, so accepted / rejected /
+  unknown / journal-failure-after-acceptance (`local_io`, exit 11, id kept) are
+  decided in exactly one place.
+
+## D-035 Nested option objects merge field by field
+
+- Review F08: `mergePayload` is a shallow, later-wins merge (arrays and scalars
+  replace wholesale, by design), so `--options` replaced the whole
+  `--data.options` object and silently dropped the user's other settings before a
+  billable build. A resource may declare `nestedObjectKeys` (Creative Lab build:
+  `options`, `output`); those keys merge field by field across
+  defaults < `--data` < flags, typed flags win, explicit `false`/`0` survive, and
+  validation sees the combined object. Nothing else became a recursive merge.
+
+## D-036 Downloaded OBJ sets are relinked, not renamed
+
+- Review F09: the downloader saved `model.obj`/`model.mtl`/`texture_<n>_<channel>.png`
+  while the OBJ still said `mtllib box.mtl` and the MTL named the server's texture
+  files, so a complete download did not load. After a set has landed the CLI
+  rewrites `mtllib` to the saved MTL and each `map_*` reference to the saved
+  texture (exact name → channel word in the name → channel of the MTL key
+  (`map_Kd` → base color) → the only texture when there is exactly one reference);
+  what it cannot resolve stays as written and is reported
+  (`material_reference_unresolved`). Only the two text files the CLI just wrote are
+  touched, rewritten manifest entries carry `relinked: true` with their final
+  digest, and `result.downloads.material_links` lists every link. ZIP bundles
+  (keychain / fridge-magnet OBJ) and `--geometry-only` downloads are never
+  rewritten. Stable file names were kept over "preserve the server's names" so
+  scripts and the download manifest stay predictable.
+
+## D-037 `stream -o` downloads in every output format
+
+- Review F10: the ndjson branch printed the outcome and returned before the
+  download ran, so changing `--format` changed the command's side effects. The
+  download (and the project record) now happen before the format branch; the
+  ndjson `outcome` line carries the manifest, a download failure is one `ok:false`
+  outcome (exit code of the failure, task kept), and json/pretty behave the same.

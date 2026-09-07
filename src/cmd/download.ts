@@ -22,7 +22,7 @@ import { emitResult, openCommand, saveRawJson, type OpenedCommand } from "../int
 import { abortSignal } from "../internal/context.js";
 import { downloadAssets, type DownloadedFile } from "../internal/download.js";
 import { CliError, UsageError, type Warning } from "../internal/errors.js";
-import { safeSegment } from "../internal/paths.js";
+import { resolveWithinRoot, safeSegment } from "../internal/paths.js";
 import { warning } from "../internal/result.js";
 import { recordTask, stageFromTaskType } from "../internal/project-store.js";
 import { buildLocalRuntime, buildRuntime } from "../internal/runtime.js";
@@ -121,7 +121,11 @@ export const downloadCommand = new Command("download")
     if (selectors.length > 1) throw new UsageError(`selectors are mutually exclusive (got ${selectors.map((s) => `--${s}`).join(", ")})`);
     if (opts.withDependencies && opts.geometryOnly) throw new UsageError("--with-dependencies and --geometry-only are mutually exclusive");
     if (opened.flags.output && opts.outputDir) throw new UsageError("--output/-o and --output-dir are mutually exclusive");
-    const projectDir = opts.project ? resolvePath(opts.project) : null;
+    const projectDir = opts.project
+      ? opened.flags.workspace
+        ? resolveWithinRoot(resolvePath(opts.project), opened.flags.workspace, { label: "--project" }).path
+        : resolvePath(opts.project)
+      : null;
     if (projectDir && !existsSync(join(projectDir, "metadata.json"))) {
       throw new UsageError(`--project ${opts.project} is not an initialised project (no metadata.json); run \`meshy project init\` first`);
     }
@@ -278,7 +282,7 @@ export const downloadCommand = new Command("download")
     await emitResult(opened, null, {
       source: sourceInfo,
       selection: { selected: selected.map((a) => a.key), dependencies: dependencies.map((a) => a.key) },
-      downloads: { state: result.complete ? "completed" : "partial", files: result.files, metadata_path: null },
+      downloads: { state: result.complete ? "completed" : "partial", files: result.files, metadata_path: null, material_links: result.materialLinks },
       unknown_urls: enumeration?.unknown_urls ?? [],
       saved_json: savedJson,
       project,

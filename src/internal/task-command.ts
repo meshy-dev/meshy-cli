@@ -14,6 +14,12 @@
  *   - every create is exactly one POST, journaled before it is sent;
  *   - a lost or malformed response is `submission_unknown` (exit 10), never a
  *     retry and never a "please run it again" hint;
+ *   - local targets that would fail after the POST (an existing --save-json
+ *     file, an -o path outside the workspace, a missing --project) are checked
+ *     before it, so a detectable conflict costs zero requests;
+ *   - once the server has accepted a task, every later failure — saving JSON,
+ *     polling, downloading, recording, a signal — still reports that task id,
+ *     the submission record and the `get`/`wait` commands that resume it;
  *   - SIGINT stops waiting/streaming (exit 130) and never deletes anything.
  */
 
@@ -24,15 +30,16 @@ import type { MeshyClient } from "../client/index.js";
 import { requireTaskResource, type TaskResourceDescriptor } from "../client/resource-registry.js";
 import { TransportError } from "../client/transport.js";
 import { isTerminalStatus, summarizeTask, type Task } from "../client/types.js";
-import { emitResult, openCommand, rejectOutputFlagForV1, saveRawJson, type OpenedCommand } from "./command-helpers.js";
+import { emitResult, openCommand, rejectOutputFlagForV1, saveRawJson, type OpenedCommand, type SavedJson } from "./command-helpers.js";
 import { abortSignal, wasInterrupted } from "./context.js";
-import { downloadArtifacts } from "./download.js";
-import { CliError, UsageError, type Warning } from "./errors.js";
+import { downloadArtifacts, looksLikeFile } from "./download.js";
+import { classifyError, CliError, UsageError, type Warning } from "./errors.js";
 import { normalizeMediaPayload } from "./file-input.js";
 import { logger } from "./logger.js";
-import { mergePayload, parseJsonFlag } from "./payload.js";
+import type { MaterialLinkReport } from "./material-links.js";
+import { mergeNestedObjects, mergePayload, parseJsonFlag } from "./payload.js";
 import { emitEnvelope, emitStreamEvent, emit } from "./output.js";
-import { parseTimeoutSeconds, pollUntilTerminal } from "./poll.js";
+import { parseTimeoutSeconds, pollUntilTerminal, type PollResult } from "./poll.js";
 import { printReport } from "./report.js";
 import { errorEnvelope, okEnvelope, warning, type StreamEventEnvelope } from "./result.js";
 import { buildRuntime, type Runtime } from "./runtime.js";
@@ -49,9 +56,10 @@ import {
   type OperationRecord,
 } from "./operation-store.js";
 import { originOf } from "./config.js";
+import { resolveWithinRoot } from "./paths.js";
 import { recordTask, saveTaskSnapshot, stageFromTaskType } from "./project-store.js";
 import { existsSync } from "node:fs";
-import { join, resolve as resolvePath } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 
 export interface CreateSpec {
   description: string;
@@ -65,6 +73,12 @@ export interface CreateSpec {
    * not throw (validation belongs in toPayload).
    */
   toDefaults?(opts: Record<string, unknown>): Record<string, unknown>;
+  /**
+   * Payload keys holding nested option objects that must merge field by field
+   * across defaults < --data < flags (e.g. Creative Lab `options`, `output`).
+   * Everything else merges shallowly: arrays and scalars replace wholesale.
+   */
+  nestedObjectKeys?: readonly string[];
   /**
    * Validate the merged payload (defaults < --data < flags) before media is
    * normalised and before anything is sent. Throw UsageError / CliError.
@@ -95,10 +109,19 @@ const TASK_JSON_OPTIONS = (cmd: Command): Command =>
     .option("--project <dir>", "initialised meshy_output project: save task_<id>.json there and record the task in metadata.json")
     .option("--stage <name>", "stage label for the project record (default: derived from the task type, e.g. preview | refine | build)");
 
-interface DownloadOutcome {
+export interface DownloadOutcome {
   state: "not_requested" | "not_ready" | "completed" | "failed";
   files: Array<{ path: string; status: "written" }>;
   metadata_path: string | null;
+  /** OBJ/MTL/texture reference report when the download contained a text OBJ. */
+  material_links?: MaterialLinkReport | null;
+}
+
+export interface SubmissionInfo {
+  state: string;
+  operation_id: string | null;
+  task_id?: string | null;
+  request_id?: string | null;
 }
 
 interface TaskResultOptions {
@@ -106,17 +129,19 @@ interface TaskResultOptions {
   raw: unknown;
   descriptor: TaskResourceDescriptor;
   includeRaw: boolean;
-  submission: { state: string; operation_id: string | null; task_id?: string | null; request_id?: string | null };
+  submission: SubmissionInfo;
   downloads?: DownloadOutcome;
-  savedJson?: { path: string; bytes: number } | null;
+  savedJson?: SavedJson | null;
   extra?: Record<string, unknown>;
 }
+
+const NOT_REQUESTED = (): DownloadOutcome => ({ state: "not_requested", files: [], metadata_path: null });
 
 function taskResult(o: TaskResultOptions): Record<string, unknown> {
   return {
     task: o.task ? toTaskView(o.raw ?? o.task, { descriptor: o.descriptor, includeRaw: o.includeRaw }) : null,
     submission: o.submission,
-    downloads: o.downloads ?? { state: "not_requested", files: [], metadata_path: null },
+    downloads: o.downloads ?? NOT_REQUESTED(),
     saved_json: o.savedJson ?? null,
     ...(o.extra ?? {}),
   };
@@ -129,6 +154,93 @@ function nextCommands(descriptor: TaskResourceDescriptor, taskId: string): Recor
     wait: `${base} wait ${taskId} --output-schema v1`,
     stream: `${base} stream ${taskId} --format ndjson --output-schema v1`,
   };
+}
+
+/**
+ * What every failure after the server accepted a task must still say: which
+ * task, what the submission record is, and how to pick it up again.
+ */
+interface TaskContext {
+  descriptor: TaskResourceDescriptor;
+  taskId: string;
+  task?: Task | null;
+  raw?: unknown;
+  submission: SubmissionInfo;
+  includeRaw?: boolean;
+  savedJson?: SavedJson | null;
+  extra?: Record<string, unknown>;
+}
+
+/**
+ * Re-throw any error as a CliError whose `result` carries `result` — keeping
+ * the original classification (code, HTTP status, hint, recovery, exit code).
+ * A CliError's own partial result (files written so far, a failed download
+ * manifest) is merged on top, so nothing already known is lost.
+ */
+export function wrapWithResult(err: unknown, result: Record<string, unknown>): CliError {
+  if (err instanceof CliError) {
+    return new CliError({
+      code: err.code,
+      message: err.message,
+      exitCode: err.exitCode,
+      httpStatus: err.httpStatus,
+      retryable: err.retryable,
+      recovery: err.recovery,
+      hint: err.hint,
+      details: err.details,
+      warnings: err.warnings,
+      result: { ...result, ...(err.result ?? {}) },
+      cause: err,
+    });
+  }
+  const c = classifyError(err);
+  return new CliError({
+    code: c.code,
+    message: c.message,
+    exitCode: c.exitCode,
+    httpStatus: c.httpStatus,
+    retryable: c.retryable,
+    recovery: c.recovery,
+    hint: c.hint,
+    details: c.details,
+    warnings: c.warnings,
+    result: { ...result, ...(c.result ?? {}) },
+    cause: err,
+  });
+}
+
+/** `wrapWithResult` with the task result shape: the id, submission and next commands always survive. */
+function withTaskContext(err: unknown, ctx: TaskContext): CliError {
+  const next = nextCommands(ctx.descriptor, ctx.taskId);
+  const base = taskResult({
+    task: ctx.task ?? null,
+    raw: ctx.raw ?? null,
+    descriptor: ctx.descriptor,
+    includeRaw: Boolean(ctx.includeRaw),
+    submission: ctx.submission,
+    savedJson: ctx.savedJson ?? null,
+    extra: { task_id: ctx.taskId, next, ...(ctx.extra ?? {}) },
+  });
+  let own: Record<string, unknown> = {};
+  if (err instanceof CliError && err.result) {
+    own = { ...err.result };
+    // A bookkeeping error's `task: null` must not erase a task we do know.
+    if (own["task"] === null && ctx.task) delete own["task"];
+  }
+  const wrapped = wrapWithResult(err, base);
+  return new CliError({
+    code: wrapped.code,
+    message: wrapped.message,
+    exitCode: wrapped.exitCode,
+    httpStatus: wrapped.httpStatus,
+    retryable: wrapped.retryable,
+    recovery: wrapped.recovery,
+    hint: wrapped.hint,
+    details: wrapped.details,
+    warnings: wrapped.warnings,
+    result: { ...base, ...own, task_id: ctx.taskId, next },
+    cause: err,
+  });
 }
 
 interface ProjectAttachment {
@@ -147,6 +259,19 @@ function parentTaskIdFromPayload(payload: Record<string, unknown> | null): strin
   return null;
 }
 
+/** Resolve --project: an initialised project directory, inside the workspace when one is set. */
+function resolveProjectDir(projectFlag: string, workspace: string | undefined, cwd = process.cwd()): string {
+  const projectDir = resolvePath(cwd, projectFlag);
+  if (!existsSync(join(projectDir, "metadata.json"))) {
+    throw new CliError({
+      code: "local_io",
+      message: `--project ${projectFlag} is not an initialised project (no metadata.json); run \`meshy project init\` first`,
+    });
+  }
+  if (workspace) resolveWithinRoot(projectDir, workspace, { cwd, label: "--project" });
+  return projectDir;
+}
+
 /**
  * --project: snapshot the task (when a full task is known) and record it.
  * Failures keep the task id in the error result — a bookkeeping problem must
@@ -154,6 +279,7 @@ function parentTaskIdFromPayload(payload: Record<string, unknown> | null): strin
  */
 function attachToProject(
   opts: Record<string, unknown>,
+  opened: OpenedCommand,
   descriptor: TaskResourceDescriptor,
   taskId: string,
   task: Task | null,
@@ -163,14 +289,7 @@ function attachToProject(
 ): ProjectAttachment | null {
   const projectFlag = opts.project as string | undefined;
   if (!projectFlag) return null;
-  const projectDir = resolvePath(projectFlag);
-  if (!existsSync(join(projectDir, "metadata.json"))) {
-    throw new CliError({
-      code: "local_io",
-      message: `--project ${projectFlag} is not an initialised project (no metadata.json); run \`meshy project init\` first`,
-      result: { task_id: taskId, task: task ? toTaskView(raw ?? task, { descriptor }) : null },
-    });
-  }
+  const projectDir = resolveProjectDir(projectFlag, opened.flags.workspace);
   const stage = (opts.stage as string | undefined) ?? (typeof extra.payload?.["mode"] === "string" ? (extra.payload["mode"] as string) : descriptor.creativeLab?.stage ?? stageFromTaskType(task?.type, descriptor.id));
   try {
     const snapshot = task && raw ? saveTaskSnapshot(projectDir, taskId, raw) : null;
@@ -190,13 +309,85 @@ function attachToProject(
     if (rec.migrated_from_legacy) warnings.push(warning("metadata_migrated", "legacy metadata.json migrated to schema_version 2 (backup kept beside it)"));
     return { project_dir: projectDir, snapshot: snapshot?.path ?? null, stage, action: rec.action, index: rec.index };
   } catch (err) {
-    if (err instanceof CliError && err.result) throw err;
     throw new CliError({
-      code: "local_io",
+      code: err instanceof CliError ? err.code : "local_io",
       message: `task ${taskId} exists but recording it in ${projectDir} failed: ${err instanceof Error ? err.message : String(err)}`,
-      result: { task_id: taskId, task: task ? toTaskView(raw ?? task, { descriptor }) : null, submission: { state: "accepted", operation_id: extra.operationId ?? null, task_id: taskId } },
       cause: err,
     });
+  }
+}
+
+/** --save-json inside the task's context: a full disk or a vanished directory never hides the task id. */
+function saveJsonInContext(opts: Record<string, unknown>, opened: OpenedCommand, raw: unknown, ctx: TaskContext): SavedJson | null {
+  if (!opts.saveJson) return null;
+  try {
+    return saveRawJson(String(opts.saveJson), raw, { workspace: opened.flags.workspace });
+  } catch (err) {
+    throw withTaskContext(err, ctx);
+  }
+}
+
+function attachInContext(
+  opts: Record<string, unknown>,
+  opened: OpenedCommand,
+  descriptor: TaskResourceDescriptor,
+  taskId: string,
+  task: Task | null,
+  raw: unknown,
+  extra: { operationId?: string | null; payload?: Record<string, unknown> | null; files?: string[] },
+  warnings: Warning[],
+  ctx: TaskContext,
+): ProjectAttachment | null {
+  try {
+    return attachToProject(opts, opened, descriptor, taskId, task, raw, extra, warnings);
+  } catch (err) {
+    throw withTaskContext(err, ctx);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pre-submission checks: anything local that would fail *after* a billable POST
+// and can be detected now is refused now, with "nothing was submitted".
+// ---------------------------------------------------------------------------
+
+/** `-o` target: inside the workspace (or its own directory), no symlink leaf, not an existing file. */
+export function preflightOutputPath(output: string, workspace: string | undefined, cwd = process.cwd()): void {
+  const abs = resolvePath(cwd, output);
+  resolveWithinRoot(abs, workspace ?? dirname(abs), { cwd, label: "--output" });
+  if (looksLikeFile(abs) && existsSync(abs)) {
+    throw new CliError({
+      code: "local_io",
+      message: `--output ${output} already exists; choose another path (nothing was submitted)`,
+      recovery: { action: "choose_path", automatic: false },
+    });
+  }
+}
+
+/** `--save-json` target: inside the workspace (or its own directory), no symlink leaf, not an existing file. */
+export function preflightSaveJsonPath(target: string, workspace: string | undefined, cwd = process.cwd()): void {
+  const abs = resolvePath(cwd, target);
+  const resolved = resolveWithinRoot(abs, workspace ?? dirname(abs), { cwd, label: "--save-json target" });
+  if (existsSync(resolved.path)) {
+    throw new CliError({
+      code: "local_io",
+      message: `--save-json target ${target} already exists; choose another path (nothing was submitted)`,
+      recovery: { action: "choose_path", automatic: false },
+    });
+  }
+}
+
+function preflightLocalTargets(opts: Record<string, unknown>, opened: OpenedCommand): void {
+  if (opts.saveJson) preflightSaveJsonPath(String(opts.saveJson), opened.flags.workspace);
+  if (opened.flags.output) preflightOutputPath(opened.flags.output, opened.flags.workspace);
+  if (opts.project) {
+    try {
+      resolveProjectDir(String(opts.project), opened.flags.workspace);
+    } catch (err) {
+      if (err instanceof CliError) {
+        throw new CliError({ code: err.code, message: `${err.message} (nothing was submitted)`, recovery: err.recovery, cause: err });
+      }
+      throw err;
+    }
   }
 }
 
@@ -229,6 +420,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       const opened = openCommand(thisCmd, `${prefix}.create`, defaultSchema);
       const timeoutSeconds = parseTimeoutSeconds(opts.timeout ?? "600");
       const runAsync = Boolean(opts.async);
+      const includeRaw = Boolean(opts.includeRaw);
       const runtime = await buildRuntime(opened.flags);
       const endpoint = endpointOf(runtime.client);
 
@@ -236,18 +428,27 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       const data = parseJsonFlag(opts.data as string | undefined, "--data");
       const flagPayload = spec.create.toPayload(opts);
       const defaults = spec.create.toDefaults?.(opts) ?? {};
-      const merged = mergePayload(defaults, data, flagPayload);
+      const layers = [defaults, data, flagPayload];
+      let merged = mergePayload(...layers);
+      if (spec.create.nestedObjectKeys && spec.create.nestedObjectKeys.length > 0) {
+        merged = mergeNestedObjects(merged, layers, spec.create.nestedObjectKeys);
+      }
       spec.create.validatePayload?.(merged, opts);
       const { payload } = await normalizeMediaPayload(merged, descriptor.mediaFields, { signal: abortSignal() });
       logger.debug("create payload", redactForLog(payload));
 
-      // 2. Journal, then exactly one POST.
-      const submitted = await submitOnce(runtime, descriptor, endpoint, payload, (opts.operationId as string | undefined) ?? null, opened);
+      // 2. Local targets that would fail after the POST are refused before it.
+      preflightLocalTargets(opts, opened);
+
+      // 3. Journal, then exactly one POST.
+      const submitted = await submitCreate(runtime, descriptor, endpoint, payload, (opts.operationId as string | undefined) ?? null);
       const { taskId, raw: createRaw, operationId, warnings } = submitted;
+      const submission: SubmissionInfo = { state: "accepted", operation_id: operationId, task_id: taskId, request_id: submitted.requestId };
 
       if (runAsync) {
-        const savedJson = opts.saveJson ? saveRawJson(opts.saveJson as string, createRaw, { workspace: opened.flags.workspace }) : null;
-        const project = attachToProject(opts, descriptor, taskId, null, null, { operationId, payload }, warnings);
+        const ctx: TaskContext = { descriptor, taskId, task: null, raw: null, submission, includeRaw };
+        const savedJson = saveJsonInContext(opts, opened, createRaw, ctx);
+        const project = attachInContext(opts, opened, descriptor, taskId, null, null, { operationId, payload }, warnings, { ...ctx, savedJson });
         if (opened.schema === "v1") {
           await emitEnvelope(
             okEnvelope(
@@ -257,7 +458,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
                 raw: null,
                 descriptor,
                 includeRaw: false,
-                submission: { state: "accepted", operation_id: operationId, task_id: taskId, request_id: submitted.requestId },
+                submission,
                 savedJson,
                 extra: { task_id: taskId, next: nextCommands(descriptor, taskId), project },
               }),
@@ -281,13 +482,8 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         return;
       }
 
-      // 3. Sync: poll the id we just recorded.
-      await waitAndReport(opened, runtime, descriptor, endpoint, taskId, timeoutSeconds, { ...opts, __payload: payload, __operationId: operationId }, {
-        state: "accepted",
-        operation_id: operationId,
-        task_id: taskId,
-        request_id: submitted.requestId,
-      }, warnings);
+      // 4. Sync: poll the id we just recorded.
+      await waitAndReport(opened, runtime, descriptor, endpoint, taskId, timeoutSeconds, { ...opts, __payload: payload, __operationId: operationId }, submission, warnings);
     });
   cmd.addCommand(createCmd);
 
@@ -297,13 +493,16 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       const opened = openCommand(thisCmd, `${prefix}.get`, defaultSchema);
       const runtime = await buildRuntime(opened.flags);
       const { task, raw } = await endpointOf(runtime.client).retrieveDetailed(taskId, { signal: abortSignal() });
-      const savedJson = opts.saveJson ? saveRawJson(opts.saveJson as string, raw, { workspace: opened.flags.workspace }) : null;
+      const submission: SubmissionInfo = { state: "accepted", operation_id: null };
+      const includeRaw = Boolean(opts.includeRaw);
       const warnings: Warning[] = [];
-      const project = attachToProject(opts, descriptor, taskId, task, raw, {}, warnings);
+      const ctx: TaskContext = { descriptor, taskId, task, raw, submission, includeRaw };
+      const savedJson = saveJsonInContext(opts, opened, raw, ctx);
+      const project = attachInContext(opts, opened, descriptor, taskId, task, raw, {}, warnings, { ...ctx, savedJson });
       if (opened.schema === "v1") {
-        const downloads = await maybeDownloadV1(opened, task, spec.name);
+        const downloads = await maybeDownloadV1(opened, descriptor, task, raw, submission, warnings, { savedJson, includeRaw, project });
         await emitEnvelope(
-          okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw: Boolean(opts.includeRaw), submission: { state: "accepted", operation_id: null }, downloads, savedJson, extra: project ? { project } : {} }), warnings),
+          okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw, submission, downloads, savedJson, extra: project ? { project } : {} }), warnings),
           opened.format,
         );
         return;
@@ -416,7 +615,7 @@ function redactForLog(payload: Record<string, unknown>): Record<string, unknown>
   return out;
 }
 
-interface Submitted {
+export interface Submitted {
   taskId: string;
   raw: unknown;
   requestId: string | null;
@@ -424,18 +623,39 @@ interface Submitted {
   warnings: Warning[];
 }
 
+export interface SubmitContext {
+  /** Names the request in messages, e.g. "make: the text-to-3d preview (geometry) request". */
+  label?: string;
+  /** Extra keys carried in every failure result (e.g. `{ step: 1 }`). */
+  extraResult?: Record<string, unknown>;
+}
+
+/** The credential identity a submission is journaled under: bound to the key digest or the OAuth subject. */
+export function credentialIdentityFor(runtime: Runtime, apiOrigin: string): string {
+  return credentialFingerprint({
+    source: runtime.config.credentialSource,
+    profile: runtime.config.credentialProfile ?? null,
+    origin: apiOrigin,
+    kind: runtime.config.credentialKind,
+    secret: runtime.config.credentialKind === "api_key" ? runtime.config.apiKey : null,
+    subject: runtime.config.credentialSubject ?? null,
+  });
+}
+
 /**
  * Journal → single POST → journal update. Every failure path leaves a record
  * that says what is known; the unknown state is reported as exit 10 with the
- * operation id and never as a suggestion to submit again.
+ * operation id and never as a suggestion to submit again. Shared by the
+ * resource commands and `make`, so there is exactly one submission state
+ * machine.
  */
-async function submitOnce(
+export async function submitCreate(
   runtime: Runtime,
   descriptor: TaskResourceDescriptor,
   endpoint: TaskEndpoint,
   payload: Record<string, unknown>,
   requestedOperationId: string | null,
-  opened: OpenedCommand,
+  ctx: SubmitContext = {},
 ): Promise<Submitted> {
   const root = operationsRoot();
   const operationId = requestedOperationId ?? newOperationId();
@@ -444,14 +664,11 @@ async function submitOnce(
     resource: descriptor.id,
     endpoint: descriptor.legacyEndpoint,
     apiOrigin,
-    credentialFingerprint: credentialFingerprint({
-      source: runtime.config.credentialSource,
-      profile: runtime.config.credentialProfile ?? null,
-      origin: apiOrigin,
-      kind: runtime.config.credentialKind,
-    }),
+    credentialFingerprint: credentialIdentityFor(runtime, apiOrigin),
     payloadFingerprint: payloadFingerprint(payload),
   };
+  const label = ctx.label ?? "the create request";
+  const extra = ctx.extraResult ?? {};
   const warnings: Warning[] = [];
 
   let begin: ReturnType<typeof beginOperation>;
@@ -463,12 +680,12 @@ async function submitOnce(
   }
 
   if (begin.outcome === "existing") {
-    return replayExisting(begin.record, descriptor, operationId);
+    return replayExisting(begin.record, descriptor, operationId, extra);
   }
 
   if (abortSignal().aborted) {
     updateOperation(root, operationId, { state: "not_submitted", error: "interrupted before the request was sent" });
-    throw new CliError({ code: "interrupted", message: "interrupted before the request was sent; nothing was submitted", result: { submission: { state: "not_submitted", operation_id: operationId }, task: null } });
+    throw new CliError({ code: "interrupted", message: "interrupted before the request was sent; nothing was submitted", result: { submission: { state: "not_submitted", operation_id: operationId }, task: null, ...extra } });
   }
 
   let created: { taskId: string; raw: unknown; requestId: string | null };
@@ -495,15 +712,15 @@ async function submitOnce(
     throw new CliError({
       code: interrupted ? "interrupted" : "submission_unknown",
       message: interrupted
-        ? `interrupted while the create request was in flight; the server may or may not have created a task (operation ${operationId})`
-        : `the create request was sent but its outcome is unknown (${err instanceof Error ? err.message : String(err)}); the server may or may not have created a task`,
+        ? `interrupted while ${label} was in flight; the server may or may not have created a task (operation ${operationId})`
+        : `${label} was sent but its outcome is unknown (${err instanceof Error ? err.message : String(err)}); the server may or may not have created a task`,
       httpStatus: err instanceof MeshyApiError && err.status ? err.status : null,
       recovery: {
         action: "reconcile",
         automatic: false,
         command: `meshy ${descriptor.commandPath.join(" ")} list --output-schema v1   # then match operation ${operationId} by time/prompt before creating again`,
       },
-      result: { submission: { state: "unknown", operation_id: operationId, task_id: null }, task: null, downloads: { state: "not_requested", files: [], metadata_path: null } },
+      result: { submission: { state: "unknown", operation_id: operationId, task_id: null }, task: null, downloads: NOT_REQUESTED(), ...extra },
       warnings,
       cause: err,
     });
@@ -512,19 +729,25 @@ async function submitOnce(
   try {
     updateOperation(root, operationId, { state: "accepted", task_id: created.taskId, request_id: created.requestId, http_status: 200 });
   } catch (journalErr) {
-    // The server has the task; the id must survive this failure.
+    // The server has the task; the id must survive this failure — a local write
+    // problem is local_io, never an unknown submission.
     throw new CliError({
       code: "local_io",
       message: `task ${created.taskId} was created but the operation journal could not be updated: ${journalErr instanceof Error ? journalErr.message : String(journalErr)}`,
-      result: { submission: { state: "accepted", operation_id: operationId, task_id: created.taskId }, task: null, task_id: created.taskId, next: nextCommands(descriptor, created.taskId) },
+      result: {
+        submission: { state: "accepted", operation_id: operationId, task_id: created.taskId, request_id: created.requestId },
+        task: null,
+        task_id: created.taskId,
+        next: nextCommands(descriptor, created.taskId),
+        ...extra,
+      },
       cause: journalErr,
     });
   }
-  void opened;
   return { taskId: created.taskId, raw: created.raw, requestId: created.requestId, operationId, warnings };
 }
 
-function replayExisting(record: OperationRecord, descriptor: TaskResourceDescriptor, operationId: string): Submitted {
+function replayExisting(record: OperationRecord, descriptor: TaskResourceDescriptor, operationId: string, extra: Record<string, unknown>): Submitted {
   if (record.state === "accepted" && record.task_id) {
     return {
       taskId: record.task_id,
@@ -539,13 +762,13 @@ function replayExisting(record: OperationRecord, descriptor: TaskResourceDescrip
       code: "submission_unknown",
       message: `operation ${operationId} is recorded as '${record.state}' since ${record.updated_at}; reconcile it before submitting again (nothing was sent now)`,
       recovery: { action: "reconcile", automatic: false, command: `meshy ${descriptor.commandPath.join(" ")} list --output-schema v1` },
-      result: { submission: { state: "unknown", operation_id: operationId, task_id: record.task_id }, task: null },
+      result: { submission: { state: "unknown", operation_id: operationId, task_id: record.task_id }, task: null, ...extra },
     });
   }
   throw new CliError({
     code: "operation_conflict",
     message: `operation ${operationId} was already ${record.state} on ${record.updated_at} (${record.error ?? "no detail"}); use a new --operation-id to submit again`,
-    result: { submission: { state: record.state, operation_id: operationId, task_id: record.task_id }, task: null },
+    result: { submission: { state: record.state, operation_id: operationId, task_id: record.task_id }, task: null, ...extra },
   });
 }
 
@@ -566,19 +789,46 @@ function attachSubmission(err: Error, submission: { state: string; operation_id:
   return err;
 }
 
-async function maybeDownloadV1(opened: OpenedCommand, task: Task, resourceName: string): Promise<DownloadOutcome> {
+/**
+ * v1 `-o`: download a SUCCEEDED task's assets through the legacy layout,
+ * confined to the workspace when one is set. A failure keeps the task in the
+ * result — the assets are still on the server, the task still exists.
+ */
+async function maybeDownloadV1(
+  opened: OpenedCommand,
+  descriptor: TaskResourceDescriptor,
+  task: Task,
+  raw: unknown,
+  submission: SubmissionInfo,
+  warnings: Warning[],
+  ctx: { savedJson?: SavedJson | null; includeRaw?: boolean; project?: ProjectAttachment | null },
+): Promise<DownloadOutcome> {
   const output = opened.flags.output;
-  if (!output) return { state: "not_requested", files: [], metadata_path: null };
+  if (!output) return NOT_REQUESTED();
   if (task.status !== "SUCCEEDED") return { state: "not_ready", files: [], metadata_path: null };
   try {
-    const { savedFiles, metadataPath } = await downloadArtifacts(task, output, resourceName);
-    return { state: "completed", files: savedFiles.map((p) => ({ path: p, status: "written" as const })), metadata_path: metadataPath };
+    const { savedFiles, metadataPath, materialLinks } = await downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspace });
+    if (materialLinks) warnings.push(...materialLinks.warnings);
+    return { state: "completed", files: savedFiles.map((p) => ({ path: p, status: "written" as const })), metadata_path: metadataPath, material_links: materialLinks };
   } catch (err) {
-    throw new CliError({
-      code: "local_io",
+    const failure = new CliError({
+      code: err instanceof CliError ? err.code : "local_io",
       message: `task ${task.id} is SUCCEEDED but downloading its assets failed: ${err instanceof Error ? err.message : String(err)}`,
-      result: { task: toTaskView(task), downloads: { state: "failed", files: [], metadata_path: null } },
+      httpStatus: err instanceof CliError ? err.httpStatus : null,
+      recovery: err instanceof CliError ? err.recovery : null,
+      result: { downloads: { state: "failed", files: [], metadata_path: null } },
+      warnings,
       cause: err,
+    });
+    throw withTaskContext(failure, {
+      descriptor,
+      taskId: task.id,
+      task,
+      raw,
+      submission,
+      includeRaw: ctx.includeRaw,
+      savedJson: ctx.savedJson,
+      extra: ctx.project ? { project: ctx.project } : {},
     });
   }
 }
@@ -591,21 +841,24 @@ async function waitAndReport(
   taskId: string,
   timeoutSeconds: number,
   opts: Record<string, unknown>,
-  submission: { state: string; operation_id: string | null; task_id?: string | null; request_id?: string | null },
+  submission: SubmissionInfo,
   warnings: Warning[],
 ): Promise<void> {
   const started = performance.now();
-  let last: { task: Task; raw: unknown } | null = null;
-  let polls = 0;
-  let poll: Awaited<ReturnType<typeof pollUntilTerminal>>;
+  const includeRaw = Boolean(opts.includeRaw);
+  // A holder (not a bare `let`) so the callback's assignment is visible to the
+  // catch block without TypeScript narrowing it away.
+  const seen: { last: { task: Task; raw: unknown } | null; polls: number } = { last: null, polls: 0 };
+  let poll: PollResult;
   try {
     poll = await pollUntilTerminal(endpoint, taskId, {
       timeoutSeconds,
       intervalMs: runtime.config.pollIntervalMs,
+      requestTimeoutMs: runtime.config.readTimeoutMs,
       signal: abortSignal(),
       onTick: (task, raw) => {
-        last = { task, raw };
-        polls += 1;
+        seen.last = { task, raw };
+        seen.polls += 1;
         if (opened.schema === "v1" && opened.format !== "ndjson") {
           process.stderr.write(`[${descriptor.id}] ${task.status}${typeof task.progress === "number" ? ` ${task.progress}%` : ""}\n`);
         }
@@ -613,31 +866,68 @@ async function waitAndReport(
     });
   } catch (err) {
     if (wasInterrupted() || abortSignal().aborted) {
-      throw interruptedError(descriptor, taskId, last, submission, opts, opened);
+      throw interruptedError(descriptor, taskId, seen.last, submission, opts, opened);
     }
-    throw err;
+    // A polling failure (5xx, network, malformed task) is not "no task": the
+    // id, the submission and the last status seen travel with the error.
+    const elapsed = (performance.now() - started) / 1000;
+    throw withTaskContext(err, {
+      descriptor,
+      taskId,
+      task: seen.last?.task ?? null,
+      raw: seen.last?.raw ?? null,
+      submission,
+      includeRaw,
+      extra: { wait: { timed_out: false, elapsed_seconds: Number(elapsed.toFixed(2)), polls: seen.polls } },
+    });
   }
   const elapsed = (performance.now() - started) / 1000;
   const { task, raw, timedOut, aborted } = poll;
-  const savedJson = opts.saveJson ? saveRawJson(opts.saveJson as string, raw, { workspace: opened.flags.workspace }) : null;
-  const project = attachToProject(opts, descriptor, taskId, task, raw, { operationId: (opts.__operationId as string | undefined) ?? submission.operation_id ?? null, payload: (opts.__payload as Record<string, unknown> | undefined) ?? null }, warnings);
-  const projectExtra = project ? { project } : {};
+  const waitInfo = { timed_out: timedOut, elapsed_seconds: Number(elapsed.toFixed(2)), polls: poll.polls };
 
-  if (aborted) throw interruptedError(descriptor, taskId, { task, raw }, submission, opts, opened, savedJson);
+  if (aborted) throw interruptedError(descriptor, taskId, task ? { task, raw } : seen.last, submission, opts, opened);
+
+  if (task === null) {
+    // The deadline passed before the first response arrived; the task id is all we know — and it is enough.
+    if (opened.schema !== "v1") {
+      emitLegacyTimeoutWithoutTask(taskId, descriptor.id, runtime);
+      return;
+    }
+    throw new CliError({
+      code: "timed_out",
+      message: `task ${taskId} did not answer within ${timeoutSeconds}s (no status was received in time); the server keeps running it`,
+      recovery: { action: "wait", automatic: false, command: nextCommands(descriptor, taskId).wait },
+      result: taskResult({ task: null, raw: null, descriptor, includeRaw, submission, extra: { task_id: taskId, wait: waitInfo, next: nextCommands(descriptor, taskId) } }),
+      warnings,
+    });
+  }
+
+  const ctx: TaskContext = { descriptor, taskId, task, raw, submission, includeRaw, extra: { wait: waitInfo } };
+  const savedJson = saveJsonInContext(opts, opened, raw, ctx);
+  const project = attachInContext(
+    opts,
+    opened,
+    descriptor,
+    taskId,
+    task,
+    raw,
+    { operationId: (opts.__operationId as string | undefined) ?? submission.operation_id ?? null, payload: (opts.__payload as Record<string, unknown> | undefined) ?? null },
+    warnings,
+    { ...ctx, savedJson },
+  );
+  const projectExtra = project ? { project } : {};
 
   if (opened.schema !== "v1") {
     await emitLegacyOutcome(task, timedOut, elapsed, descriptor.id, runtime, { query: false });
     return;
   }
 
-  const includeRaw = Boolean(opts.includeRaw);
-  const waitInfo = { timed_out: timedOut, elapsed_seconds: Number(elapsed.toFixed(2)), polls };
   if (timedOut) {
     throw new CliError({
       code: "timed_out",
       message: `task ${taskId} did not reach a terminal status within ${timeoutSeconds}s (last status: ${task.status}); the server keeps running it`,
       recovery: { action: "wait", automatic: false, command: nextCommands(descriptor, taskId).wait },
-      result: taskResult({ task, raw, descriptor, includeRaw, submission, savedJson, extra: { wait: waitInfo, next: nextCommands(descriptor, taskId), ...projectExtra } }),
+      result: taskResult({ task, raw, descriptor, includeRaw, submission, savedJson, extra: { task_id: taskId, wait: waitInfo, next: nextCommands(descriptor, taskId), ...projectExtra } }),
       warnings,
     });
   }
@@ -645,25 +935,38 @@ async function waitAndReport(
     throw new CliError({
       code: "task_failed",
       message: task.task_error?.message ? `task ${taskId} ${task.status}: ${task.task_error.message}` : `task ${taskId} ended as ${task.status}`,
-      result: taskResult({ task, raw, descriptor, includeRaw, submission, savedJson, extra: { wait: waitInfo, ...projectExtra } }),
+      result: taskResult({ task, raw, descriptor, includeRaw, submission, savedJson, extra: { task_id: taskId, wait: waitInfo, ...projectExtra } }),
       warnings,
     });
   }
-  const downloads = await maybeDownloadV1(opened, task, descriptor.id);
+  const downloads = await maybeDownloadV1(opened, descriptor, task, raw, submission, warnings, { savedJson, includeRaw, project });
   await emitEnvelope(
     okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw, submission, downloads, savedJson, extra: { wait: waitInfo, ...projectExtra } }), warnings),
     opened.format,
   );
 }
 
+/** Legacy shape for a wait that timed out before any status arrived: still the task id, still exit 8. */
+function emitLegacyTimeoutWithoutTask(taskId: string, resourceName: string, runtime: Runtime): void {
+  if (runtime.flags.output) {
+    const report: Parameters<typeof printReport>[0] = { status: "FAIL", taskId, type: resourceName, timedOut: true };
+    const notice = getUpdateNotice();
+    if (notice) report._notice = notice;
+    printReport(report);
+  } else {
+    emit({ resource: resourceName, id: taskId, status: null, timed_out: true }, { format: runtime.flags.format });
+  }
+  process.exitCode = 8;
+}
+
 function interruptedError(
   descriptor: TaskResourceDescriptor,
   taskId: string,
   last: { task: Task; raw: unknown } | null,
-  submission: { state: string; operation_id: string | null; task_id?: string | null },
+  submission: SubmissionInfo,
   opts: Record<string, unknown>,
   opened: OpenedCommand,
-  savedJson: { path: string; bytes: number } | null = null,
+  savedJson: SavedJson | null = null,
 ): CliError {
   let saved = savedJson;
   if (!saved && opts.saveJson && last) {
@@ -694,7 +997,7 @@ async function streamAndReport(
   const includeRaw = Boolean(opts.includeRaw);
   const ndjson = opened.format === "ndjson";
   let sequence = 0;
-  const submission = { state: "accepted", operation_id: null };
+  const submission: SubmissionInfo = { state: "accepted", operation_id: null };
   const warnings: Warning[] = [];
 
   const outcome = await streamTask(endpoint, taskId, {
@@ -719,12 +1022,16 @@ async function streamAndReport(
     },
   });
 
-  const savedJson = opts.saveJson && outcome.raw ? saveRawJson(opts.saveJson as string, outcome.raw, { workspace: opened.flags.workspace }) : null;
-  const project = outcome.task ? attachToProject(opts, descriptor, taskId, outcome.task, outcome.raw, {}, warnings) : null;
   const streamInfo = { events: outcome.events, ended: outcome.reason, elapsed_seconds: Number((outcome.elapsedMs / 1000).toFixed(2)) };
-  const result = taskResult({ task: outcome.task, raw: outcome.raw, descriptor, includeRaw, submission, savedJson, extra: { stream: streamInfo, task_id: taskId, ...(project ? { project } : {}) } });
+  const ctx: TaskContext = { descriptor, taskId, task: outcome.task, raw: outcome.raw, submission, includeRaw, extra: { stream: streamInfo } };
+  const savedJson = opts.saveJson && outcome.raw ? saveJsonInContext(opts, opened, outcome.raw, ctx) : null;
+  const project = outcome.task ? attachInContext(opts, opened, descriptor, taskId, outcome.task, outcome.raw, {}, warnings, { ...ctx, savedJson }) : null;
+  const projectExtra = project ? { project } : {};
 
   let finalError: CliError | null = null;
+  const resultWith = (downloads?: DownloadOutcome): Record<string, unknown> =>
+    taskResult({ task: outcome.task, raw: outcome.raw, descriptor, includeRaw, submission, downloads, savedJson, extra: { stream: streamInfo, task_id: taskId, next: nextCommands(descriptor, taskId), ...projectExtra } });
+  let result = resultWith();
   switch (outcome.reason) {
     case "terminal":
       if (outcome.task && outcome.task.status !== "SUCCEEDED") {
@@ -749,18 +1056,27 @@ async function streamAndReport(
       finalError = new CliError({ code: "interrupted", message: `interrupted while streaming task ${taskId}; the server keeps running it`, recovery: { action: "wait", automatic: false, command: nextCommands(descriptor, taskId).wait }, result, warnings });
       break;
     case "error":
-      finalError = wrapStreamError(outcome.error, result, warnings);
-      break;
     case "protocol":
       finalError = wrapStreamError(outcome.error, result, warnings);
       break;
   }
 
   if (opened.schema !== "v1") {
-    // Legacy has no stream shape to preserve: reuse the terminal summary path.
+    // Legacy has no stream shape to preserve: reuse the terminal summary path (which honours -o itself).
     if (finalError) throw finalError;
     if (outcome.task) await emitLegacyOutcome(outcome.task, false, outcome.elapsedMs / 1000, descriptor.id, runtime, { query: false });
     return;
+  }
+
+  // The terminal outcome includes the requested download whatever the output
+  // format: `-o` means "put the assets on disk", not "only when printing JSON".
+  if (!finalError && outcome.task && outcome.task.status === "SUCCEEDED") {
+    try {
+      const downloads = await maybeDownloadV1(opened, descriptor, outcome.task, outcome.raw, submission, warnings, { savedJson, includeRaw, project });
+      result = resultWith(downloads);
+    } catch (err) {
+      finalError = err instanceof CliError ? err : withTaskContext(err, ctx);
+    }
   }
 
   if (ndjson) {
@@ -768,16 +1084,12 @@ async function streamAndReport(
     const body = finalError ? errorEnvelope(opened.command, finalError).envelope : okEnvelope(opened.command, result, warnings);
     const event: StreamEventEnvelope = { ...body, event: "outcome", sequence };
     await emitStreamEvent(event);
-    if (finalError) {
-      // The outcome line already carries the error; exit with its code without a second envelope.
-      process.exitCode = finalError.exitCode;
-      return;
-    }
+    // The outcome line already carries the error; exit with its code without a second envelope.
+    if (finalError) process.exitCode = finalError.exitCode;
     return;
   }
   if (finalError) throw finalError;
-  const downloads = outcome.task ? await maybeDownloadV1(opened, outcome.task, descriptor.id) : undefined;
-  await emitEnvelope(okEnvelope(opened.command, { ...result, downloads: downloads ?? result["downloads"] }, warnings), opened.format);
+  await emitEnvelope(okEnvelope(opened.command, result, warnings), opened.format);
 }
 
 function wrapStreamError(err: MeshyApiError | CliError | null, result: Record<string, unknown>, warnings: Warning[]): CliError {
@@ -809,7 +1121,7 @@ async function emitLegacyOutcome(
 
   if (output) {
     if (succeeded) {
-      const { savedFiles, metadataPath } = await downloadArtifacts(task, output, resourceName);
+      const { savedFiles, metadataPath } = await downloadArtifacts(task, output, resourceName, { root: runtime.flags.workspace });
       const successReport: Parameters<typeof printReport>[0] = {
         status: "SUCCESS",
         taskId: task.id,
@@ -865,4 +1177,4 @@ export async function emitTerminalOutcome(
 }
 
 export { taskResult as buildTaskResult, nextCommands as taskNextCommands };
-export type { DownloadOutcome, TaskView };
+export type { TaskView };

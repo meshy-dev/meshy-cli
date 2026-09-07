@@ -31,7 +31,7 @@ test("pollUntilTerminal — returns immediately when already SUCCEEDED", async (
     timeoutSeconds: 5,
     intervalMs: 250,
   });
-  assert.equal(task.status, "SUCCEEDED");
+  assert.equal(task?.status, "SUCCEEDED");
   assert.equal(timedOut, false);
 });
 
@@ -43,7 +43,7 @@ test("pollUntilTerminal — iterates through PENDING → IN_PROGRESS → SUCCEED
     intervalMs: 10,
     onTick: (t) => seen.push(t.status),
   });
-  assert.equal(task.status, "SUCCEEDED");
+  assert.equal(task?.status, "SUCCEEDED");
   assert.deepEqual(seen, ["PENDING", "IN_PROGRESS", "SUCCEEDED"]);
 });
 
@@ -52,14 +52,14 @@ test("pollUntilTerminal — treats FAILED and CANCELED as terminal", async () =>
     timeoutSeconds: 5,
     intervalMs: 10,
   });
-  assert.equal(a.task.status, "FAILED");
+  assert.equal(a.task?.status, "FAILED");
   assert.equal(a.timedOut, false);
 
   const b = await pollUntilTerminal(fakeEndpoint(["CANCELED"]), "x", {
     timeoutSeconds: 5,
     intervalMs: 10,
   });
-  assert.equal(b.task.status, "CANCELED");
+  assert.equal(b.task?.status, "CANCELED");
   assert.equal(b.timedOut, false);
 });
 
@@ -72,7 +72,41 @@ test("pollUntilTerminal — times out when a task never terminates", async () =>
   });
   const elapsed = Date.now() - started;
   assert.equal(timedOut, true);
-  assert.equal(task.status, "PENDING");
+  assert.equal(task?.status, "PENDING");
   assert.ok(elapsed >= 200, `elapsed=${elapsed}ms should be at least 200`);
   assert.ok(elapsed < 2000, `elapsed=${elapsed}ms should not blow past the deadline`);
+});
+
+test("pollUntilTerminal — the deadline bounds the sleep: no request is started after it passed", async () => {
+  let calls = 0;
+  const stamps: number[] = [];
+  const started = performance.now();
+  const ep = {
+    async retrieveDetailed(id: string): Promise<{ task: Task; raw: unknown }> {
+      calls += 1;
+      stamps.push(performance.now() - started);
+      const task = { id, status: "IN_PROGRESS", type: "", progress: 0, preceding_tasks: 0, created_at: 0, started_at: 0, finished_at: 0, expires_at: 0 } as unknown as Task;
+      return { task, raw: task };
+    },
+  } as unknown as TaskEndpoint;
+  const res = await pollUntilTerminal(ep, "abc", { timeoutSeconds: 0.25, intervalMs: 300 });
+  assert.equal(res.timedOut, true);
+  assert.equal(res.task?.status, "IN_PROGRESS");
+  assert.equal(calls, 1, `one GET, then the sleep runs out the budget: ${JSON.stringify(stamps)}`);
+  assert.ok(stamps.every((t) => t <= 250 + 20), `no GET after the deadline: ${JSON.stringify(stamps)}`);
+});
+
+test("pollUntilTerminal — --timeout 0 is a single query that is not bounded by the (zero) budget", async () => {
+  const ep = {
+    async retrieveDetailed(id: string, extras?: { timeoutMs?: number }): Promise<{ task: Task; raw: unknown }> {
+      assert.equal(extras?.timeoutMs, 4321, "the transport read timeout applies, not a 0 ms budget");
+      await new Promise((r) => setTimeout(r, 30));
+      const task = { id, status: "IN_PROGRESS", type: "", progress: 0, preceding_tasks: 0, created_at: 0, started_at: 0, finished_at: 0, expires_at: 0 } as unknown as Task;
+      return { task, raw: task };
+    },
+  } as unknown as TaskEndpoint;
+  const res = await pollUntilTerminal(ep, "abc", { timeoutSeconds: 0, intervalMs: 300, requestTimeoutMs: 4321 });
+  assert.equal(res.polls, 1);
+  assert.equal(res.timedOut, true);
+  assert.equal(res.task?.status, "IN_PROGRESS");
 });

@@ -61,11 +61,14 @@ const prepareCommand = new Command("prepare-print")
         outputPath = resolveWithinRoot(defaultOutputPath(resolvedInput.path), workspace, { cwd, label: "output" }).path;
       }
 
+      // The workspace (when given) is the root for the output *and* every
+      // copied material dependency; without one the output directory is.
       const report = await prepareObjForPrint(resolvedInput.path, {
         heightMm: opts.heightMm,
         outputPath,
         inPlace: opts.inPlace,
         geometryOnly: opts.geometryOnly,
+        root: workspace,
       });
       await emitResult(opened, report, report, { warnings: report.warnings });
     },

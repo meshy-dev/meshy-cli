@@ -7,7 +7,9 @@
  *   list          the history.json index reconciled with the folders on disk
  *   rebuild-index regenerate history.json from the folders
  *
- * Every subcommand is local: no API key, no network, no OAuth refresh.
+ * Every subcommand is local: no API key, no network, no OAuth refresh. With
+ * an explicit --workspace, every directory written (the root, the project) must
+ * resolve inside it — checked on real paths before anything is created.
  */
 
 import { Command } from "commander";
@@ -16,6 +18,7 @@ import { join, resolve as resolvePath } from "node:path";
 import { emitResult, openCommand } from "../internal/command-helpers.js";
 import { UsageError } from "../internal/errors.js";
 import { collect } from "../internal/flags.js";
+import { resolveWithinRoot } from "../internal/paths.js";
 import { initProject, listProjects, readProject, rebuildIndex, recordTask } from "../internal/project-store.js";
 import { warning, type Warning } from "../internal/result.js";
 import { buildLocalRuntime } from "../internal/runtime.js";
@@ -24,6 +27,12 @@ const DEFAULT_ROOT = "meshy_output";
 
 function rootFrom(opts: { root?: string }, cwd = process.cwd()): string {
   return resolvePath(cwd, opts.root ?? DEFAULT_ROOT);
+}
+
+/** With --workspace, a directory this command writes must resolve inside it (no symlink leaf, real paths). */
+function confine(path: string, workspace: string | undefined, label: string): string {
+  if (!workspace) return path;
+  return resolveWithinRoot(path, workspace, { label }).path;
 }
 
 const initCommand = new Command("init")
@@ -35,7 +44,8 @@ const initCommand = new Command("init")
   .action(async (opts: { root?: string; name?: string; taskId?: string; taskType?: string }, thisCmd: Command) => {
     const opened = openCommand(thisCmd, "project.init", "v1");
     buildLocalRuntime(opened.flags);
-    const res = initProject(rootFrom(opts), { name: opts.name, taskId: opts.taskId ?? null, taskType: opts.taskType ?? null });
+    const root = confine(rootFrom(opts), opened.flags.workspace, "--root");
+    const res = initProject(root, { name: opts.name, taskId: opts.taskId ?? null, taskType: opts.taskType ?? null });
     const warnings: Warning[] = [];
     if (!res.index.updated) warnings.push(warning("index_dirty", `metadata.json written but history.json was not updated: ${res.index.error}; run \`meshy project rebuild-index --root ${res.root}\``));
     await emitResult(opened, res, { root: res.root, project_dir: res.project_dir, folder: res.folder, metadata: res.metadata, index: res.index }, { warnings });
@@ -61,7 +71,7 @@ const recordCommand = new Command("record")
     ) => {
       const opened = openCommand(thisCmd, "project.record", "v1");
       buildLocalRuntime(opened.flags);
-      const projectDir = resolvePath(opts.project);
+      const projectDir = confine(resolvePath(opts.project), opened.flags.workspace, "--project");
       if (!existsSync(join(projectDir, "metadata.json"))) {
         throw new UsageError(`${projectDir} has no metadata.json; run \`meshy project init\` first`);
       }
@@ -78,7 +88,7 @@ const recordCommand = new Command("record")
           taskJson: opts.taskJson ?? null,
           operationId: opts.operationId ?? null,
         },
-        { root: opts.root ? resolvePath(opts.root) : undefined },
+        { root: opts.root ? confine(resolvePath(opts.root), opened.flags.workspace, "--root") : undefined },
       );
       const warnings: Warning[] = [];
       const missing = (opts.file ?? []).filter((f) => !existsSync(join(projectDir, f)));
@@ -118,7 +128,7 @@ const rebuildCommand = new Command("rebuild-index")
   .action(async (opts: { root?: string }, thisCmd: Command) => {
     const opened = openCommand(thisCmd, "project.rebuild-index", "v1");
     buildLocalRuntime(opened.flags);
-    const res = rebuildIndex(rootFrom(opts));
+    const res = rebuildIndex(confine(rootFrom(opts), opened.flags.workspace, "--root"));
     const warnings: Warning[] = res.skipped.map((s) => warning("project_skipped", `${s.folder}: ${s.reason}`));
     await emitResult(opened, res, res, { warnings });
   });

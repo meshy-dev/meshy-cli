@@ -14,7 +14,10 @@
  *
  * Build options are validated per product with the ranges the API documents
  * so a bad value fails before a billable POST; unknown option keys are passed
- * through (the server is the final validator).
+ * through (the server is the final validator). `options` and `output` are
+ * declared as nested-merge keys, so `--data '{"options":{…}}'`, `--options`
+ * and the typed flags compose field by field (typed flags win) instead of the
+ * later layer deleting the earlier one's settings.
  */
 
 import { Command, Option } from "commander";
@@ -183,6 +186,7 @@ function buildSpec(p: ProductDescriptor): ResourceCommandSpec {
     description: `Creative Lab ${p.label} — build stage: SUCCEEDED prototype → ${p.buildMeaning}`,
     create: {
       description: `Create a ${p.label} build from a prototype task created through this API`,
+      nestedObjectKeys: ["options", "output"],
       configure(cmd) {
         cmd
           .option("--input-task-id <id>", "SUCCEEDED prototype task of the same product created with the same API key (required)")
@@ -245,18 +249,6 @@ function buildSpec(p: ProductDescriptor): ResourceCommandSpec {
       },
     },
   };
-}
-
-/**
- * Deep-merge `--options`/`--data.options` objects: typed values win, unspecified
- * keys survive, explicit false/0 are kept. mergePayload works on top-level
- * keys only, so the nested object is merged here before validation.
- */
-export function mergeOptionObjects(fromData: unknown, fromFlags: unknown): Record<string, unknown> | undefined {
-  const a = fromData && typeof fromData === "object" && !Array.isArray(fromData) ? (fromData as Record<string, unknown>) : undefined;
-  const b = fromFlags && typeof fromFlags === "object" && !Array.isArray(fromFlags) ? (fromFlags as Record<string, unknown>) : undefined;
-  if (!a && !b) return undefined;
-  return { ...(a ?? {}), ...(b ?? {}) };
 }
 
 function productCommand(product: CreativeLabProduct): Command {

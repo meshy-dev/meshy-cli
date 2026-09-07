@@ -25,7 +25,11 @@
  * When the output lands in another directory they are copied alongside it; a
  * missing or escaping dependency is a validation error there unless the caller
  * asked for `geometryOnly`, because a "success" with a silently broken material
- * is worse than a refusal. No env, no credentials, no network.
+ * is worse than a refusal. Every copy target is proven to lie inside the write
+ * root (`root`, i.e. the --workspace, else the output directory) on its *real*
+ * path before any directory is created or byte copied, and again right before
+ * publication — a symlinked `materials/` inside the target cannot redirect a
+ * copy outside. No env, no credentials, no network.
  */
 
 import {
@@ -49,7 +53,7 @@ import { finished } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
 import { copyFilePublished, publishTempFile, tempPathFor } from "./atomic-file.js";
 import { CliError, UsageError, type Warning } from "./errors.js";
-import { isInside, realpathLenient } from "./paths.js";
+import { isInside, realpathLenient, resolveWithinRoot } from "./paths.js";
 import { warning } from "./result.js";
 
 export type Vec3 = [number, number, number];
@@ -117,6 +121,12 @@ export interface PrepareObjOptions {
   geometryOnly?: boolean;
   /** Refuse inputs larger than this many bytes (default 2 GiB). */
   maxBytes?: number;
+  /**
+   * Authorised root for every write (the output and each copied dependency).
+   * Defaults to the output's directory; pass the --workspace to confine writes
+   * to it. Checked on real paths, so symlinked parents cannot escape it.
+   */
+  root?: string;
 }
 
 export function rotateYUpToZUp(v: Vec3): Vec3 {
@@ -445,7 +455,8 @@ export function textureReferencesInMtl(text: string): string[] {
 }
 
 interface MaterialPlan {
-  copies: Array<{ ref: string; source: string; target: string }>;
+  /** `target` is the path as planned (beside the output); `real` is its proven location inside the write root. */
+  copies: Array<{ ref: string; source: string; target: string; real: string }>;
   missing: string[];
   warnings: Warning[];
 }
@@ -479,7 +490,7 @@ function planMaterials(
     const target = join(outputDir, relative(inputReal, real));
     if (targets.has(target)) return;
     targets.add(target);
-    plan.copies.push({ ref, source: real, target });
+    plan.copies.push({ ref, source: real, target, real: target });
   };
 
   for (const written of refs) {
@@ -646,6 +657,15 @@ export async function prepareObjForPrint(inputPath: string, opts: PrepareObjOpti
   const wantCopies = crossDir && !geometryOnly;
   const plan = planMaterials(scan.mtllib, inputDir, outputDir, wantCopies);
   const warnings: Warning[] = [...plan.warnings];
+
+  // Every path written by this run must resolve inside the write root: the
+  // output itself and each dependency copy, checked on real paths before any
+  // directory is created. A `materials/` symlink pointing elsewhere fails here.
+  const writeRoot = realpathLenient(opts.root !== undefined ? resolvePath(opts.root) : outputDir);
+  if (!inPlace) resolveWithinRoot(output, writeRoot, { label: "output" });
+  for (const copy of plan.copies) {
+    copy.real = resolveWithinRoot(copy.target, writeRoot, { label: `material dependency target for '${copy.ref}'` }).path;
+  }
   if (wantCopies && plan.missing.length > 0) {
     throw validation(
       `material dependencies of ${input} cannot be carried to ${outputDir}: ${plan.missing.join(", ")} — the output would reference files that are not there. ` +
@@ -689,7 +709,9 @@ export async function prepareObjForPrint(inputPath: string, opts: PrepareObjOpti
       renameSync(tmp, output);
     } else {
       for (const copy of plan.copies) {
-        if (copyDependency(copy.source, copy.target) === "copied") {
+        // Re-proven at publication time: the tree may have changed since planning.
+        copy.real = resolveWithinRoot(copy.target, writeRoot, { label: `material dependency target for '${copy.ref}'` }).path;
+        if (copyDependency(copy.source, copy.real) === "copied") {
           copied.push(copy.target);
         } else {
           warnings.push(
@@ -697,6 +719,7 @@ export async function prepareObjForPrint(inputPath: string, opts: PrepareObjOpti
           );
         }
       }
+      resolveWithinRoot(output, writeRoot, { label: "output" });
       publishTempFile(tmp, output);
     }
   } catch (err) {

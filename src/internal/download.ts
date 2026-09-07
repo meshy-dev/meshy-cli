@@ -12,9 +12,12 @@
  *
  * Two entry points share the core:
  *   downloadArtifacts — the 0.2.0 `-o` behaviour (all artifacts, role-based
- *                       names, meta.json sidecar); output shape unchanged.
+ *                       names, meta.json sidecar); output shape unchanged. An
+ *                       explicit `root` (the --workspace) confines every path.
  *   downloadAssets    — the selective downloader behind `meshy download` and
  *                       the v1 manifest.
+ * Both relink OBJ → MTL → texture references after the set has landed (see
+ * material-links.ts), so a saved OBJ loads with the files beside it.
  */
 
 import { createHash } from "node:crypto";
@@ -31,6 +34,7 @@ import { logger } from "./logger.js";
 import { isInside, realpathLenient, resolveWithinRoot, safeExtension, safeSegment } from "./paths.js";
 import { USER_AGENT } from "./user-agent.js";
 import type { Asset } from "./artifacts.js";
+import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";
 
 /** Extensions sharp can transcode between. */
 const CONVERTIBLE_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "tiff", "tif", "avif"]);
@@ -301,6 +305,8 @@ export interface DownloadedFile {
   status: "written" | "failed" | "skipped";
   error: string | null;
   publish_method: string | null;
+  /** True when the file's material references were rewritten to the saved names (OBJ/MTL only). */
+  relinked: boolean;
 }
 
 export interface DownloadAssetsOptions extends FetchOptions {
@@ -323,6 +329,8 @@ export interface DownloadAssetsResult {
   /** True when every requested asset was written. */
   complete: boolean;
   warnings: Array<{ code: string; message: string }>;
+  /** OBJ/MTL/texture reference report when the set contained a text OBJ. */
+  materialLinks: MaterialLinkReport | null;
 }
 
 function plannedName(asset: Asset, targetFile: string | undefined): string {
@@ -362,7 +370,7 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
         const target = resolveWithinRoot(planned.endsWith(".json") ? planned : `${planned}.json`, rootReal, { label: "report path" }).path;
         const res = writeJsonFile(target, asset.report, { overwrite: opts.overwrite ?? false });
         const bytes = statSync(target).size;
-        entry = { key: asset.key, path: target, relative_path: rel(rootReal, target), bytes, sha256: createHash("sha256").update(readFileSync(target)).digest("hex"), content_type: "application/json", format: "json", container_format: null, extracted: null, status: "written", error: null, publish_method: res.method };
+        entry = { key: asset.key, path: target, relative_path: rel(rootReal, target), bytes, sha256: createHash("sha256").update(readFileSync(target)).digest("hex"), content_type: "application/json", format: "json", container_format: null, extracted: null, status: "written", error: null, publish_method: res.method, relinked: false };
       } else {
         if (!asset.url) throw new CliError({ code: "validation", message: `asset ${asset.key} has no URL` });
         let url = asset.url;
@@ -385,7 +393,7 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const failed: DownloadedFile = { key: asset.key, path: planned, relative_path: rel(rootReal, planned), bytes: 0, sha256: "", content_type: null, format: asset.format, container_format: asset.containerFormat, extracted: null, status: "failed", error: message, publish_method: null };
+      const failed: DownloadedFile = { key: asset.key, path: planned, relative_path: rel(rootReal, planned), bytes: 0, sha256: "", content_type: null, format: asset.format, container_format: asset.containerFormat, extracted: null, status: "failed", error: message, publish_method: null, relinked: false };
       files.push(failed);
       opts.onFile?.(failed);
       const code = err instanceof CliError ? err.code : "local_io";
@@ -401,7 +409,25 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
     files.push(entry);
     opts.onFile?.(entry);
   }
-  return { files, complete: files.every((f) => f.status === "written"), warnings };
+  const materialLinks = await relinkWritten(files, warnings);
+  return { files, complete: files.every((f) => f.status === "written"), warnings, materialLinks };
+}
+
+/** After the set landed: point OBJ → MTL → textures at the saved names and re-take the digests of rewritten files. */
+async function relinkWritten(files: DownloadedFile[], warnings: Array<{ code: string; message: string }>): Promise<MaterialLinkReport | null> {
+  const written = files.filter((f) => f.status === "written" && f.container_format === null);
+  const links = await relinkMaterials(written.map((f) => ({ key: f.key, path: f.path })));
+  if (!links) return null;
+  for (const path of links.rewritten) {
+    const entry = files.find((f) => f.path === path);
+    if (!entry) continue;
+    const digest = fileDigest(path);
+    entry.bytes = digest.bytes;
+    entry.sha256 = digest.sha256;
+    entry.relinked = true;
+  }
+  warnings.push(...links.warnings);
+  return links;
 }
 
 function rel(root: string, path: string): string | null {
@@ -478,6 +504,7 @@ async function placeFetched(
     status: "written",
     error: null,
     publish_method: res.method,
+    relinked: false,
   };
 }
 
@@ -594,12 +621,20 @@ export function looksLikeFile(path: string): boolean {
 export interface DownloadResult {
   savedFiles: string[];
   metadataPath: string;
+  /** OBJ/MTL/texture reference report when the artifacts contained a text OBJ. */
+  materialLinks: MaterialLinkReport | null;
+}
+
+export interface DownloadArtifactsOptions {
+  /** Authorised root (the --workspace); every directory and file must resolve inside it. Default: the output directory itself. */
+  root?: string;
 }
 
 export async function downloadArtifacts(
   task: Task,
   outputPath: string,
   resource: string,
+  opts: DownloadArtifactsOptions = {},
 ): Promise<DownloadResult> {
   const artifacts = enumerateArtifacts(task);
   if (artifacts.length === 0) {
@@ -649,8 +684,16 @@ export async function downloadArtifacts(
     );
   }
 
+  // An explicit workspace is the root for everything written here — the
+  // directory, every planned file and the sidecar — checked before mkdir.
+  const workspaceReal = opts.root !== undefined ? realpathLenient(resolvePath(opts.root)) : null;
+  if (workspaceReal) {
+    resolveWithinRoot(targetDir, workspaceReal, { label: "output directory" });
+    for (const p of [...plannedArtifactPaths, metadataPath]) resolveWithinRoot(p, workspaceReal, { label: "planned download path" });
+  }
+
   mkdirSync(targetDir, { recursive: true });
-  const root = realpathLenient(targetDir);
+  const root = workspaceReal ?? realpathLenient(targetDir);
   const saved: string[] = [];
   if (singleFileMode) {
     saved.push(await downloadArtifact(artifacts[0]!, outputPath, root));
@@ -660,8 +703,10 @@ export async function downloadArtifacts(
       saved.push(await downloadArtifact(artifact, targetPath, root));
     }
   }
+  const materialLinks = await relinkMaterials(artifacts.map((a, i) => ({ key: a.key, path: resolvePath(saved[i]!) })));
+  for (const w of materialLinks?.warnings ?? []) logger.warn(w.message);
   writeMeta(task, resource, metadataPath, saved);
-  return { savedFiles: saved, metadataPath };
+  return { savedFiles: saved, metadataPath, materialLinks };
 }
 
 function deriveFilename(artifact: Artifact): string {
@@ -752,7 +797,7 @@ function saveReportOnly(task: Task, outputPath: string, resource: string): Downl
       `${JSON.stringify({ resource, task, downloaded_at: new Date().toISOString() }, null, 2)}\n`,
       "utf8",
     );
-    return { savedFiles: [], metadataPath: outputPath };
+    return { savedFiles: [], metadataPath: outputPath, materialLinks: null };
   }
   const metadataPath = join(outputPath, "meta.json");
   if (existsSync(metadataPath)) {
@@ -763,7 +808,7 @@ function saveReportOnly(task: Task, outputPath: string, resource: string): Downl
   }
   mkdirSync(outputPath, { recursive: true });
   writeMeta(task, resource, metadataPath, []);
-  return { savedFiles: [], metadataPath };
+  return { savedFiles: [], metadataPath, materialLinks: null };
 }
 
 function writeMeta(task: Task, resource: string, path: string, savedFiles: string[]): void {

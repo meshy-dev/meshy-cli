@@ -3,4 +3,3 @@
 event: error
 data: {"message":"Synthetic task not found","status_code":404}
 
-
