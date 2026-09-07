@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "in_progress",
+  "status": "review-ready (G1-code); live checks not_run",
   "rules": "Every entry binds a command or test id to the code SHA it ran against. not_run is not passed. Entries are replaced when re-run on a newer HEAD.",
   "environment": {
     "os": "macOS 26.6 (Darwin 25.6.0) arm64",
@@ -8,18 +8,941 @@
     "pnpm": "11.24.0"
   },
   "baseline_runs": [
-    { "command": "pnpm install --frozen-lockfile", "sha": "fd94490916376e691efcea51324ac4326b459e1f", "exit_code": 0, "duration_s": 10, "result": "passed" },
-    { "command": "pnpm typecheck", "sha": "fd94490916376e691efcea51324ac4326b459e1f", "exit_code": 0, "duration_s": 0, "result": "passed" },
-    { "command": "pnpm test", "sha": "fd94490916376e691efcea51324ac4326b459e1f", "exit_code": 0, "duration_s": 41, "result": "passed", "tests": 363, "pass": 363, "fail": 0 },
-    { "command": "pnpm build", "sha": "fd94490916376e691efcea51324ac4326b459e1f", "exit_code": 0, "duration_s": 1, "result": "passed" }
+    {
+      "command": "pnpm install --frozen-lockfile",
+      "sha": "fd94490916376e691efcea51324ac4326b459e1f",
+      "exit_code": 0,
+      "duration_s": 10,
+      "result": "passed"
+    },
+    {
+      "command": "pnpm typecheck",
+      "sha": "fd94490916376e691efcea51324ac4326b459e1f",
+      "exit_code": 0,
+      "duration_s": 0,
+      "result": "passed"
+    },
+    {
+      "command": "pnpm test",
+      "sha": "fd94490916376e691efcea51324ac4326b459e1f",
+      "exit_code": 0,
+      "duration_s": 41,
+      "result": "passed",
+      "tests": 363,
+      "pass": 363,
+      "fail": 0
+    },
+    {
+      "command": "pnpm build",
+      "sha": "fd94490916376e691efcea51324ac4326b459e1f",
+      "exit_code": 0,
+      "duration_s": 1,
+      "result": "passed"
+    }
   ],
-  "final_runs": [],
-  "behavior_tests": {},
+  "final_runs": [
+    {
+      "command": "node --version",
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+      "exit_code": 0,
+      "duration_s": 0,
+      "result": "passed"
+    },
+    {
+      "command": "pnpm --version",
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+      "exit_code": 0,
+      "duration_s": 1,
+      "result": "passed"
+    },
+    {
+      "command": "pnpm install --frozen-lockfile",
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+      "exit_code": 0,
+      "duration_s": 0,
+      "result": "passed"
+    },
+    {
+      "command": "pnpm typecheck",
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+      "exit_code": 0,
+      "duration_s": 1,
+      "result": "passed"
+    },
+    {
+      "command": "pnpm test",
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+      "exit_code": 0,
+      "duration_s": 41,
+      "result": "passed",
+      "tests": 502,
+      "pass": 502,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "command": "pnpm build",
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+      "exit_code": 0,
+      "duration_s": 0,
+      "result": "passed"
+    },
+    {
+      "command": "bash -c test \"$(node dist/index.js --version)\" = \"$(node -p \"require(\\\"./package.json\\\").version\")\"",
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+      "exit_code": 0,
+      "duration_s": 1,
+      "result": "passed"
+    },
+    {
+      "command": "npm pack --json --pack-destination /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify",
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+      "exit_code": 0,
+      "duration_s": 0,
+      "result": "passed"
+    },
+    {
+      "command": "npm install -g --prefix /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/meshy-cli-0.3.0.tgz",
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+      "exit_code": 0,
+      "duration_s": 2,
+      "result": "passed"
+    }
+  ],
+  "behavior_tests": {
+    "T-001": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-002": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts",
+        "tests/result.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-003": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-004": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-005": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-006": {
+      "result": "passed",
+      "files": [
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-007": {
+      "result": "passed",
+      "files": [
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-008": {
+      "result": "passed",
+      "files": [
+        "tests/task-view.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-009": {
+      "result": "passed",
+      "files": [
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-010": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-011": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts",
+        "tests/result.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-012": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-020": {
+      "result": "passed",
+      "files": [
+        "tests/resource-registry.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-021": {
+      "result": "passed",
+      "files": [
+        "tests/uv-creative-lab.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-022": {
+      "result": "passed",
+      "files": [
+        "tests/resource-registry.test.ts",
+        "tests/uv-creative-lab.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-023": {
+      "result": "passed",
+      "files": [
+        "tests/resource-registry.test.ts",
+        "tests/uv-creative-lab.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-024": {
+      "result": "passed",
+      "files": [
+        "tests/uv-creative-lab.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-025": {
+      "result": "passed",
+      "files": [
+        "tests/uv-creative-lab.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-026": {
+      "result": "passed",
+      "files": [
+        "tests/catalog-showcases.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-027": {
+      "result": "passed",
+      "files": [
+        "tests/catalog-showcases.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-028": {
+      "result": "passed",
+      "files": [
+        "tests/uv-creative-lab.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-029": {
+      "result": "passed",
+      "files": [
+        "tests/file-input.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-030": {
+      "result": "passed",
+      "files": [
+        "tests/file-input.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-031": {
+      "result": "passed",
+      "files": [
+        "tests/transport.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-032": {
+      "result": "passed",
+      "files": [
+        "tests/transport.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-040": {
+      "result": "passed",
+      "files": [
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-041": {
+      "result": "passed",
+      "files": [
+        "tests/uv-creative-lab.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-042": {
+      "result": "passed",
+      "files": [
+        "tests/uv-creative-lab.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-043": {
+      "result": "passed",
+      "files": [
+        "tests/operation-store.test.ts",
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-044": {
+      "result": "passed",
+      "files": [
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-045": {
+      "result": "passed",
+      "files": [
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-046": {
+      "result": "passed",
+      "files": [
+        "tests/operation-store.test.ts",
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-047": {
+      "result": "passed",
+      "files": [
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-048": {
+      "result": "passed",
+      "files": [
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-049": {
+      "result": "passed",
+      "files": [
+        "tests/sse.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-050": {
+      "result": "passed",
+      "files": [
+        "tests/sse.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-051": {
+      "result": "passed",
+      "files": [
+        "tests/sse.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-052": {
+      "result": "passed",
+      "files": [
+        "tests/sse.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-053": {
+      "result": "passed",
+      "files": [
+        "tests/sse.test.ts",
+        "tests/task-lifecycle.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-060": {
+      "result": "passed",
+      "files": [
+        "tests/artifacts.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-061": {
+      "result": "passed",
+      "files": [
+        "tests/artifacts.test.ts",
+        "tests/download-command.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-062": {
+      "result": "passed",
+      "files": [
+        "tests/artifacts.test.ts",
+        "tests/download-command.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-063": {
+      "result": "passed",
+      "files": [
+        "tests/artifacts.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-064": {
+      "result": "passed",
+      "files": [
+        "tests/download-command.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-066": {
+      "result": "passed",
+      "files": [
+        "tests/download-command.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-067": {
+      "result": "passed",
+      "files": [
+        "tests/download-command.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-068": {
+      "result": "passed",
+      "files": [
+        "tests/download-command.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-069": {
+      "result": "passed",
+      "files": [
+        "tests/download-command.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-070": {
+      "result": "passed",
+      "files": [
+        "tests/download-command.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-071": {
+      "result": "passed",
+      "files": [
+        "tests/artifacts.test.ts",
+        "tests/download-command.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-072": {
+      "result": "passed",
+      "files": [
+        "tests/project-store.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-073": {
+      "result": "passed",
+      "files": [
+        "tests/project-store.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-074": {
+      "result": "passed",
+      "files": [
+        "tests/project-store.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-075": {
+      "result": "passed",
+      "files": [
+        "tests/project-store.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-076": {
+      "result": "passed",
+      "files": [
+        "tests/project-store.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-077": {
+      "result": "passed",
+      "files": [
+        "tests/project-store.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-080": {
+      "result": "passed",
+      "files": [
+        "tests/inspect.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-081": {
+      "result": "passed",
+      "files": [
+        "tests/inspect.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-082": {
+      "result": "passed",
+      "files": [
+        "tests/inspect.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-083": {
+      "result": "passed",
+      "files": [
+        "tests/obj-transform.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-084": {
+      "result": "passed",
+      "files": [
+        "tests/obj-transform.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-085": {
+      "result": "passed",
+      "files": [
+        "tests/obj-transform.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-086": {
+      "result": "passed",
+      "files": [
+        "tests/obj-transform.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-087": {
+      "result": "passed",
+      "files": [
+        "tests/obj-transform.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-088": {
+      "result": "passed",
+      "files": [
+        "tests/slicers.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-089": {
+      "result": "passed",
+      "files": [
+        "tests/slicers.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-090": {
+      "result": "passed",
+      "files": [
+        "tests/slicers.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-091": {
+      "result": "passed",
+      "files": [
+        "tests/slicers.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-100": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts",
+        "tests/env-file.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-101": {
+      "result": "passed",
+      "files": [
+        "tests/env-file.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-102": {
+      "result": "passed",
+      "files": [
+        "tests/cli-contract.test.ts",
+        "tests/doctor.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-103": {
+      "result": "passed",
+      "files": [
+        "tests/doctor.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    },
+    "T-105": {
+      "result": "passed",
+      "files": [
+        "tests/uv-creative-lab.test.ts"
+      ],
+      "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
+    }
+  },
   "live_verification": [
-    { "id": "T-104", "scope": "API Key and OAuth profile regression against a real account", "result": "not_run", "reason": "no credential configured in this session" },
-    { "id": "T-109", "scope": "macOS arm64 / Windows x64 / Linux x64 install and local commands", "result": "not_run", "reason": "only macOS arm64 available; recorded per OS when run" },
-    { "id": "T-110", "scope": "real free queries, existing task get, asset download", "result": "not_run", "reason": "no credential configured" },
-    { "id": "T-111", "scope": "UV Unwrap / Creative Lab / showcases smoke", "result": "not_run", "reason": "billable or account-gated; no budget authorised" },
-    { "id": "T-112", "scope": "real slicer open", "result": "not_run", "reason": "no slicer installed on this host" }
-  ]
+    {
+      "id": "T-104",
+      "scope": "API Key and OAuth profile regression against a real account",
+      "result": "not_run",
+      "reason": "no credential configured in this session; offline regression suites (auth-headless, oauth, device, credentials, runtime) pass"
+    },
+    {
+      "id": "T-109",
+      "scope": "macOS arm64 / Windows x64 / Linux x64 install and local commands",
+      "result": "partial",
+      "detail": "macOS 26.6 arm64, Node 24.20.0: tarball install + 31 smoke checks passed (see package_smoke). Windows x64 and Linux x64: not_run (no host); slicer detection rules for win32/linux are covered by platform fixtures only"
+    },
+    {
+      "id": "T-110",
+      "scope": "real free queries, existing task get, asset download",
+      "result": "partial",
+      "detail": "one real unauthenticated GET of the public animation catalog (api.meshy.ai/web/public/animations/resources?category=DailyActions) returned 157 entries, 8 matched \"wave\". Authenticated get/download: not_run (no credential)"
+    },
+    {
+      "id": "T-111",
+      "scope": "UV Unwrap / Creative Lab / showcases smoke",
+      "result": "not_run",
+      "reason": "billable or account-gated; no budget or account authorised"
+    },
+    {
+      "id": "T-112",
+      "scope": "real slicer open",
+      "result": "not_run",
+      "reason": "no slicer application installed on this host (slicer detect returned an empty list)"
+    }
+  ],
+  "code_head": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+  "recorded_at": "2026-09-07T08:30:28.989Z",
+  "behavior_test_note": "Every T-id below is asserted by node:test files that run offline (loopback HTTP mocks, temp dirs). covered_offline_only marks ids whose live/OS/GUI part remains not_run.",
+  "package_smoke": {
+    "tarball": "meshy-cli-0.3.0.tgz",
+    "sha256": "8e4e4d86faf18d5b5539264fdac5377059d033e07e4defc902e872f470e66367",
+    "file_count": 394,
+    "required_present": true,
+    "forbidden_absent": true,
+    "install_prefix": "temporary npm prefix (npm install -g --prefix <tmp> <tarball>)",
+    "bins": [
+      "meshy",
+      "meshy-cli"
+    ],
+    "python_required": false,
+    "checks": [
+      {
+        "id": "version",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy --version",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "version_cli",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy-cli --version",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "help",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy --help",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "help_cli",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy-cli --help",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "balance_help",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy balance --help",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "balance_nokey_json",
+        "command": "env MESHY_API_KEY= /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy balance",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 3,
+        "expected_exit": 3,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "balance_nokey_v1",
+        "command": "env MESHY_API_KEY= /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy balance --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 3,
+        "expected_exit": 3,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "resources_v1",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy resources --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "doctor",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy doctor --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "doctor_check_slicers",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy doctor --check-slicers --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "doctor_check_api_nokey",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy doctor --check-api --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 3,
+        "expected_exit": 3,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "slicer_detect",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy slicer detect --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "inspect_pass",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy inspect faces --task-json task-rigging.synthetic.json --max-faces 300000 --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "inspect_fail",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy inspect faces --task-json task-rigging.synthetic.json --max-faces 249999 --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 12,
+        "expected_exit": 12,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "inspect_unknown",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy inspect faces --task-json /dev/stdin --max-faces 300000 --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 13,
+        "expected_exit": 13,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "mesh_prepare",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy mesh prepare-print box-y-up.obj --height-mm 80 --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "mesh_refuse_overwrite",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy mesh prepare-print box-y-up.obj --height-mm 80 --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 11,
+        "expected_exit": 11,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "project_init",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy project init --root ./meshy_output --name smoke demo --task-id fixture-rig-1 --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "project_record",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy project record --project /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/work/meshy_output/20260907_162908_smoke-demo_fixture- --task-id fixture-rig-1 --resource rigging --stage rigged --file rigged.glb --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "project_show",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy project show --project /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/work/meshy_output/20260907_162908_smoke-demo_fixture- --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "project_list",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy project list --root ./meshy_output --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "download_list",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy download --task-json task-rigging.synthetic.json --list --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "download_no_selector",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy download --task-json task-rigging.synthetic.json --output-dir ./dl --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 2,
+        "expected_exit": 2,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "make_dry_run",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy make a red sports car --dry-run --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "usage_unknown_flag",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy balance --bogus --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 2,
+        "expected_exit": 2,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "uv_help",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy uv-unwrap create --help",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "creative_lab_help",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy creative-lab lamp build create --help",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "stream_help",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy text-to-3d stream --help",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      },
+      {
+        "id": "catalog_live",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify/prefix/bin/meshy animation-catalog list --category DailyActions --search wave --output-schema v1",
+        "sha": "e7c26fc053cea4e1bf7dee08953e25a3ec858137",
+        "exit_code": 0,
+        "expected_exit": 0,
+        "result": "passed",
+        "environment": "tarball installed into a temporary npm prefix; isolated MESHY_CONFIG_DIR; no credential"
+      }
+    ]
+  }
 }

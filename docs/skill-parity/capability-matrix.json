@@ -2,7 +2,7 @@
   "schema_version": 1,
   "title": "Meshy CLI S1 capability matrix — implementation tracking",
   "date": "2026-09-07",
-  "status": "in_progress",
+  "status": "review-ready (G1-code); G1-release not_run",
   "baseline": {
     "cli_sha": "fd94490916376e691efcea51324ac4326b459e1f",
     "skills_sha": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610"
@@ -819,14 +819,16 @@
       "source_hint": "CLI package.json/bin and Skill install metadata",
       "target": "candidate tarball; both bins; Node24; no Python",
       "baseline_status": "existing_needs_regression",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-107",
         "T-108",
         "T-109"
       ],
-      "evidence": [],
+      "evidence": [
+        "npm pack → meshy-cli-0.3.0.tgz sha256 8e4e4d86faf18d5b5539264fdac5377059d033e07e4defc902e872f470e66367; installed into a temp prefix; both bins run; no Python; see verification.json package_smoke"
+      ],
       "intentional_differences": [],
       "external_verification": "required_when_applicable_not_run"
     },
@@ -840,13 +842,15 @@
       "source_hint": "CLI root/resources; CLI bundled skill",
       "target": "registry-driven help and capability/version metadata",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-020",
         "T-108"
       ],
-      "evidence": [],
+      "evidence": [
+        "resources index generated from resource-registry.ts (kind task|query|local, verbs, endpoints); root/verb help updated; skills/meshy-cli/SKILL.md rewritten; tests/resource-registry.test.ts, smoke resources_v1"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     }
@@ -870,6 +874,7 @@
     "branch": "feat/skill-parity-s1",
     "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
     "package_version_at_start": "0.2.0",
-    "updated_at": "2026-09-07T08:21:03.006Z"
+    "updated_at": "2026-09-07T08:30:28.993Z",
+    "code_head": "e7c26fc053cea4e1bf7dee08953e25a3ec858137"
   }
 }
