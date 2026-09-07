@@ -178,17 +178,23 @@ test("pollUntilTerminal — deterministic: a timer that wakes late never polls a
 
 test("pollUntilTerminal — real timers (smoke): no GET starts after the deadline, whatever the timer jitter", async () => {
   // Real setTimeout may wake a fraction early or late; the only invariant a
-  // real clock can prove is that no request *starts* past the deadline.
+  // real clock can prove is that no request *starts* past the deadline. The
+  // decision is judged with the very clock reading the loop used (the last
+  // value the injected `now` returned before the GET), not with a fresh
+  // performance.now() taken microseconds later inside the endpoint — that
+  // would turn call overhead into a false failure.
   let origin: number | null = null;
+  let lastNow = 0;
   const now = () => {
     const t = performance.now();
     if (origin === null) origin = t;
+    lastNow = t;
     return t;
   };
   const starts: number[] = [];
   const ep = {
     async retrieveDetailed(id: string): Promise<{ task: Task; raw: unknown }> {
-      starts.push(performance.now());
+      starts.push(lastNow);
       const task = inProgress(id);
       return { task, raw: task };
     },
@@ -197,7 +203,7 @@ test("pollUntilTerminal — real timers (smoke): no GET starts after the deadlin
   assert.equal(res.timedOut, true);
   assert.ok(starts.length >= 1);
   const deadline = (origin ?? 0) + 120;
-  assert.ok(starts.every((t) => t <= deadline), `GET start times relative to the deadline: ${JSON.stringify(starts.map((t) => Number((t - deadline).toFixed(3))))}`);
+  assert.ok(starts.every((t) => t < deadline), `GET decisions relative to the deadline: ${JSON.stringify(starts.map((t) => Number((t - deadline).toFixed(3))))}`);
 });
 
 test("pollUntilTerminal — --timeout 0 is a single query that is not bounded by the (zero) budget", async () => {
