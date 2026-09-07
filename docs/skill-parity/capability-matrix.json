@@ -365,14 +365,16 @@
       "source_hint": "pipelines.md:rig/basic_animations/thumbnail",
       "target": "download asset registry with role and dependencies",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-060",
         "T-062",
         "T-071"
       ],
-      "evidence": [],
+      "evidence": [
+        "src/internal/artifacts.ts enumerateAssets: model formats (lamp parts STL/ZIP, keychain/fridge OBJ as ZIP bundle), images, textures, primary/multi-view/alpha thumbnails, rig + basic_animations, motion, report; unknown URLs listed; tests/artifacts.test.ts T-060/T-062/T-071"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -386,14 +388,18 @@
       "source_hint": "meshy_task.py:_cmd_download/_cmd_thumbnail",
       "target": "meshy download --asset/--kind/--model-format",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-061",
         "T-063"
       ],
-      "evidence": [],
-      "intentional_differences": [],
+      "evidence": [
+        "src/cmd/download.ts selectors --asset/--model-format/--kind/--all/--list; tests/download-command.test.ts T-061, tests/artifacts.test.ts T-063"
+      ],
+      "intentional_differences": [
+        "download requires an explicit selector when a task exposes several assets (legacy defaulted to glb); legacy -o keeps downloading everything"
+      ],
       "external_verification": "offline_primary"
     },
     {
@@ -406,7 +412,7 @@
       "source_hint": "meshy_task.py:download; CLI existing download.ts",
       "target": "safe download with actual final-path manifest",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-064",
@@ -417,7 +423,9 @@
         "T-069",
         "T-070"
       ],
-      "evidence": [],
+      "evidence": [
+        "src/internal/download.ts fetchToTemp (no credential, redirect re-validation, private-network refusal, size cap, sha256), exclusive publish + realpath containment, partial manifests; tests T-064..T-070"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -431,13 +439,15 @@
       "source_hint": "meshy_task.py:_cmd_get/_cmd_poll",
       "target": "--save-json and project task snapshots",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-010",
         "T-063"
       ],
-      "evidence": [],
+      "evidence": [
+        "--save-json on task verbs/list/balance/api/catalog/showcases (raw JSON, never the envelope); project task_<id>.json snapshots; tests T-010, T-063, project-store tests"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -451,13 +461,15 @@
       "source_hint": "meshy_task.py:get_project_dir",
       "target": "meshy project init",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-072",
         "T-077"
       ],
-      "evidence": [],
+      "evidence": [
+        "src/internal/project-store.ts initProject + src/cmd/project.ts init; tests/project-store.test.ts T-072/T-077"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -471,14 +483,16 @@
       "source_hint": "meshy_task.py:record_task",
       "target": "meshy project record/show",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-073",
         "T-074",
         "T-075"
       ],
-      "evidence": [],
+      "evidence": [
+        "project-store recordTask (task_id+stage merge, legacy v1 migration with backup, unknown fields kept) + project record/show; tests T-073/T-074/T-075"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -492,7 +506,7 @@
       "source_hint": "meshy_task.py:record_task history.json",
       "target": "meshy project list/rebuild-index",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-073",
@@ -500,7 +514,9 @@
         "T-076",
         "T-077"
       ],
-      "evidence": [],
+      "evidence": [
+        "project list (index vs folders, index_dirty) and rebuild-index (backup, symlink/escape skipped); tests T-073/T-075/T-076/T-077"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -514,7 +530,7 @@
       "source_hint": "meshy_task.py:_cmd_check_faces",
       "target": "meshy inspect faces",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-080",
@@ -522,9 +538,12 @@
         "T-082"
       ],
       "evidence": [
-        "meshyd httpapi/dto.go: public task DTO has no face_count → unknown semantics required"
+        "meshyd httpapi/dto.go: public task DTO has no face_count → unknown semantics required",
+        "src/internal/inspect.ts judgeFaceCount/judgeTask + src/cmd/inspect.ts (--max-faces required; unknown exit 13; fail exit 12; remesh only described); tests/inspect.test.ts T-080..T-082"
       ],
-      "intentional_differences": [],
+      "intentional_differences": [
+        "missing face_count is unknown (exit 13), never 0 (legacy check-faces passed unmeasured models); --max-faces has no default"
+      ],
       "external_verification": "offline_primary"
     },
     {
@@ -537,7 +556,7 @@
       "source_hint": "fix_obj.py:fix_obj_for_printing",
       "target": "meshy mesh prepare-print",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-083",
@@ -546,8 +565,12 @@
         "T-086",
         "T-087"
       ],
-      "evidence": [],
-      "intentional_differences": [],
+      "evidence": [
+        "src/internal/obj-transform.ts two-pass streaming transform + src/cmd/mesh.ts prepare-print; fixture oracle box-height-80.expected.json; tests/obj-transform.test.ts T-083..T-087"
+      ],
+      "intentional_differences": [
+        "default output is <stem>.print.obj, in-place only with --in-place; NaN/Infinity/degenerate input is a validation error instead of silent scale 1.0 output"
+      ],
       "external_verification": "offline_primary"
     },
     {
@@ -560,13 +583,15 @@
       "source_hint": "slicers.py:detect_slicers/SLICER_MAP",
       "target": "meshy slicer detect",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-088",
         "T-091"
       ],
-      "evidence": [],
+      "evidence": [
+        "src/internal/slicers.ts detectSlicers (darwin/win32/linux rules, seven registered, multicolor flag) + src/cmd/slicer.ts detect; tests/slicers.test.ts T-088"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -580,7 +605,7 @@
       "source_hint": "slicers.py:open_in_slicer",
       "target": "meshy slicer open",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-089",
@@ -588,8 +613,12 @@
         "T-091",
         "T-112"
       ],
-      "evidence": [],
-      "intentional_differences": [],
+      "evidence": [
+        "src/internal/slicers.ts openInSlicer (detected path only, shell:false, single argv, no default-app fallback) + slicer open; tests T-089..T-091"
+      ],
+      "intentional_differences": [
+        "no default-application fallback (legacy used os.startfile / xdg-open); Windows launches the detected absolute exe, not a PATH lookup"
+      ],
       "external_verification": "required_when_applicable_not_run"
     },
     {
@@ -602,13 +631,15 @@
       "source_hint": "meshy_task.py:_cmd_check_env",
       "target": "meshy doctor",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-102",
         "T-103"
       ],
-      "evidence": [],
+      "evidence": [
+        "src/internal/doctor.ts runDoctorDetailed + src/cmd/doctor.ts (local default; --check-api one GET /balance; --check-slicers); tests/doctor.test.ts T-102/T-103"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -646,13 +677,15 @@
       "source_hint": "CLI auth/config/credentials/runtime",
       "target": "preserve existing auth commands and token protocol",
       "baseline_status": "existing_needs_regression",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-104",
         "T-105"
       ],
-      "evidence": [],
+      "evidence": [
+        "auth commands untouched; runtime refresh path unchanged; tests/auth-headless.test.ts, oauth.test.ts, device*.test.ts, credentials.test.ts, runtime.test.ts still pass (regression)"
+      ],
       "intentional_differences": [],
       "external_verification": "required_when_applicable_not_run"
     },
@@ -837,6 +870,6 @@
     "branch": "feat/skill-parity-s1",
     "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
     "package_version_at_start": "0.2.0",
-    "updated_at": "2026-09-07T07:11:01.359Z"
+    "updated_at": "2026-09-07T08:21:03.006Z"
   }
 }

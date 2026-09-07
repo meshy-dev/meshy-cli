@@ -25,7 +25,7 @@ explicitly in its examples.
 | `meshy_task.py check-faces --endpoint E --task-id ID --max-faces N` | `meshy inspect faces --resource R --task-id ID --max-faces N` | `--max-faces` is required; missing face count = `unknown` (exit 13), never 0 |
 | `fix_obj.py model.obj --height-mm 75` | `meshy mesh prepare-print model.obj --height-mm 75 [--output F | --in-place]` | default writes `model.print.obj`, no in-place overwrite unless asked |
 | `slicers.py detect` | `meshy slicer detect --output-schema v1` | same seven slicers + `multicolor` |
-| `slicers.py open --file F --slicer S` | `meshy slicer open --slicer S --file F --output-schema v1` | no default-app fallback; detected path only |
+| `slicers.py open --file F --slicer S` | `meshy slicer open --slicer S --file F --output-schema v1` | no default-app fallback; detected path only; `launch_requested` is not proof of import |
 | curl `/web/public/animations/resources?category=C` + python filter | `meshy animation-catalog list --category C --search wave` | no key, no Authorization; search is local |
 | curl `/openapi/v1/showcases?...` | `meshy showcases list --search car --page-size 3 --model-format glb` | billable GET, single request, no retry |
 | curl `/openapi/v1/uv-unwrap` | `meshy uv-unwrap create --input-task-id ID` or `--model-url m.glb` | exactly one source |
@@ -117,5 +117,6 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 
 New global flags: `--output-schema`, `--api-key-file`, `--workspace`, `--no-update-check`,
 `--base-url-creative-lab`. New per-command flags on task verbs: `--save-json`,
-`--include-raw`, `--project`, `--operation-id`, `--stop-after-first` (make),
-`--idle-timeout` (stream).
+`--include-raw`, `--project`, `--stage`, `--operation-id`, `--stop-after-first` (make),
+`--idle-timeout` (stream). New commands: `uv-unwrap`, `creative-lab`, `animation-catalog`,
+`showcases`, `download`, `project`, `inspect`, `mesh`, `slicer`, `doctor`.

@@ -26,10 +26,13 @@ import { balanceCommand } from "./cmd/balance.js";
 import { convertCommand } from "./cmd/convert.js";
 import { creativeLabCommand } from "./cmd/creative-lab.js";
 import { deleteCommand } from "./cmd/delete.js";
+import { doctorCommand } from "./cmd/doctor.js";
 import { downloadCommand } from "./cmd/download.js";
 import { imageTo3dCommand } from "./cmd/image-to-3d.js";
 import { imageToImageCommand } from "./cmd/image-to-image.js";
+import { inspectCommand } from "./cmd/inspect.js";
 import { makeCommand } from "./cmd/make.js";
+import { meshCommand } from "./cmd/mesh.js";
 import { multiColorPrintCommand } from "./cmd/multi-color-print.js";
 import { multiImageTo3dCommand } from "./cmd/multi-image-to-3d.js";
 import { projectCommand } from "./cmd/project.js";
@@ -40,6 +43,7 @@ import { resourcesCommand } from "./cmd/resources.js";
 import { retextureCommand } from "./cmd/retexture.js";
 import { riggingCommand } from "./cmd/rigging.js";
 import { showcasesCommand } from "./cmd/showcases.js";
+import { slicerCommand } from "./cmd/slicer.js";
 import { textTo3dCommand } from "./cmd/text-to-3d.js";
 import { textToImageCommand } from "./cmd/text-to-image.js";
 import { textToMotionCommand } from "./cmd/text-to-motion.js";
@@ -198,6 +202,10 @@ export function buildRootCommand(): Command {
     showcasesCommand,
     downloadCommand,
     projectCommand,
+    inspectCommand,
+    meshCommand,
+    slicerCommand,
+    doctorCommand,
   ]) {
     program.addCommand(cmd, { hidden: true });
   }

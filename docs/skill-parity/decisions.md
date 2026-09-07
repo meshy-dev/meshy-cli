@@ -230,3 +230,34 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Empty or placeholder `--api-key` / `MESHY_API_KEY` values keep meaning "unset"
   (0.2.0 behaviour that CI and the runtime tests depend on); only the explicit key
   file is strict.
+
+## D-026 Asset URL policy
+
+- Asset downloads (`meshy download`, legacy `-o`) accept `https:` to any host and
+  `http:` only to loopback hosts (127.0.0.0/8, `localhost`, `::1`) so local test
+  servers work without a global `--insecure`. Private-network literals (10/8,
+  172.16/12, 192.168/16, 169.254/16, fc00::/7, fe80::/10) are refused, also as
+  redirect targets; an https → http downgrade redirect is refused. Host names are
+  not resolved before the request, so a DNS name pointing at a private address is
+  not detected — documented limitation, not a claim.
+- No Authorization or Cookie header is ever sent to an asset host; the API
+  credential belongs to the API origins only.
+
+## D-027 `--project` bookkeeping on task verbs and download
+
+- `create/get/wait/stream --project <dir>` record the task in `metadata.json`
+  (stage from `--stage`, else the payload `mode`, else the Creative Lab stage, else
+  the task type suffix preview/refine/prototype/build, else the resource id) and
+  save `task_<id>.json` whenever a full task is known. Async create records the
+  id immediately without a snapshot. `download --project <dir>` defaults the
+  output directory to the project and records the written files.
+- A bookkeeping failure is `local_io` (exit 11) with the task id kept in
+  `result` — it never reads as "no task was created".
+
+## D-028 Tests that drive commands in-process
+
+- The node test runner reports to its parent over the same stdout the CLI writes
+  to, so in-process command tests forward non-string chunks (the runner's binary
+  frames) to the real stdout and capture only the CLI's string writes. Black-box
+  behaviour is still asserted through `dist/index.js` subprocesses wherever exit
+  codes or stderr matter.

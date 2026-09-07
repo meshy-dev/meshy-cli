@@ -48,6 +48,10 @@ export const RESOURCES: ResourceEntry[] = [
   { name: "showcases", summary: "Enterprise community showcases (every request is billed)" },
   { name: "download", summary: "download selected assets of a task (saved task JSON, URL, or API)" },
   { name: "project", summary: "meshy_output project folders: init | record | show | list | rebuild-index" },
+  { name: "inspect", summary: "local checks: faces (face-count gate pass | fail | unknown)" },
+  { name: "mesh", summary: "prepare-print: OBJ Y-up → Z-up, scale to height, centre, ground at Z=0" },
+  { name: "slicer", summary: "detect installed slicers | open a model in one" },
+  { name: "doctor", summary: "local environment diagnosis (no network by default)" },
 ];
 
 const VERBS = `Every task resource carries the same verbs:
