@@ -15,9 +15,9 @@
  */
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
+import { configDir } from "./credentials.js";
 import { VERSION } from "./version.js";
 import type { OutputFormat } from "./output.js";
 
@@ -64,9 +64,13 @@ interface UpdateState {
 // Path helpers
 // ---------------------------------------------------------------------------
 
-/** Returns the path to the update-state cache file. */
+/**
+ * Returns the path to the update-state cache file. Lives in the config
+ * directory (MESHY_CONFIG_DIR when set, else ~/.config/meshy) so an isolated
+ * config dir also isolates the update cache.
+ */
 export function stateFilePath(): string {
-  return join(homedir(), ".config", "meshy", "update-state.json");
+  return join(configDir(), "update-state.json");
 }
 
 // ---------------------------------------------------------------------------

@@ -2,12 +2,18 @@
  * Output rendering. Keep stdout machine-parseable by default; `pretty` is
  * opt-in for human eyes.
  *
- * Note: stdout JSON may carry `_notice.update` when a newer meshy-cli version
- * is available. See update-notifier.ts for the two-channel design.
+ * Legacy path (`emit`): bare payloads, optionally decorated with
+ * `_notice.update` when a newer meshy-cli version is available. See
+ * update-notifier.ts for the two-channel design.
+ *
+ * v1 path (`emitEnvelope`): exactly one envelope object, never decorated —
+ * the six top-level keys are the contract. Humans on a TTY still get the
+ * update hint on stderr.
  */
 
 import { writeFileSync } from "node:fs";
 import { attachUpdateNotice, getUpdateNotice, printHumanUpdateHint } from "./update-notifier.js";
+import type { StreamEventEnvelope, V1Envelope } from "./result.js";
 
 export type OutputFormat = "json" | "pretty" | "ndjson";
 
@@ -31,7 +37,33 @@ export function emit(value: unknown, opts: OutputOptions): void {
   printHumanUpdateHint(notice, process);
 }
 
-function render(value: unknown, format: OutputFormat): string {
+/**
+ * Write to stdout and resolve once the bytes are handed to the OS. Needed
+ * before an explicit process.exit(), which does not wait for pending writes
+ * on pipes — large JSON or a cancelled stream would otherwise be truncated.
+ */
+export function writeStdout(text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ok = process.stdout.write(text, (err) => (err ? reject(err) : resolve()));
+    if (ok) {
+      // Callback still fires; nothing else to do.
+    }
+  });
+}
+
+/** Print one v1 envelope in the requested rendering. */
+export async function emitEnvelope(envelope: V1Envelope, format: OutputFormat): Promise<void> {
+  const text = format === "pretty" ? renderPretty(envelope) : format === "ndjson" ? JSON.stringify(envelope) : JSON.stringify(envelope, null, 2);
+  await writeStdout(`${text}\n`);
+  printHumanUpdateHint(getUpdateNotice(), process);
+}
+
+/** Print one stream event (ndjson only; json/pretty callers print the final envelope instead). */
+export async function emitStreamEvent(event: StreamEventEnvelope): Promise<void> {
+  await writeStdout(`${JSON.stringify(event)}\n`);
+}
+
+export function render(value: unknown, format: OutputFormat): string {
   switch (format) {
     case "json":
       return JSON.stringify(value, null, 2);
@@ -43,7 +75,7 @@ function render(value: unknown, format: OutputFormat): string {
   }
 }
 
-function renderPretty(value: unknown, indent = 0): string {
+export function renderPretty(value: unknown, indent = 0): string {
   const pad = "  ".repeat(indent);
   if (value === null || value === undefined) return `${pad}-`;
   if (typeof value !== "object") return `${pad}${String(value)}`;

@@ -12,6 +12,11 @@ export class BalanceEndpoint {
   }
 
   async get(): Promise<Balance> {
+    return (await this.getWithRaw()).balance;
+  }
+
+  /** The parsed balance plus the untouched response body (for --save-json). */
+  async getWithRaw(): Promise<{ balance: Balance; raw: unknown }> {
     const resp = await this.http("/balance", { method: "GET" });
     if (!resp.ok) throw await mapHttpError(resp, "/balance");
     const raw: unknown = await resp.json();
@@ -25,6 +30,6 @@ export class BalanceEndpoint {
         body: raw,
       });
     }
-    return parsed.data;
+    return { balance: parsed.data, raw };
   }
 }

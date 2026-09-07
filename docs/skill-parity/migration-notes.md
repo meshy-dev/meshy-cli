@@ -9,7 +9,7 @@ explicitly in its examples.
 
 | Legacy call | CLI equivalent | Notes |
 | --- | --- | --- |
-| `meshy_task.py check-env` | `meshy doctor [--env-file .env] [--check-api]` | Local by default; `--check-api` does one free balance call. No `.env` auto-scan (see 2.6). |
+| `meshy_task.py check-env` | `meshy doctor [--api-key-file .env] [--check-api]` | Local by default; `--check-api` does one free balance call. No `.env` auto-scan (see 2.6). |
 | `meshy_task.py balance` | `meshy balance --output-schema v1` | unchanged endpoint |
 | `meshy_task.py create --endpoint E --payload J` | `meshy <resource> create --data '<json>' --async --output-schema v1` | one POST, no poll; `result.task.task_id` |
 | `meshy_task.py poll --endpoint E --task-id ID [--project-dir D]` | `meshy <resource> wait ID --timeout 600 [--project D] --output-schema v1` | saves `task_<id>.json` into the project when `--project` is given |
@@ -70,10 +70,14 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 
 ### 2.6 No implicit `.env` discovery
 - Legacy: read `.env` / `.env.local` from cwd automatically.
-- CLI: `--env-file <path>` must be explicit; `doctor` may report that a candidate file
-  exists in cwd but never reads it. Priority: `--api-key` > `MESHY_API_KEY` >
-  `--env-file` > stored profile; an empty/invalid higher-priority source is an error,
-  not a fall-through.
+- CLI: `--api-key-file <path>` must be explicit; `doctor` may report that a candidate
+  file exists in cwd but never reads it. Priority: `--api-key` > `MESHY_API_KEY` >
+  `--api-key-file` > stored profile. A named file that is missing, malformed or
+  key-less is an error, never a fall-through to another account. Empty/placeholder
+  `--api-key` and `MESHY_API_KEY` still mean "unset" (0.2.0 behaviour).
+- The flag is not called `--env-file` because Node.js itself intercepts that name
+  anywhere in argv (loads the whole file into the environment, exits 9 when missing);
+  see decisions D-025. Passing `--env-file` to the CLI yields a usage error.
 
 ### 2.7 `showcase_type` spelling
 - Docs/Skill: `animated`. Server enum: `animate`. CLI accepts both, sends `animate`, and
@@ -111,7 +115,7 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 | `rigging list` | usage error | works | see 2.9 |
 | everything else (flags, payload defaults, `-o` download layout, `meta.json`, auth) | unchanged | unchanged | legacy output preserved; v1 is opt-in |
 
-New global flags: `--output-schema`, `--env-file`, `--workspace`, `--no-update-check`,
+New global flags: `--output-schema`, `--api-key-file`, `--workspace`, `--no-update-check`,
 `--base-url-creative-lab`. New per-command flags on task verbs: `--save-json`,
 `--include-raw`, `--project`, `--operation-id`, `--stop-after-first` (make),
 `--idle-timeout` (stream).

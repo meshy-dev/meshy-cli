@@ -20,7 +20,8 @@ import { TextTo3DEndpoint } from "./endpoints/text-to-3d.js";
 import { TextToImageEndpoint } from "./endpoints/text-to-image.js";
 import { TextToMotionEndpoint } from "./endpoints/text-to-motion.js";
 import { mapHttpError, MeshyApiError } from "./errors.js";
-import type { MeshyConfig } from "../internal/config.js";
+import { assertCredentialAllowedForOrigin, type MeshyConfig } from "../internal/config.js";
+import { UsageError } from "../internal/errors.js";
 import { logger } from "../internal/logger.js";
 import { USER_AGENT } from "../internal/user-agent.js";
 
@@ -96,11 +97,15 @@ export class MeshyClient {
 
   private readonly v1Fetch: HttpFetch;
   private readonly v2Fetch: HttpFetch;
+  private readonly creativeLabFetch: HttpFetch | null;
 
   constructor(config: MeshyConfig) {
     this.config = config;
     this.v1Fetch = makeFetcher(config.baseUrlV1, config.apiKey, config.readTimeoutMs, config.credentialKind);
     this.v2Fetch = makeFetcher(config.baseUrlV2, config.apiKey, config.readTimeoutMs, config.credentialKind);
+    this.creativeLabFetch = config.baseUrlCreativeLab
+      ? makeFetcher(config.baseUrlCreativeLab, config.apiKey, config.readTimeoutMs, config.credentialKind)
+      : null;
 
     this.balance = new BalanceEndpoint(this.v1Fetch);
     this.textTo3d = new TextTo3DEndpoint(this.v2Fetch);
@@ -140,13 +145,22 @@ export class MeshyClient {
     }
   }
 
-  /** Raw HTTP passthrough for `meshy api …` — selects v1 or v2 by prefix. */
+  /** Raw HTTP passthrough for `meshy api …` — selects the API family by flag. */
   async raw(
-    apiVersion: "v1" | "v2",
+    apiVersion: "v1" | "v2" | "creative-lab",
     method: string,
     path: string,
     init?: RequestInit,
   ): Promise<Response> {
+    if (apiVersion === "creative-lab") {
+      if (!this.creativeLabFetch) {
+        throw new UsageError(
+          "the Creative Lab base URL cannot be derived from --base-url-v1; pass --base-url-creative-lab <url> (or MESHY_BASE_URL_CREATIVE_LAB)",
+        );
+      }
+      assertCredentialAllowedForOrigin(this.config, this.config.baseUrlCreativeLab!, "Creative Lab");
+      return this.creativeLabFetch(path, { ...init, method });
+    }
     const fetcher = apiVersion === "v2" ? this.v2Fetch : this.v1Fetch;
     return fetcher(path, { ...init, method });
   }

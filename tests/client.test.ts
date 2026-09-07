@@ -40,6 +40,8 @@ function buildConfig(): MeshyConfig {
     apiKey: "msy_test_key",
     baseUrlV1: "https://api.example.com/v1",
     baseUrlV2: "https://api.example.com/v2",
+    baseUrlCreativeLab: "https://api.example.com/openapi/creative-lab",
+    publicWebBase: "https://api.example.com/web/public",
     connectTimeoutMs: 1000,
     readTimeoutMs: 5000,
     pollIntervalMs: 10,

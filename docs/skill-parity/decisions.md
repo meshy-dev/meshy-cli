@@ -118,7 +118,7 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Stored profiles (OAuth or API key from `credentials*.json`) are sent only to the v1
   origin they were resolved for, to the v2 origin, and to a creative-lab base whose
   origin equals the v1 origin. A creative-lab override on a different origin requires
-  an explicit key (`--api-key`, `MESHY_API_KEY`, or `--env-file`).
+  an explicit key (`--api-key`, `MESHY_API_KEY`, or `--api-key-file`).
 - Pre-existing behaviour: a `--base-url-v2` on a different origin than v1 already
   receives the stored profile. Unchanged in S1 and listed as a compatibility
   difference for review.
@@ -144,7 +144,7 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - `--timeout` is the total deadline; `--idle-timeout` (default 60 s) is reset by any
   bytes including keep-alives. Terminal status aborts the reader immediately.
 
-## D-016 `--env-file`
+## D-016 `--api-key-file` (the contract's `--env-file`)
 
 - Only `MESHY_API_KEY` is read. Grammar: optional `export `, `KEY=value`, `#` comments,
   blank lines, single/double quotes (inner text verbatim), unquoted `#` after
@@ -152,6 +152,7 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   containing them is invalid. Duplicate `MESHY_API_KEY` lines are an error.
 - An unreadable or malformed explicit file is an error even when a higher-priority key
   is present. No `.env` auto-discovery, ever.
+- The flag is named `--api-key-file`, not `--env-file` — see D-025.
 
 ## D-017 Timeouts
 
@@ -213,3 +214,19 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Default is fully local: versions, command inventory, config sources present (without
   reading secrets), workspace writability. `--check-api` performs one `GET /balance`;
   `--check-slicers` runs detection. Nothing else is contacted.
+
+## D-025 `--env-file` cannot be offered: Node.js intercepts it
+
+- Verified on Node 22.23.2 and 24.20.0 (`node script.js balance --env-file X`): Node
+  scans the *whole* argv for `--env-file`, even after the script name. When the file
+  exists Node loads every variable into `process.env` before the CLI starts
+  (`NODE_OPTIONS` included, which Node then honours); when it is missing Node exits 9
+  with its own message and the CLI never runs. Both contradict the contract ("only
+  `MESHY_API_KEY`, never executed, no process reconfiguration").
+- Therefore the CLI flag is `--api-key-file <path>` with exactly the contract's
+  semantics. `--env-file` stays registered as a hidden option whose only behaviour is a
+  usage error pointing at `--api-key-file`; the CLI cannot undo what Node already did,
+  so the error also explains that. S2 Skill examples must use `--api-key-file`.
+- Empty or placeholder `--api-key` / `MESHY_API_KEY` values keep meaning "unset"
+  (0.2.0 behaviour that CI and the runtime tests depend on); only the explicit key
+  file is strict.
