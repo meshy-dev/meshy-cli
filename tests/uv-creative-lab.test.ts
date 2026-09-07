@@ -254,3 +254,34 @@ test("T-041/T-042 make: --async is one POST and zero polls with pending_steps; -
     await api.close();
   }
 });
+
+test("T-105 a stored profile is never sent to a Creative Lab base on another origin; an explicit key may be", async () => {
+  const api = await startMockApi((req, res) => (req.method === "POST" ? jsonReply(res, 200, { result: "cl-x" }) : jsonReply(res, 404, {})));
+  const other = await startMockApi((req, res) => (req.method === "POST" ? jsonReply(res, 200, { result: "cl-y" }) : jsonReply(res, 404, {})));
+  try {
+    const dir = tmpDir();
+    const credFile = join(dir, "credentials.json");
+    writeFileSync(credFile, JSON.stringify({ auth_version: 1, active_profile: "default", profiles: { default: { kind: "api_key", api_key: "msy_stored_profile_key", created_at: 1 } } }));
+    const env = api.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: credFile, MESHY_BASE_URL_CREATIVE_LAB: `${other.url}/openapi/creative-lab` });
+    const refused = await runCli(["creative-lab", "figure", "build", "create", "--input-task-id", "p1", "--async"], { env, cwd: dir });
+    assert.equal(refused.code, 3, refused.stderr);
+    const out = parseSingleJson(refused.stdout) as { error: { code: string; message: string } };
+    assert.equal(out.error.code, "auth");
+    assert.match(out.error.message, /different origin/);
+    assert.equal(other.requests.length, 0, "the stored profile never left for the other origin");
+    assert.equal(api.requests.length, 0);
+    // Same-origin derived base with the stored profile works.
+    const same = await runCli(["creative-lab", "figure", "build", "create", "--input-task-id", "p1", "--async"], { env: api.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: credFile }), cwd: dir });
+    assert.equal(same.code, 0, same.stderr);
+    assert.equal(api.requests[0]!.headers["authorization"], "Bearer msy_stored_profile_key");
+    // An explicit key is the user's choice and may go to the explicit origin.
+    const explicit = await runCli(["creative-lab", "figure", "build", "create", "--input-task-id", "p1", "--async", "--api-key", "msy_explicit"], { env, cwd: dir });
+    assert.equal(explicit.code, 0, explicit.stderr);
+    assert.equal(other.requests.length, 1);
+    assert.equal(other.requests[0]!.headers["authorization"], "Bearer msy_explicit");
+    assert.equal(other.requests[0]!.path, "/openapi/creative-lab/figure/v1/build");
+  } finally {
+    await api.close();
+    await other.close();
+  }
+});
