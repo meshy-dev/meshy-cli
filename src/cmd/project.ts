@@ -19,7 +19,7 @@ import { emitResult, openCommand } from "../internal/command-helpers.js";
 import { UsageError } from "../internal/errors.js";
 import { collect } from "../internal/flags.js";
 import { resolveWithinRoot } from "../internal/paths.js";
-import { initProject, listProjects, readProject, rebuildIndex, recordTask } from "../internal/project-store.js";
+import { indexRootFor, initProject, listProjects, readProject, rebuildIndex, recordTask } from "../internal/project-store.js";
 import { warning, type Warning } from "../internal/result.js";
 import { buildLocalRuntime } from "../internal/runtime.js";
 
@@ -75,6 +75,11 @@ const recordCommand = new Command("record")
       if (!existsSync(join(projectDir, "metadata.json"))) {
         throw new UsageError(`${projectDir} has no metadata.json; run \`meshy project init\` first`);
       }
+      // An explicit --root outside the workspace is refused up front; the
+      // implicit root (the project's parent) is checked the same way and, when
+      // it lies outside, the index is skipped rather than written across the boundary.
+      if (opts.root) confine(resolvePath(opts.root), opened.flags.workspace, "--root");
+      const indexRoot = indexRootFor(projectDir, opts.root, opened.flags.workspace);
       const res = recordTask(
         projectDir,
         {
@@ -88,7 +93,7 @@ const recordCommand = new Command("record")
           taskJson: opts.taskJson ?? null,
           operationId: opts.operationId ?? null,
         },
-        { root: opts.root ? confine(resolvePath(opts.root), opened.flags.workspace, "--root") : undefined },
+        { root: indexRoot.root, skipIndex: indexRoot.skipIndex },
       );
       const warnings: Warning[] = [];
       const missing = (opts.file ?? []).filter((f) => !existsSync(join(projectDir, f)));

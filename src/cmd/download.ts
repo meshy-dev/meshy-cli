@@ -24,7 +24,7 @@ import { downloadAssets, type DownloadedFile } from "../internal/download.js";
 import { CliError, UsageError, type Warning } from "../internal/errors.js";
 import { resolveWithinRoot, safeSegment } from "../internal/paths.js";
 import { warning } from "../internal/result.js";
-import { recordTask, stageFromTaskType } from "../internal/project-store.js";
+import { indexRootFor, recordTask, stageFromTaskType } from "../internal/project-store.js";
 import { buildLocalRuntime, buildRuntime } from "../internal/runtime.js";
 import { extractTaskObject } from "../internal/task-view.js";
 import { existsSync } from "node:fs";
@@ -266,6 +266,7 @@ export const downloadCommand = new Command("download")
     if (projectDir && task) {
       const taskId = String(task["id"] ?? "");
       const files = result.files.filter((f) => f.status === "written").map((f) => relative(projectDir, f.path).split(/[\\/]/).join("/")).filter((f) => !f.startsWith(".."));
+      const indexRoot = indexRootFor(projectDir, undefined, opened.flags.workspace);
       const rec = recordTask(projectDir, {
         taskId,
         stage: opts.stage ?? stageFromTaskType(task["type"], descriptor?.id ?? "download"),
@@ -274,7 +275,7 @@ export const downloadCommand = new Command("download")
         endpoint: descriptor?.legacyEndpoint ?? null,
         status: typeof task["status"] === "string" ? (task["status"] as string) : null,
         files,
-      });
+      }, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
       if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}`));
       if (files.length !== result.files.filter((f) => f.status === "written").length) warnings.push(warning("files_outside_project", "some files were written outside the project directory and were not recorded"));
       project = { project_dir: projectDir, action: rec.action, stage: rec.entry.stage, recorded_files: files };

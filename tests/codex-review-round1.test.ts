@@ -617,17 +617,20 @@ test("R10/F10 stream -o downloads the assets in ndjson, json and pretty; a downl
     api.requests.length = 0;
     const target = join(dir, "failing.glb");
     const bad = await runCli(["text-to-3d", "stream", "review-task", "--format", "ndjson", "--output-schema", "v1", "-o", target], { env: api.env(), cwd: dir });
-    assert.equal(bad.code, 11, `${bad.stderr}\n${bad.stdout}`);
-    const lines = parseNdjson(bad.stdout) as Array<{ event: string; ok: boolean; error: { code: string } | null; result: { task_id: string; task: { status: string }; downloads: { state: string } } }>;
+    // The asset host's 404 keeps its own class (round 2, R2-F04): not_found / exit 5, never a bare local_io.
+    assert.equal(bad.code, 5, `${bad.stderr}\n${bad.stdout}`);
+    const lines = parseNdjson(bad.stdout) as Array<{ event: string; ok: boolean; error: { code: string; http_status: number | null } | null; result: { task_id: string; task: { status: string }; downloads: { state: string; files: Array<{ key: string; status: string }> } } }>;
     assert.deepEqual(lines.map((l) => l.event), ["task", "outcome"], "one outcome, no second envelope");
     assert.equal(lines[1]!.ok, false);
-    assert.equal(lines[1]!.error!.code, "local_io");
+    assert.equal(lines[1]!.error!.code, "not_found");
+    assert.equal(lines[1]!.error!.http_status, 404);
     assert.equal(lines[1]!.result.task_id, "review-task");
     assert.equal(lines[1]!.result.task.status, "SUCCEEDED");
     assert.equal(lines[1]!.result.downloads.state, "failed");
+    assert.deepEqual(lines[1]!.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]]);
     assert.ok(!existsSync(target));
     const badJson = await runCli(["text-to-3d", "stream", "review-task", "--output-schema", "v1", "-o", join(dir, "failing2.glb")], { env: api.env(), cwd: dir });
-    assert.equal(badJson.code, 11, badJson.stderr);
+    assert.equal(badJson.code, 5, badJson.stderr);
     assert.equal((parseSingleJson(badJson.stdout) as { result: { task_id: string } }).result.task_id, "review-task");
   } finally {
     await api.close();

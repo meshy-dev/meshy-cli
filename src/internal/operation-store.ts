@@ -11,9 +11,15 @@
  *
  * Identity of a request = resource + API origin + credential fingerprint +
  * payload fingerprint. The credential fingerprint binds to the actual account:
- * a keyed digest of the API key, or the stable OAuth subject (user id) — never
- * the rotating access token, so a routine refresh is still the same identity
- * while a different key under the same env variable is not. The payload
+ * a keyed digest of the API key, or the stable OAuth subject (user id), or —
+ * when the token endpoint reported no user id — the per-login identifier
+ * minted at `meshy auth login`. Never the rotating access token, so a routine
+ * refresh is still the same identity while a different key under the same env
+ * variable, or a new login under the same profile name, is not. An OAuth
+ * profile that carries neither a user id nor a login id (written before login
+ * ids existed) has *no* verifiable identity: such a credential can start new
+ * operations but is refused a replay of an existing one, because "unknown"
+ * must never be read as "the same account". The payload
  * fingerprint hashes media *content* (decoded bytes of every data URI), so two
  * different images of the same size never collide.
  *
@@ -61,6 +67,12 @@ export interface OperationIdentity {
   endpoint: string;
   apiOrigin: string;
   credentialFingerprint: string;
+  /**
+   * False when nothing stable identifies the credential (an OAuth profile
+   * without user id or login id). Such a credential may start a new operation
+   * but is never granted a replay of an existing record. Default true.
+   */
+  credentialVerified?: boolean;
   payloadFingerprint: string;
   project?: string | null;
 }
@@ -86,25 +98,40 @@ export interface CredentialIdentityParts {
   secret?: string | null;
   /** Stable account subject for OAuth profiles (user id). Tokens rotate; the subject does not. */
   subject?: string | null;
+  /** Per-login identifier of an OAuth profile (minted at `auth login`), used when no subject exists. */
+  loginId?: string | null;
+}
+
+export interface CredentialBinding {
+  /** What the fingerprint binds to; `unverified` when nothing stable identifies the account. */
+  binding: string;
+  verified: boolean;
+}
+
+/** Decide what identifies this credential — and whether anything does. */
+export function credentialBinding(parts: CredentialIdentityParts): CredentialBinding {
+  if (parts.kind === "oauth") {
+    if (parts.subject) return { binding: `subject:${parts.subject}`, verified: true };
+    if (parts.loginId) return { binding: `login:${parts.loginId}`, verified: true };
+    return { binding: "unverified", verified: false };
+  }
+  if (parts.secret) return { binding: `key:${sha256(`${CREDENTIAL_DIGEST_DOMAIN}|${parts.secret}`)}`, verified: true };
+  return { binding: "key:none", verified: false };
 }
 
 const CREDENTIAL_DIGEST_DOMAIN = "meshy-cli/credential-binding/v1";
 
 /**
  * `sha256(source|profile|kind|origin|binding)` where the binding is a keyed
- * digest of the API key, or the OAuth subject. Two different keys from the same
- * source therefore have different fingerprints; a refreshed OAuth token keeps
- * its fingerprint as long as the account is the same. Never reversible to a key.
+ * digest of the API key, the OAuth subject, or the OAuth login id. Two
+ * different keys from the same source therefore have different fingerprints;
+ * a refreshed OAuth token keeps its fingerprint as long as the account (or the
+ * login) is the same. Never reversible to a key. Callers must also consult
+ * `credentialBinding(parts).verified`: an unverified fingerprint identifies
+ * nothing and must not be matched against an existing record.
  */
 export function credentialFingerprint(parts: CredentialIdentityParts): string {
-  let binding: string;
-  if (parts.kind === "oauth") {
-    binding = parts.subject ? `subject:${parts.subject}` : "subject:unknown";
-  } else if (parts.secret) {
-    binding = `key:${sha256(`${CREDENTIAL_DIGEST_DOMAIN}|${parts.secret}`)}`;
-  } else {
-    binding = "key:none";
-  }
+  const { binding } = credentialBinding(parts);
   return sha256(`${parts.source}|${parts.profile ?? ""}|${parts.kind ?? ""}|${parts.origin}|${binding}`);
 }
 
@@ -189,6 +216,16 @@ export function beginOperation(root: string, operationId: string, identity: Oper
   return withFileLock(lockPath(root), () => {
     const existing = readOperation(root, operationId);
     if (existing) {
+      if (identity.credentialVerified === false) {
+        throw new CliError({
+          code: "operation_conflict",
+          message:
+            `operation ${operationId} already exists but the current OAuth login has no account identity (profile without user_id or login_id), so it cannot be confirmed as the same account; ` +
+            "nothing was submitted — run `meshy auth login` to bind this login, or use a new --operation-id",
+          recovery: { action: "login", automatic: false, command: "meshy auth login" },
+          result: { submission: { state: existing.state, operation_id: operationId, task_id: existing.task_id }, conflict: ["credential_unverified"] },
+        });
+      }
       const differs: string[] = [];
       if (existing.resource !== identity.resource) differs.push("resource");
       if (existing.api_origin !== identity.apiOrigin) differs.push("origin");

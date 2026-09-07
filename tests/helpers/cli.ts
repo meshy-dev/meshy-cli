@@ -7,7 +7,7 @@
  * MESHY_BASE_URL_V1/V2 when they need one.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,6 +31,8 @@ export interface RunOptions {
   /** Send SIGINT after this many ms. */
   sigintAfterMs?: number;
   stdin?: string;
+  /** Receives the child right after spawn (e.g. to signal it from a mock handler). */
+  onSpawn?: (child: ChildProcess) => void;
 }
 
 export function tmpDir(prefix = "meshy-cli-test-"): string {
@@ -65,6 +67,7 @@ export function runCli(args: string[], opts: RunOptions = {}): Promise<RunResult
       cwd: opts.cwd ?? tmpDir("meshy-cwd-"),
       stdio: ["pipe", "pipe", "pipe"],
     });
+    opts.onSpawn?.(child);
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => child.kill("SIGKILL"), opts.timeoutMs ?? 20_000);

@@ -68,6 +68,8 @@ meshy <resource> list [--page-size <n>] --output-schema v1
   (`… list`) and reconcile first. Pass `--operation-id <your-id>` to a create so a
   repeat of the same request replays the recorded outcome instead of billing again;
   a different key/account, payload or image under the same id is refused (exit 2).
+  An OAuth profile without an account id or login id (saved before `login_id` existed)
+  is refused a replay (`credential_unverified`) — run `meshy auth login` once first.
 - **An error after `create` was accepted still names the task**: read
   `result.task_id` / `result.submission.task_id` and `result.next` from any
   non-zero exit (11 local I/O, 1 polling failure, 130 interrupt) before deciding
@@ -168,6 +170,10 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
 - Exit 9 → run `meshy balance`, relay the number, do not retry.
 - Exit 6 → back off; the CLI does not retry for you.
 - Exit 8 → `wait`/`stream` the same task id again; it was not cancelled.
+- Exit 130 after `-o` → the transfer was cancelled; `result.downloads.files` lists what
+  already landed (`status: written`), the rest can be fetched with `meshy download`.
+- `result.downloads.material_links.status: "incomplete"` → name the references that
+  stayed unresolved or ambiguous (`texture_maps[].method`) instead of claiming the model loads.
 - Exit 10 → reconcile with `<resource> list`; never submit the same create again blindly.
 - A `FAILED` task → relay `result.task.task_error.message` verbatim; do not guess a cause.
 - Any error may carry `error.recovery.command` — prefer it over improvising.

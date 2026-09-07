@@ -320,14 +320,24 @@ async function finalOutcome(
   let downloads = base.downloads as Record<string, unknown>;
   if (runtime.flags.output) {
     try {
-      const { savedFiles, metadataPath, materialLinks } = await downloadArtifacts(task, runtime.flags.output, step.resource, { root: runtime.flags.workspace });
+      const { files, metadataPath, materialLinks } = await downloadArtifacts(task, runtime.flags.output, step.resource, { root: runtime.flags.workspace, signal: abortSignal() });
       if (materialLinks) warnings.push(...materialLinks.warnings);
-      downloads = { state: "completed", files: savedFiles.map((p) => ({ path: p, status: "written" })), metadata_path: metadataPath, material_links: materialLinks };
+      downloads = { state: "completed", files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })), metadata_path: metadataPath, material_links: materialLinks };
     } catch (err) {
+      // Whatever the downloader already committed stays in the manifest; the
+      // failure keeps its own class (HTTP status, interrupted, local I/O).
+      const partial = err instanceof CliError && err.result && typeof err.result["downloads"] === "object" ? (err.result["downloads"] as Record<string, unknown>) : { state: "failed", files: [], metadata_path: null };
+      const interrupted = (err instanceof CliError && err.code === "interrupted") || wasInterrupted();
       throw new CliError({
-        code: err instanceof CliError ? err.code : "local_io",
-        message: `make finished (task ${task.id}) but downloading its assets failed: ${err instanceof Error ? err.message : String(err)}`,
-        result: { route: plan.route, executed, task_id: task.id, task: base.task, submission: base.submission, downloads: { state: "failed", files: [], metadata_path: null }, next: taskNextCommands(descriptor, task.id) },
+        code: interrupted ? "interrupted" : err instanceof CliError ? err.code : "local_io",
+        message: `make finished (task ${task.id}) but downloading its assets ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`,
+        httpStatus: err instanceof CliError ? err.httpStatus : null,
+        retryable: err instanceof CliError ? err.retryable : false,
+        recovery: err instanceof CliError && err.recovery ? err.recovery : { action: "download", automatic: false, command: `meshy download --resource ${step.resource} --task-id ${task.id} --all --output-dir <dir>` },
+        hint: err instanceof CliError ? err.hint : undefined,
+        details: err instanceof CliError ? err.details : undefined,
+        warnings: [...warnings, ...(err instanceof CliError ? err.warnings : [])],
+        result: { route: plan.route, executed, task_id: task.id, task: base.task, submission: base.submission, downloads: partial, next: taskNextCommands(descriptor, task.id) },
         cause: err,
       });
     }

@@ -48,6 +48,7 @@ import { streamTask } from "./stream.js";
 import { toTaskView, type TaskView } from "./task-view.js";
 import {
   beginOperation,
+  credentialBinding,
   credentialFingerprint,
   newOperationId,
   operationsRoot,
@@ -57,7 +58,7 @@ import {
 } from "./operation-store.js";
 import { originOf } from "./config.js";
 import { resolveWithinRoot } from "./paths.js";
-import { recordTask, saveTaskSnapshot, stageFromTaskType } from "./project-store.js";
+import { indexRootFor, recordTask, saveTaskSnapshot, stageFromTaskType } from "./project-store.js";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 
@@ -110,8 +111,8 @@ const TASK_JSON_OPTIONS = (cmd: Command): Command =>
     .option("--stage <name>", "stage label for the project record (default: derived from the task type, e.g. preview | refine | build)");
 
 export interface DownloadOutcome {
-  state: "not_requested" | "not_ready" | "completed" | "failed";
-  files: Array<{ path: string; status: "written" }>;
+  state: "not_requested" | "not_ready" | "completed" | "partial" | "failed";
+  files: Array<{ key?: string; path: string; status: "written" | "failed"; bytes?: number; sha256?: string; error?: string | null }>;
   metadata_path: string | null;
   /** OBJ/MTL/texture reference report when the download contained a text OBJ. */
   material_links?: MaterialLinkReport | null;
@@ -293,6 +294,7 @@ function attachToProject(
   const stage = (opts.stage as string | undefined) ?? (typeof extra.payload?.["mode"] === "string" ? (extra.payload["mode"] as string) : descriptor.creativeLab?.stage ?? stageFromTaskType(task?.type, descriptor.id));
   try {
     const snapshot = task && raw ? saveTaskSnapshot(projectDir, taskId, raw) : null;
+    const indexRoot = indexRootFor(projectDir, undefined, opened.flags.workspace);
     const rec = recordTask(projectDir, {
       taskId,
       stage,
@@ -304,7 +306,7 @@ function attachToProject(
       taskJson: snapshot?.relative ?? null,
       operationId: extra.operationId ?? null,
       files: extra.files ?? [],
-    });
+    }, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
     if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}; run \`meshy project rebuild-index\``));
     if (rec.migrated_from_legacy) warnings.push(warning("metadata_migrated", "legacy metadata.json migrated to schema_version 2 (backup kept beside it)"));
     return { project_dir: projectDir, snapshot: snapshot?.path ?? null, stage, action: rec.action, index: rec.index };
@@ -630,16 +632,23 @@ export interface SubmitContext {
   extraResult?: Record<string, unknown>;
 }
 
-/** The credential identity a submission is journaled under: bound to the key digest or the OAuth subject. */
-export function credentialIdentityFor(runtime: Runtime, apiOrigin: string): string {
-  return credentialFingerprint({
+/**
+ * The credential identity a submission is journaled under: bound to the key
+ * digest, the OAuth subject or the OAuth login id. `verified` is false when
+ * none of those exists (a pre-login-id OAuth profile): such a credential may
+ * start operations but is refused a replay of an existing record.
+ */
+export function credentialIdentityFor(runtime: Runtime, apiOrigin: string): { fingerprint: string; verified: boolean } {
+  const parts = {
     source: runtime.config.credentialSource,
     profile: runtime.config.credentialProfile ?? null,
     origin: apiOrigin,
     kind: runtime.config.credentialKind,
     secret: runtime.config.credentialKind === "api_key" ? runtime.config.apiKey : null,
     subject: runtime.config.credentialSubject ?? null,
-  });
+    loginId: runtime.config.credentialLoginId ?? null,
+  };
+  return { fingerprint: credentialFingerprint(parts), verified: credentialBinding(parts).verified };
 }
 
 /**
@@ -660,11 +669,13 @@ export async function submitCreate(
   const root = operationsRoot();
   const operationId = requestedOperationId ?? newOperationId();
   const apiOrigin = originOf(endpoint.transportBaseUrl) ?? endpoint.transportBaseUrl;
+  const credential = credentialIdentityFor(runtime, apiOrigin);
   const identity = {
     resource: descriptor.id,
     endpoint: descriptor.legacyEndpoint,
     apiOrigin,
-    credentialFingerprint: credentialIdentityFor(runtime, apiOrigin),
+    credentialFingerprint: credential.fingerprint,
+    credentialVerified: credential.verified,
     payloadFingerprint: payloadFingerprint(payload),
   };
   const label = ctx.label ?? "the create request";
@@ -807,17 +818,33 @@ async function maybeDownloadV1(
   if (!output) return NOT_REQUESTED();
   if (task.status !== "SUCCEEDED") return { state: "not_ready", files: [], metadata_path: null };
   try {
-    const { savedFiles, metadataPath, materialLinks } = await downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspace });
+    const { files, metadataPath, materialLinks } = await downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspace, signal: abortSignal() });
     if (materialLinks) warnings.push(...materialLinks.warnings);
-    return { state: "completed", files: savedFiles.map((p) => ({ path: p, status: "written" as const })), metadata_path: metadataPath, material_links: materialLinks };
+    return {
+      state: "completed",
+      files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })),
+      metadata_path: metadataPath,
+      material_links: materialLinks,
+    };
   } catch (err) {
+    // Whatever the downloader already committed stays in the manifest, and the
+    // failure keeps its own class: an HTTP 503 on the second asset is a network
+    // failure with its status, a Ctrl-C is `interrupted` (130) — never a bare local_io.
+    const partial: DownloadOutcome =
+      err instanceof CliError && err.result && err.result["downloads"] && typeof err.result["downloads"] === "object"
+        ? (err.result["downloads"] as DownloadOutcome)
+        : { state: "failed", files: [], metadata_path: null };
+    const interrupted = (err instanceof CliError && err.code === "interrupted") || wasInterrupted();
     const failure = new CliError({
-      code: err instanceof CliError ? err.code : "local_io",
-      message: `task ${task.id} is SUCCEEDED but downloading its assets failed: ${err instanceof Error ? err.message : String(err)}`,
+      code: interrupted ? "interrupted" : err instanceof CliError ? err.code : "local_io",
+      message: `task ${task.id} is SUCCEEDED but downloading its assets ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`,
       httpStatus: err instanceof CliError ? err.httpStatus : null,
-      recovery: err instanceof CliError ? err.recovery : null,
-      result: { downloads: { state: "failed", files: [], metadata_path: null } },
-      warnings,
+      retryable: err instanceof CliError ? err.retryable : false,
+      recovery: err instanceof CliError && err.recovery ? err.recovery : { action: "download", automatic: false, command: `meshy download --resource ${descriptor.id} --task-id ${task.id} --all --output-dir <dir>` },
+      hint: err instanceof CliError ? err.hint : undefined,
+      details: err instanceof CliError ? err.details : undefined,
+      result: { downloads: partial },
+      warnings: [...warnings, ...(err instanceof CliError ? err.warnings : [])],
       cause: err,
     });
     throw withTaskContext(failure, {
@@ -1023,9 +1050,20 @@ async function streamAndReport(
   });
 
   const streamInfo = { events: outcome.events, ended: outcome.reason, elapsed_seconds: Number((outcome.elapsedMs / 1000).toFixed(2)) };
-  const ctx: TaskContext = { descriptor, taskId, task: outcome.task, raw: outcome.raw, submission, includeRaw, extra: { stream: streamInfo } };
-  const savedJson = opts.saveJson && outcome.raw ? saveJsonInContext(opts, opened, outcome.raw, ctx) : null;
-  const project = outcome.task ? attachInContext(opts, opened, descriptor, taskId, outcome.task, outcome.raw, {}, warnings, { ...ctx, savedJson }) : null;
+  const ctx: TaskContext = { descriptor, taskId, task: outcome.task, raw: outcome.raw, submission, includeRaw, extra: { stream: streamInfo, task_id: taskId } };
+
+  // Once the stream has started, every later step — saving JSON, recording the
+  // project, downloading — is part of the same terminal outcome: one `outcome`
+  // event (ndjson) or one envelope (json/pretty), never a bare error after it.
+  let savedJson: SavedJson | null = null;
+  let project: ProjectAttachment | null = null;
+  let bookkeepingError: CliError | null = null;
+  try {
+    savedJson = opts.saveJson && outcome.raw ? saveJsonInContext(opts, opened, outcome.raw, ctx) : null;
+    project = outcome.task ? attachInContext(opts, opened, descriptor, taskId, outcome.task, outcome.raw, {}, warnings, { ...ctx, savedJson }) : null;
+  } catch (err) {
+    bookkeepingError = err instanceof CliError ? err : withTaskContext(err, ctx);
+  }
   const projectExtra = project ? { project } : {};
 
   let finalError: CliError | null = null;
@@ -1059,6 +1097,14 @@ async function streamAndReport(
     case "protocol":
       finalError = wrapStreamError(outcome.error, result, warnings);
       break;
+  }
+  if (bookkeepingError) {
+    if (finalError) {
+      // The stream's own failure is the outcome; the bookkeeping failure rides along as a warning.
+      finalError.warnings.push(warning("bookkeeping_failed", bookkeepingError.message));
+    } else {
+      finalError = bookkeepingError;
+    }
   }
 
   if (opened.schema !== "v1") {
@@ -1121,7 +1167,7 @@ async function emitLegacyOutcome(
 
   if (output) {
     if (succeeded) {
-      const { savedFiles, metadataPath } = await downloadArtifacts(task, output, resourceName, { root: runtime.flags.workspace });
+      const { savedFiles, metadataPath } = await downloadArtifacts(task, output, resourceName, { root: runtime.flags.workspace, signal: abortSignal() });
       const successReport: Parameters<typeof printReport>[0] = {
         status: "SUCCESS",
         taskId: task.id,

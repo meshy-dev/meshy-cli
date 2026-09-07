@@ -92,6 +92,25 @@ export interface StoreOptions {
   lockTimeoutMs?: number;
 }
 
+/**
+ * Where a project's history index lives (its parent directory unless the
+ * caller named a root) and whether this invocation may write there. With an
+ * explicit --workspace the index root must resolve inside it; when it does not
+ * (the workspace *is* the project directory), metadata is still recorded and
+ * the index is left alone with an explicit reason — nothing is ever written,
+ * locked or temp-filed outside the workspace.
+ */
+export function indexRootFor(projectDir: string, explicitRoot: string | undefined, workspace: string | undefined): { root: string; skipIndex?: string } {
+  const root = explicitRoot !== undefined ? resolvePath(explicitRoot) : resolvePath(projectDir, "..");
+  if (!workspace) return { root };
+  try {
+    resolveWithinRoot(root, workspace, { label: "history root" });
+    return { root };
+  } catch (err) {
+    return { root, skipIndex: `history root ${root} resolves outside --workspace ${resolvePath(workspace)}; metadata.json was recorded but history.json was not touched (${err instanceof Error ? err.message : String(err)}) — run \`meshy project rebuild-index --root ${root}\` from a workspace that contains it` };
+  }
+}
+
 const ISO = (d: Date) => d.toISOString();
 
 function projectLock(projectDir: string): string {
@@ -260,7 +279,7 @@ export interface RecordResult {
  * a repeat merges files (union) and refreshes status/task_json instead of
  * appending a duplicate entry.
  */
-export function recordTask(projectDir: string, input: RecordInput, opts: StoreOptions & { root?: string } = {}): RecordResult {
+export function recordTask(projectDir: string, input: RecordInput, opts: StoreOptions & { root?: string; skipIndex?: string } = {}): RecordResult {
   const now = (opts.now ?? (() => new Date()))();
   const dir = resolvePath(projectDir);
   if (!input.taskId) throw new UsageError("--task-id is required");
@@ -318,7 +337,7 @@ export function recordTask(projectDir: string, input: RecordInput, opts: StoreOp
   );
 
   const root = opts.root ? resolvePath(opts.root) : resolvePath(dir, "..");
-  const index = refreshIndexEntry(root, dir, result.metadata, opts);
+  const index = opts.skipIndex ? { updated: false, error: opts.skipIndex } : refreshIndexEntry(root, dir, result.metadata, opts);
   return { project_dir: dir, metadata: result.metadata, entry: result.entry, action: result.action, migrated_from_legacy: result.legacy, index };
 }
 
@@ -463,9 +482,12 @@ export function rebuildIndex(root: string, opts: StoreOptions = {}): RebuildResu
 export function saveTaskSnapshot(projectDir: string, taskId: string, raw: unknown): { path: string; relative: string } {
   const dir = resolvePath(projectDir);
   const name = `task_${safeSegment(taskId, "task")}.json`;
-  const target = resolveWithinRoot(join(dir, name), dir, { label: "task snapshot" }).path;
-  writeJsonFile(target, raw, { overwrite: true, mode: 0o600 });
-  return { path: target, relative: relative(dir, target).split(sep).join("/") };
+  // Both sides of the relative path come from the same (real-path) frame, so a
+  // symlinked temp dir (macOS /var → /private/var) cannot turn "task_x.json"
+  // into a ../.. path that the metadata store then rightly refuses.
+  const resolved = resolveWithinRoot(join(dir, name), dir, { label: "task snapshot" });
+  writeJsonFile(resolved.path, raw, { overwrite: true, mode: 0o600 });
+  return { path: resolved.path, relative: relative(resolved.root, resolved.path).split(sep).join("/") };
 }
 
 /** Derive a stage name from a task type (`text-to-3d-preview` → preview, `creative-lab-lamp-build` → build). */

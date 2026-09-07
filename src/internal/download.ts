@@ -352,14 +352,14 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
   const warnings: Array<{ code: string; message: string }> = [];
   const dir = opts.targetFile ? dirname(resolvePath(opts.targetFile)) : resolvePath(opts.targetDir!);
   const rootReal = realpathLenient(opts.root);
-  mkdirSync(dir, { recursive: true });
   // The directory and every planned leaf must be inside the root (and no
-  // symlink) before anything is fetched; the check repeats after any
-  // MIME-driven rename.
+  // symlink) before anything at all is created — a refused target must not
+  // leave a directory behind; the check repeats after any MIME-driven rename.
   resolveWithinRoot(dir, rootReal, { label: "output directory" });
   for (const asset of assets) {
     resolveWithinRoot(join(dir, plannedName(asset, opts.targetFile)), rootReal, { label: "planned download path" });
   }
+  mkdirSync(dir, { recursive: true });
 
   let refreshed: Map<string, string> | null | undefined;
   for (const asset of assets) {
@@ -409,14 +409,31 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
     files.push(entry);
     opts.onFile?.(entry);
   }
-  const materialLinks = await relinkWritten(files, warnings);
+  const sources = new Map(assets.map((a) => [a.key, a.url ? basenameOfUrl(a.url) : null] as const));
+  const materialLinks = await relinkWritten(files, warnings, sources);
   return { files, complete: files.every((f) => f.status === "written"), warnings, materialLinks };
 }
 
+/** Last path segment of an asset URL (decoded), the name the server knew the file by; null when unparseable. */
+export function basenameOfUrl(url: string): string | null {
+  try {
+    const segment = new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "";
+    let name = segment;
+    try {
+      name = decodeURIComponent(segment);
+    } catch {
+      /* keep the raw segment */
+    }
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
 /** After the set landed: point OBJ → MTL → textures at the saved names and re-take the digests of rewritten files. */
-async function relinkWritten(files: DownloadedFile[], warnings: Array<{ code: string; message: string }>): Promise<MaterialLinkReport | null> {
+async function relinkWritten(files: DownloadedFile[], warnings: Array<{ code: string; message: string }>, sources: Map<string, string | null>): Promise<MaterialLinkReport | null> {
   const written = files.filter((f) => f.status === "written" && f.container_format === null);
-  const links = await relinkMaterials(written.map((f) => ({ key: f.key, path: f.path })));
+  const links = await relinkMaterials(written.map((f) => ({ key: f.key, path: f.path, sourceName: sources.get(f.key) ?? null })));
   if (!links) return null;
   for (const path of links.rewritten) {
     const entry = files.find((f) => f.path === path);
@@ -618,16 +635,68 @@ export function looksLikeFile(path: string): boolean {
   return /\.[A-Za-z0-9]{2,6}$/.test(path);
 }
 
+export interface LegacyDownloadedFile {
+  /** Legacy artifact slot ("model_glb", "thumbnail", "texture_0_base_color", …). */
+  key: string;
+  /** Final absolute path (after any content-type driven rename) — or the planned path for a failed entry. */
+  path: string;
+  bytes: number;
+  sha256: string;
+  content_type: string | null;
+  status: "written" | "failed";
+  error: string | null;
+  /** True when the file's material references were rewritten to the saved names. */
+  relinked: boolean;
+}
+
 export interface DownloadResult {
   savedFiles: string[];
   metadataPath: string;
   /** OBJ/MTL/texture reference report when the artifacts contained a text OBJ. */
   materialLinks: MaterialLinkReport | null;
+  /**
+   * Per-file manifest in download order. When the download stops early the
+   * same list (written files + the failed one) travels on the thrown
+   * CliError's `result.downloads`, so nothing already on disk is forgotten.
+   */
+  files: LegacyDownloadedFile[];
 }
 
 export interface DownloadArtifactsOptions {
   /** Authorised root (the --workspace); every directory and file must resolve inside it. Default: the output directory itself. */
   root?: string;
+  /** Cooperative cancellation (SIGINT): aborts the in-flight transfer and stops every later download, relink and publish. */
+  signal?: AbortSignal;
+}
+
+function interruptedBefore(what: string): CliError {
+  return new CliError({ code: "interrupted", message: `interrupted before ${what} was downloaded; nothing further was fetched` });
+}
+
+/**
+ * Wrap a per-artifact failure so the caller sees what already landed. The
+ * original classification (network / not_found / validation / interrupted /
+ * local_io, HTTP status, recovery) is kept; only the message names the artifact.
+ */
+function downloadFailure(artifact: Artifact, err: unknown, files: LegacyDownloadedFile[]): CliError {
+  const message = err instanceof Error ? err.message : String(err);
+  const downloads = { state: files.some((f) => f.status === "written") ? "partial" : "failed", files, metadata_path: null };
+  if (err instanceof CliError) {
+    return new CliError({
+      code: err.code,
+      message: `download failed for ${artifact.key}: ${message}`,
+      exitCode: err.exitCode,
+      httpStatus: err.httpStatus,
+      retryable: err.retryable,
+      recovery: err.recovery,
+      hint: err.hint,
+      details: err.details,
+      warnings: err.warnings,
+      result: { ...(err.result ?? {}), downloads },
+      cause: err,
+    });
+  }
+  return new CliError({ code: "local_io", message: `download failed for ${artifact.key}: ${message}`, result: { downloads }, cause: err });
 }
 
 export async function downloadArtifacts(
@@ -637,12 +706,15 @@ export async function downloadArtifacts(
   opts: DownloadArtifactsOptions = {},
 ): Promise<DownloadResult> {
   const artifacts = enumerateArtifacts(task);
+  // An explicit workspace is the root for everything written here — the
+  // directory, every planned file and the sidecar — checked before mkdir.
+  const workspaceReal = opts.root !== undefined ? realpathLenient(resolvePath(opts.root)) : null;
   if (artifacts.length === 0) {
     // Report-only tasks (analyze-printability) carry their result in a
     // structured field instead of downloadable files. Persist the full task
     // JSON so `-o` still means "give me the result on disk".
     if (task.printability != null) {
-      return saveReportOnly(task, outputPath, resource);
+      return saveReportOnly(task, outputPath, resource, workspaceReal);
     }
     throw new Error(`task ${task.id} has no downloadable artifacts`);
   }
@@ -659,15 +731,13 @@ export async function downloadArtifacts(
   // work when a destination already exists. This prevents silent overwrite
   // of prior runs.
   let targetDir: string;
-  const plannedArtifactPaths: string[] = [];
+  const plan: Array<{ artifact: Artifact; target: string }> = [];
   if (singleFileMode) {
     targetDir = dirname(outputPath) || ".";
-    plannedArtifactPaths.push(outputPath);
+    plan.push({ artifact: artifacts[0]!, target: outputPath });
   } else {
     targetDir = outputPath;
-    for (const artifact of artifacts) {
-      plannedArtifactPaths.push(join(targetDir, deriveFilename(artifact)));
-    }
+    for (const artifact of artifacts) plan.push({ artifact, target: join(targetDir, deriveFilename(artifact)) });
   }
   // Per-file meta in single-file mode (`-o a.png` → `a_meta.json`) so two
   // outputs can share a directory without trampling each other. Directory
@@ -676,7 +746,7 @@ export async function downloadArtifacts(
     ? `${stripExt(outputPath)}_meta.json`
     : join(targetDir, "meta.json");
 
-  const existing = [...plannedArtifactPaths, metadataPath].filter((p) => existsSync(p));
+  const existing = [...plan.map((p) => p.target), metadataPath].filter((p) => existsSync(p));
   if (existing.length > 0) {
     throw new UsageError(
       `refusing to overwrite existing file(s):\n  ${existing.join("\n  ")}\n` +
@@ -684,29 +754,41 @@ export async function downloadArtifacts(
     );
   }
 
-  // An explicit workspace is the root for everything written here — the
-  // directory, every planned file and the sidecar — checked before mkdir.
-  const workspaceReal = opts.root !== undefined ? realpathLenient(resolvePath(opts.root)) : null;
   if (workspaceReal) {
     resolveWithinRoot(targetDir, workspaceReal, { label: "output directory" });
-    for (const p of [...plannedArtifactPaths, metadataPath]) resolveWithinRoot(p, workspaceReal, { label: "planned download path" });
+    for (const p of [...plan.map((x) => x.target), metadataPath]) resolveWithinRoot(p, workspaceReal, { label: "planned download path" });
   }
 
   mkdirSync(targetDir, { recursive: true });
   const root = workspaceReal ?? realpathLenient(targetDir);
+  const files: LegacyDownloadedFile[] = [];
   const saved: string[] = [];
-  if (singleFileMode) {
-    saved.push(await downloadArtifact(artifacts[0]!, outputPath, root));
-  } else {
-    for (const artifact of artifacts) {
-      const targetPath = join(targetDir, deriveFilename(artifact));
-      saved.push(await downloadArtifact(artifact, targetPath, root));
+  for (const { artifact, target } of plan) {
+    if (opts.signal?.aborted) throw downloadFailure(artifact, interruptedBefore(artifact.key), files);
+    try {
+      const placed = await downloadArtifact(artifact, target, root, opts.signal);
+      saved.push(placed.path);
+      files.push({ key: artifact.key, path: placed.path, bytes: placed.bytes, sha256: placed.sha256, content_type: placed.contentType, status: "written", error: null, relinked: false });
+    } catch (err) {
+      files.push({ key: artifact.key, path: target, bytes: 0, sha256: "", content_type: null, status: "failed", error: err instanceof Error ? err.message : String(err), relinked: false });
+      throw downloadFailure(artifact, err, files);
     }
   }
-  const materialLinks = await relinkMaterials(artifacts.map((a, i) => ({ key: a.key, path: resolvePath(saved[i]!) })));
-  for (const w of materialLinks?.warnings ?? []) logger.warn(w.message);
+  if (opts.signal?.aborted) throw downloadFailure(plan[plan.length - 1]!.artifact, new CliError({ code: "interrupted", message: "interrupted before the material references were relinked and the sidecar written" }), files);
+  const materialLinks = await relinkMaterials(plan.map((p, i) => ({ key: p.artifact.key, path: resolvePath(saved[i]!), sourceName: basenameOfUrl(p.artifact.url) })));
+  if (materialLinks) {
+    for (const path of materialLinks.rewritten) {
+      const entry = files.find((f) => resolvePath(f.path) === path);
+      if (!entry) continue;
+      const digest = fileDigest(path);
+      entry.bytes = digest.bytes;
+      entry.sha256 = digest.sha256;
+      entry.relinked = true;
+    }
+    for (const w of materialLinks.warnings) logger.warn(w.message);
+  }
   writeMeta(task, resource, metadataPath, saved);
-  return { savedFiles: saved, metadataPath, materialLinks };
+  return { savedFiles: saved, metadataPath, materialLinks, files };
 }
 
 function deriveFilename(artifact: Artifact): string {
@@ -726,45 +808,59 @@ function deriveFilename(artifact: Artifact): string {
   return artifact.preferredExt ? `${stem}.${artifact.preferredExt}` : stem;
 }
 
-async function downloadArtifact(artifact: Artifact, targetPath: string, root: string): Promise<string> {
+interface PlacedArtifact {
+  path: string;
+  bytes: number;
+  sha256: string;
+  contentType: string | null;
+}
+
+/** Fetch one artifact into place. Errors keep their class: a CliError from the fetch/publish core is rethrown untouched. */
+async function downloadArtifact(artifact: Artifact, targetPath: string, root: string, signal: AbortSignal | undefined): Promise<PlacedArtifact> {
   logger.debug(`GET ${redact(artifact.url)}`);
-  let fetched: FetchedFile;
-  try {
-    fetched = await fetchToTemp(artifact.url, targetPath);
-  } catch (err) {
-    throw new Error(`download failed for ${artifact.key} (${err instanceof Error ? err.message : String(err)})`);
-  }
+  const fetched = await fetchToTemp(artifact.url, targetPath, { signal });
   const actualExt = extFromContentType(fetched.contentType);
   const requestedExt = extname(targetPath).slice(1).toLowerCase();
   let finalPath = targetPath;
   let tmp = fetched.tmpPath;
+  let bytes = fetched.bytes;
+  let sha = fetched.sha256;
 
-  if (!requestedExt && actualExt) {
-    // No extension requested (e.g. unknown-format image artifact) — pick one
-    // from the content-type so the file has a reasonable suffix.
-    finalPath = `${targetPath}.${actualExt}`;
-  } else if (actualExt && requestedExt && actualExt !== requestedExt && !extEquivalent(actualExt, requestedExt)) {
-    if (CONVERTIBLE_IMAGE_EXTS.has(actualExt) && CONVERTIBLE_IMAGE_EXTS.has(requestedExt)) {
-      // Both sides are image formats sharp understands — convert.
-      logger.debug(`converting ${actualExt} → ${requestedExt} for ${artifact.key}`);
-      const converted = `${tmp}.conv`;
-      await convertImage(readFileSync(tmp), requestedExt, converted);
-      removeQuietly(tmp);
-      tmp = converted;
-    } else {
-      // Can't convert safely — save with the true extension so the file isn't a lie.
-      finalPath = `${targetPath.slice(0, targetPath.length - (requestedExt.length + 1))}.${actualExt}`;
-      logger.warn(
-        `extension mismatch for ${artifact.key}: requested .${requestedExt}, got ${fetched.contentType || "?"}; ` +
-          `cannot transcode ${actualExt} → ${requestedExt}, saving as ${finalPath}`,
-      );
+  try {
+    if (!requestedExt && actualExt) {
+      // No extension requested (e.g. unknown-format image artifact) — pick one
+      // from the content-type so the file has a reasonable suffix.
+      finalPath = `${targetPath}.${actualExt}`;
+    } else if (actualExt && requestedExt && actualExt !== requestedExt && !extEquivalent(actualExt, requestedExt)) {
+      if (CONVERTIBLE_IMAGE_EXTS.has(actualExt) && CONVERTIBLE_IMAGE_EXTS.has(requestedExt)) {
+        // Both sides are image formats sharp understands — convert.
+        logger.debug(`converting ${actualExt} → ${requestedExt} for ${artifact.key}`);
+        const converted = `${tmp}.conv`;
+        await convertImage(readFileSync(tmp), requestedExt, converted);
+        removeQuietly(tmp);
+        tmp = converted;
+        const digest = fileDigest(converted);
+        bytes = digest.bytes;
+        sha = digest.sha256;
+      } else {
+        // Can't convert safely — save with the true extension so the file isn't a lie.
+        finalPath = `${targetPath.slice(0, targetPath.length - (requestedExt.length + 1))}.${actualExt}`;
+        logger.warn(
+          `extension mismatch for ${artifact.key}: requested .${requestedExt}, got ${fetched.contentType || "?"}; ` +
+            `cannot transcode ${actualExt} → ${requestedExt}, saving as ${finalPath}`,
+        );
+      }
     }
+    if (signal?.aborted) throw new CliError({ code: "interrupted", message: `interrupted before ${artifact.key} was published` });
+    // The final name may differ from the pre-checked one; it still may not
+    // clobber anything and must stay under the output directory.
+    const resolved = resolveWithinRoot(finalPath, root, { label: "download target" }).path;
+    publishTempFile(tmp, resolved, { overwrite: false });
+  } catch (err) {
+    removeQuietly(tmp);
+    throw err;
   }
-  // The final name may differ from the pre-checked one; it still may not
-  // clobber anything and must stay under the output directory.
-  const resolved = resolveWithinRoot(finalPath, root, { label: "download target" }).path;
-  publishTempFile(tmp, resolved, { overwrite: false });
-  return finalPath === targetPath ? targetPath : finalPath;
+  return { path: finalPath === targetPath ? targetPath : finalPath, bytes, sha256: sha, contentType: fetched.contentType };
 }
 
 /**
@@ -774,41 +870,43 @@ async function downloadArtifact(artifact: Artifact, targetPath: string, root: st
  *   - `-o some/dir/` (or any non-file path): write `meta.json` inside,
  *     matching the directory-mode layout used elsewhere.
  * Other single-file extensions are rejected — the data is JSON, lying about
- * the extension would be worse than a clear error.
+ * the extension would be worse than a clear error. Every path is proven inside
+ * the workspace (when given) before any directory or file is created.
  */
-function saveReportOnly(task: Task, outputPath: string, resource: string): DownloadResult {
+function saveReportOnly(task: Task, outputPath: string, resource: string, workspaceReal: string | null): DownloadResult {
   const singleFileMode = looksLikeFile(outputPath);
+  const abs = resolvePath(outputPath);
   if (singleFileMode) {
-    const ext = extname(outputPath).slice(1).toLowerCase();
+    const ext = extname(abs).slice(1).toLowerCase();
     if (ext !== "json") {
       throw new UsageError(
         `${resource} produces a JSON report — pass '-o <path>.json' or a directory path (got '${outputPath}').`,
       );
     }
-    if (existsSync(outputPath)) {
+    if (existsSync(abs)) {
       throw new UsageError(
         `refusing to overwrite existing file:\n  ${outputPath}\n` +
           `(delete it or choose a different --output path to rerun)`,
       );
     }
-    mkdirSync(dirname(outputPath) || ".", { recursive: true });
-    writeFileSync(
-      outputPath,
-      `${JSON.stringify({ resource, task, downloaded_at: new Date().toISOString() }, null, 2)}\n`,
-      "utf8",
-    );
-    return { savedFiles: [], metadataPath: outputPath, materialLinks: null };
+    if (workspaceReal) resolveWithinRoot(abs, workspaceReal, { label: "report path" });
+    writeJsonFile(abs, { resource, task, downloaded_at: new Date().toISOString() }, { overwrite: false, mode: 0o644 });
+    return { savedFiles: [], metadataPath: abs, materialLinks: null, files: [] };
   }
-  const metadataPath = join(outputPath, "meta.json");
+  const metadataPath = join(abs, "meta.json");
   if (existsSync(metadataPath)) {
     throw new UsageError(
       `refusing to overwrite existing file:\n  ${metadataPath}\n` +
         `(delete it or choose a different --output path to rerun)`,
     );
   }
-  mkdirSync(outputPath, { recursive: true });
+  if (workspaceReal) {
+    resolveWithinRoot(abs, workspaceReal, { label: "output directory" });
+    resolveWithinRoot(metadataPath, workspaceReal, { label: "planned download path" });
+  }
+  mkdirSync(abs, { recursive: true });
   writeMeta(task, resource, metadataPath, []);
-  return { savedFiles: [], metadataPath, materialLinks: null };
+  return { savedFiles: [], metadataPath, materialLinks: null, files: [] };
 }
 
 function writeMeta(task: Task, resource: string, path: string, savedFiles: string[]): void {

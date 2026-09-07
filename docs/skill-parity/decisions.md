@@ -369,3 +369,88 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   download (and the project record) now happen before the format branch; the
   ndjson `outcome` line carries the manifest, a download failure is one `ok:false`
   outcome (exit code of the failure, task kept), and json/pretty behave the same.
+
+## D-038 The write root also covers report-only tasks and the implicit history root
+
+- Codex review round 2 (R2-F01): `-o` on a report-only task (analyze-printability)
+  returned through `saveReportOnly` before the workspace check; `project record`
+  with `--workspace` equal to the project directory wrote `history.json` into the
+  parent; `downloadAssets` created the output directory before refusing it. Now
+  `saveReportOnly` receives the workspace and proves the file/`meta.json` path
+  inside it before any `mkdir`; `downloadAssets` checks directory and planned leaves
+  first and creates the directory after; `indexRootFor` decides the history root
+  (explicit `--root`, else the project's parent) and, when it resolves outside the
+  workspace, the project verbs (`project record`, task `--project`, `download
+  --project`) record `metadata.json` and skip the index with
+  `index.updated=false` + the reason (`index_dirty` warning) — nothing is created,
+  locked or temp-filed outside the boundary. An explicit `--root` outside the
+  workspace stays a refusal before any write.
+
+## D-039 Material relinking resolves by source name and never guesses between groups
+
+- R2-F02: `byChannel` kept the first texture per channel, so two `newmtl` groups'
+  `map_Kd` lines both pointed at `texture_0_base_color.png`. Every downloaded
+  texture now carries the name the server served it under (`basenameOfUrl`), and a
+  reference resolves only when exactly one texture matches, in this order: saved
+  name; source name (case-insensitive); source stem (extension and directories
+  ignored); channel word in the reference; channel of the MTL key; the only texture
+  when the MTL has one distinct reference. Several matches for a rule are an
+  ambiguity: the reference stays as written, the candidates are listed on the
+  `texture_maps` entry (`method: "ambiguous"`), `material_links.status` is
+  `incomplete` and `material_reference_ambiguous` is warned. The `newmtl` group of
+  every map is recorded. The legacy `-o` layout uses the same resolver.
+
+## D-040 Bookkeeping failures after a stream are part of its terminal outcome
+
+- R2-F03: a `--save-json` conflict or `--project` failure after the SSE stream had
+  emitted task events surfaced as a bare error envelope without `event`/`sequence`.
+  `streamAndReport` now runs save/record inside the same terminal handling: the
+  failure becomes the single `outcome` (ndjson, next sequence) or the single
+  envelope (json/pretty), keeps the task context, and when the stream itself ended
+  in a failure the bookkeeping error rides along as a `bookkeeping_failed` warning.
+
+## D-041 Task `-o` downloads carry a per-file manifest and keep the failure class
+
+- R2-F04: `maybeDownloadV1`/`make` reported `files: []` on any download failure
+  and the legacy downloader turned every fetch error into a plain `Error`, so an
+  asset host 503 read as `local_io` without status while `model.glb` sat on disk.
+  `downloadArtifacts` now returns `files` (key, path, bytes, sha256, status) and,
+  on failure, throws a CliError with the *original* code/HTTP status/recovery and
+  `result.downloads = { state: partial|failed, files }`; `maybeDownloadV1` and
+  `make` merge that manifest instead of replacing it. Legacy `-o` error payloads
+  therefore now carry `code`, `status` and `result.downloads` (they used to be
+  `{name:"Error", message}`); the file layout and success output are unchanged.
+
+## D-042 Task `-o` downloads are cancellable
+
+- R2-F05: the legacy downloader never received the abort signal, so Ctrl-C during
+  an asset transfer printed "interrupted" and then finished the download with
+  exit 0. The signal now travels from every task verb, `make` and the legacy
+  reporter into `fetchToTemp`; an abort stops the transfer, deletes the temp file,
+  skips relink/sidecar and surfaces as `interrupted` (130) with the task id,
+  submission, `next` and the files already committed. `index.ts` re-wraps a
+  post-SIGINT failure as `interrupted` *without* dropping `result`/`recovery`.
+
+## D-043 OAuth logins are identified by user id or a per-login id — never "unknown"
+
+- R2-F06: D-029 bound OAuth profiles without `user_id` to the profile name, so a
+  different account logged into the same profile replayed the old journal record.
+  `meshy auth login` now mints a random `login_id` on every OAuth profile; a silent
+  refresh preserves it, a new login replaces it. The journal identity is
+  `subject:<user_id>` when the token endpoint reported one, else
+  `login:<login_id>`. A profile with neither (written before login ids existed) has
+  no verifiable identity: it may start new operations, but `beginOperation` refuses
+  to replay an existing record for it (`operation_conflict`, `result.conflict:
+  ["credential_unverified"]`, recovery `meshy auth login`). Migration is a
+  re-login; nothing secret (token, login id) is written to the journal — only the
+  one-way fingerprint. Supersedes the "profile name only" limitation in D-029.
+
+## D-044 Deadline tests are deterministic
+
+- R2-F07: the round-1 test "one GET within a 250 ms budget" used real timers and
+  failed intermittently when `setTimeout` woke a fraction early. `pollUntilTerminal`
+  already injects `now`/`sleep`; the tests now drive a fake clock (exact expiry,
+  early wake, late wake, deadline-bound request timeout, read-timeout-bound failure)
+  and the one real-timer smoke asserts only the invariant a real clock can prove:
+  no GET *starts* after the deadline. The subprocess tests with slow headers/bodies
+  (R03) are kept.

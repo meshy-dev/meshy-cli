@@ -121,6 +121,7 @@ export async function refreshOAuthCredentialIfNeeded(
         refresh_token: tok.refresh_token,
         expires_at: Date.now() + tok.expires_in * 1000,
         user_id: tok.user_id ?? profile.user_id,
+        ...(profile.login_id ? { login_id: profile.login_id } : {}),
         created_at: profile.created_at,
       },
       { makeActive: false },

@@ -229,8 +229,12 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   request instead of submitting again; a different request under the same id is
   refused (`operation_conflict`, exit 2, naming what differs). "Identical" means
   the same resource, API origin, credential — a one-way digest of the API key,
-  or the OAuth account — and payload, with every inline image or model hashed by
-  content. This is a local record, not a server-side idempotency key.
+  or the OAuth account (its user id, else the login id `meshy auth login` mints
+  for the profile) — and payload, with every inline image or model hashed by
+  content. An OAuth profile saved before login ids existed carries no verifiable
+  identity: it can start operations but is refused a replay (exit 2,
+  `credential_unverified`) until you log in again. This is a local record, not a
+  server-side idempotency key.
 - Local targets that would fail after the POST are checked before it: an
   existing `--save-json` file, an `-o` path outside `--workspace`, a missing
   `--project` all exit 11 with "nothing was submitted" and cost no request.
@@ -248,8 +252,14 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   `--idle-timeout` (silence, keep-alives reset it); `-o` downloads the assets
   in every output format, and in `ndjson` the final `outcome` line carries the
   download manifest.
-- Ctrl-C stops waiting or downloading (exit 130) and sends no DELETE; the
-  envelope carries the task id and the command that resumes.
+- `-o` on `get`/`wait`/`stream`/`make` downloads every artifact of a SUCCEEDED
+  task; `result.downloads.files` is a per-file manifest (key, path, bytes,
+  sha256, status). When the second asset fails, the state is `partial`, the files
+  already written stay listed and on disk, and the error keeps the asset host's
+  class and HTTP status (a 503 is `network`, exit 7, not a local I/O error).
+- Ctrl-C stops waiting, streaming or downloading (exit 130) and sends no DELETE;
+  the envelope carries the task id, the command that resumes and the files that
+  had already landed. An interrupted transfer leaves no temp file behind.
 
 ## Resources
 
@@ -351,10 +361,14 @@ command lists the candidates and exits 2 instead of guessing. Selecting an OBJ
 pulls its MTL and textures (`--geometry-only` to skip); once the set has landed
 the OBJ's `mtllib` and the MTL's `map_*` references are rewritten to the names
 actually saved (`model.mtl`, `texture_0_base_color.png`, …) so the model loads
-from that directory — every link is listed under
-`result.downloads.material_links`, rewritten files carry `relinked: true` with
-their final sha256, and a reference that matches no downloaded file stays as
-written and is warned (`material_reference_unresolved`). Files are published
+from that directory. Textures are matched by the name the server served them
+under (then by channel), one candidate only: with several material groups a
+reference that could mean two files is left as written and reported as
+ambiguous. Every link is listed under `result.downloads.material_links`
+(`status: complete | incomplete`, the `newmtl` group of each map), rewritten
+files carry `relinked: true` with their final sha256, and a reference that
+matches no or several downloaded files stays as written and is warned
+(`material_reference_unresolved` / `material_reference_ambiguous`). Files are published
 exclusively (never overwritten without `--overwrite`), checked against the
 content type and magic bytes, kept inside the output directory (or `--workspace`),
 and listed with size and sha256 in `result.downloads.files`. Asset hosts never
@@ -428,7 +442,7 @@ message before any task is created. GLB-only fields (`uv-unwrap`, `rigging`
 | `--output-schema legacy\|v1` | Stdout data model (existing commands default to `legacy`; new commands are `v1`) |
 | `--format json\|pretty\|ndjson` | Stdout rendering (default `json`) |
 | `-o, --output <path>` | Download artifacts to a file/directory (task commands); output file for `mesh prepare-print` |
-| `--workspace <dir>` | Confine every written file to this directory: `download`, `-o` on task verbs and `make`, `--save-json`, `--project`/project folders, `mesh prepare-print` outputs and their copied materials — checked on real paths before anything is created |
+| `--workspace <dir>` | Confine every written file to this directory: `download`, `-o` on task verbs and `make` (report-only tasks included), `--save-json`, `--project`/project folders and the history index (skipped with `index_dirty` when its root would fall outside), `mesh prepare-print` outputs and their copied materials — checked on real paths before anything, even a directory, is created |
 | `--no-update-check` | Skip the background npm version check in this process |
 | `-v, --verbose` | Debug logging to stderr |
 | `--log-level <level>` | `debug \| info \| warn \| error \| silent` |

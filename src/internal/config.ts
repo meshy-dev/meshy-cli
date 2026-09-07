@@ -68,6 +68,8 @@ export interface MeshyConfig {
    * API keys (the key itself is digested) and for profiles without a user id.
    */
   credentialSubject?: string;
+  /** Per-login identifier of an OAuth profile (minted at `auth login`), the fallback identity when no user id exists. */
+  credentialLoginId?: string;
 }
 
 export interface ConfigOverrides {
@@ -164,6 +166,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
   let credentialProfile: string | undefined;
   let credentialKind: CredentialKind = "api_key";
   let credentialSubject: string | undefined;
+  let credentialLoginId: string | undefined;
 
   if (!PLACEHOLDER_KEYS.has(flagKey)) {
     apiKey = flagKey;
@@ -194,6 +197,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
       credentialProfile = stored.profile;
       credentialKind = stored.kind;
       credentialSubject = stored.userId;
+      credentialLoginId = stored.loginId;
     } else {
       throw authRequiredError(
         "No credentials found. Pass --api-key, export MESHY_API_KEY, or log in.",
@@ -217,6 +221,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
     credentialsFile: credFile,
     credentialKind,
     credentialSubject,
+    credentialLoginId,
   };
 
   setLogLevel(cfg.logLevel);

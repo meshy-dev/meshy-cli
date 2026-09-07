@@ -75,9 +75,20 @@ async function reportFailure(program: Command, argv: string[], err: unknown): Pr
   const ctx = currentCommand();
   const schema: OutputSchema = ctx?.schema ?? resolveSchemaHeuristically(program, argv);
   const format: OutputFormat = ctx?.format ?? resolveErrorFormat(program);
+  // A SIGINT that surfaced as some other failure is still reported as
+  // interrupted — but whatever the command already knew (task id, submission,
+  // files written so far, recovery command) travels with it.
   const interruptedErr =
     wasInterrupted() && !(err instanceof CliError && err.code === "interrupted")
-      ? new CliError({ code: "interrupted", message: "interrupted by SIGINT", cause: err })
+      ? new CliError({
+          code: "interrupted",
+          message: `interrupted by SIGINT${err instanceof Error && err.message ? ` (${err.message})` : ""}`,
+          result: err instanceof CliError ? err.result : null,
+          warnings: err instanceof CliError ? err.warnings : [],
+          recovery: err instanceof CliError ? err.recovery : null,
+          hint: err instanceof CliError ? err.hint : undefined,
+          cause: err,
+        })
       : err;
 
   if (schema === "v1") {

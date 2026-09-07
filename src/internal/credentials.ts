@@ -52,6 +52,13 @@ export interface CredentialProfile {
   /** Unix epoch millis. */
   expires_at?: number;
   user_id?: string;
+  /**
+   * Random identifier minted by `meshy auth login` for OAuth profiles. It
+   * survives token refreshes and is replaced by a new login, so the operation
+   * journal can bind a submission to *this* login even when the token endpoint
+   * reports no user_id.
+   */
+  login_id?: string;
   created_at?: number;
 }
 
@@ -321,6 +328,8 @@ export interface ResolvedStoredCredential {
   expiresAt?: number;
   /** Stable account subject of an OAuth profile, when the token endpoint reported one. */
   userId?: string;
+  /** Per-login identifier of an OAuth profile (see CredentialProfile.login_id). */
+  loginId?: string;
 }
 
 /**
@@ -344,6 +353,7 @@ export function resolveStoredCredential(file: string): ResolvedStoredCredential 
     accessToken: profile.access_token,
     expiresAt: profile.expires_at,
     ...(profile.user_id ? { userId: profile.user_id } : {}),
+    ...(profile.login_id ? { loginId: profile.login_id } : {}),
   };
 }
 

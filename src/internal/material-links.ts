@@ -11,11 +11,16 @@
  * text files the CLI itself just wrote are touched; nothing is renamed, the
  * rewritten paths are listed, and their digests are re-taken by the caller.
  *
- * Texture references are matched in this order: the exact saved file name, a
- * channel word in the referenced name (…_normal.png), the MTL key's channel
- * (map_Kd → base color), and finally "the only texture there is" when the MTL
- * has exactly one distinct reference. Anything else stays as written and is
- * reported as `material_reference_unresolved`.
+ * A texture reference is resolved only when exactly one downloaded texture
+ * matches, in this order: the saved file name itself; the name the server
+ * served the texture under (the URL's last segment — `body.png` for
+ * `…/body.png`); the same name ignoring extension and directories; a channel
+ * word inside the referenced name (…_normal.png); the channel implied by the
+ * MTL key (map_Kd → base color); finally "the only texture there is" when the
+ * MTL has exactly one distinct reference. Several candidates for the same rule
+ * is an *ambiguity*: the reference stays as written, the candidates are listed
+ * and the report is `incomplete` — the CLI never picks the first of several
+ * material groups' textures. Unresolved references are reported the same way.
  */
 
 import { createHash } from "node:crypto";
@@ -33,27 +38,59 @@ export interface LinkableFile {
   key: string;
   /** Absolute path as written. */
   path: string;
+  /** The file name the server served the asset under (last URL path segment), when known. */
+  sourceName?: string | null;
 }
+
+export type LinkMethod =
+  | "unchanged"
+  | "exact"
+  | "source_name"
+  | "source_stem"
+  | "channel_in_name"
+  | "channel_of_key"
+  | "only_texture"
+  | "downloaded_mtl"
+  | "ambiguous"
+  | "unresolved";
 
 export interface ReferenceLink {
   /** 1-based line in the file that carried the reference. */
   line: number;
+  /** `newmtl` group the map belongs to (MTL only). */
+  material: string | null;
   /** The reference as written before relinking. */
   reference: string;
-  /** Saved file name the reference now points at, or null when it could not be resolved. */
+  /** Saved file name the reference now points at, or null when it stays as written. */
   resolved_to: string | null;
   /** How the link was decided. */
-  method: "unchanged" | "exact" | "channel_in_name" | "channel_of_key" | "only_texture" | "downloaded_mtl" | "unresolved";
+  method: LinkMethod;
+  /** Saved names that matched when the reference was ambiguous. */
+  candidates?: string[];
+}
+
+export interface TextureDescriptor {
+  key: string;
+  /** Saved file name. */
+  name: string;
+  /** Name the server served it under, when known. */
+  source_name: string | null;
+  /** `texture_urls` set index (material group) the texture came from. */
+  set: number | null;
+  /** Canonical channel (basecolor, normal, …) from the asset key. */
+  channel: string | null;
 }
 
 export interface MaterialLinkReport {
   obj: string;
   mtl: string | null;
-  textures: string[];
+  textures: TextureDescriptor[];
   mtllib: ReferenceLink[];
   texture_maps: ReferenceLink[];
   /** Absolute paths whose content was rewritten. */
   rewritten: string[];
+  /** `complete` when every reference points at a downloaded file; `incomplete` when any stayed as written. */
+  status: "complete" | "incomplete";
   warnings: Warning[];
 }
 
@@ -114,10 +151,16 @@ function canonicalChannel(raw: string): string | null {
   return CHANNEL_SYNONYMS[compact] ?? null;
 }
 
-/** Channel encoded in an asset key: `texture.0.base_color` / `texture_0_base_color`. */
-export function channelOfTextureKey(key: string): string | null {
+/** Set index and channel encoded in an asset key: `texture.0.base_color` / `texture_0_base_color`. */
+export function describeTextureKey(key: string): { set: number | null; channel: string | null } {
   const m = /^texture[._](\d+)[._](.+)$/.exec(key);
-  return m ? canonicalChannel(m[2]!) : null;
+  if (!m) return { set: null, channel: null };
+  return { set: Number(m[1]), channel: canonicalChannel(m[2]!) };
+}
+
+/** @deprecated kept for callers of the round-1 API. */
+export function channelOfTextureKey(key: string): string | null {
+  return describeTextureKey(key).channel;
 }
 
 /** Channel word inside a referenced file name (`texture_normal.png`, `Body_BaseColor.jpg`). */
@@ -140,6 +183,10 @@ export function channelInFileName(name: string): string | null {
 function keywordOf(t: string): string {
   const m = WS.exec(t);
   return m ? t.slice(0, m.index) : t;
+}
+
+function stemOf(name: string): string {
+  return name.replace(/\.[A-Za-z0-9]+$/, "").toLowerCase();
 }
 
 function looksBinary(path: string): boolean {
@@ -270,24 +317,66 @@ function parseMapLine(line: string): { indent: string; key: string; options: str
   return { indent, key, options: "", ref: rest };
 }
 
+type Resolution = { kind: "hit"; name: string; method: LinkMethod } | { kind: "ambiguous"; method: LinkMethod; candidates: string[] } | { kind: "none" };
+
+/** Apply one rule: exactly one candidate resolves, several are an ambiguity, none falls through. */
+function pick(candidates: TextureDescriptor[], method: LinkMethod): Resolution | null {
+  if (candidates.length === 1) return { kind: "hit", name: candidates[0]!.name, method };
+  if (candidates.length > 1) return { kind: "ambiguous", method, candidates: candidates.map((c) => c.name) };
+  return null;
+}
+
+function resolveTextureReference(key: string, ref: string, textures: TextureDescriptor[], distinctRefs: number): Resolution {
+  const refBase = basename(ref.replaceAll("\\", "/"));
+  const lower = refBase.toLowerCase();
+  const exact = textures.filter((t) => t.name === refBase) ;
+  if (exact.length === 1) return { kind: "hit", name: exact[0]!.name, method: ref === refBase ? "unchanged" : "exact" };
+  const exactCi = pick(textures.filter((t) => t.name.toLowerCase() === lower), "exact");
+  if (exactCi) return exactCi;
+  const bySource = pick(textures.filter((t) => t.source_name !== null && t.source_name.toLowerCase() === lower), "source_name");
+  if (bySource) return bySource;
+  const stem = stemOf(refBase);
+  const byStem = pick(textures.filter((t) => t.source_name !== null && stemOf(t.source_name) === stem), "source_stem");
+  if (byStem) return byStem;
+  const inName = channelInFileName(refBase);
+  if (inName) {
+    const r = pick(textures.filter((t) => t.channel === inName), "channel_in_name");
+    if (r) return r;
+  }
+  const ofKey = MAP_KEY_CHANNEL[key.toLowerCase()];
+  if (ofKey) {
+    const r = pick(textures.filter((t) => t.channel === ofKey), "channel_of_key");
+    if (r) return r;
+  }
+  if (textures.length === 1 && distinctRefs === 1) return { kind: "hit", name: textures[0]!.name, method: "only_texture" };
+  return { kind: "none" };
+}
+
 /**
  * Relink the OBJ/MTL/texture files of one download. Returns null when the set
- * has no text OBJ (nothing to relink). Never throws for unresolved references;
- * those become warnings and `resolved_to: null` entries.
+ * has no text OBJ (nothing to relink). Never throws for unresolved or
+ * ambiguous references; those become warnings, `resolved_to: null` entries
+ * and `status: "incomplete"`.
  */
 export async function relinkMaterials(files: readonly LinkableFile[]): Promise<MaterialLinkReport | null> {
   const obj = files.find((f) => isObjKey(f.key) && /\.obj$/i.test(f.path));
   if (!obj) return null;
   if (looksBinary(obj.path)) return null;
   const mtl = files.find((f) => isMtlKey(f.key)) ?? null;
-  const textures = files.filter((f) => isTextureKey(f.key));
+  const textures: TextureDescriptor[] = files
+    .filter((f) => isTextureKey(f.key))
+    .map((f) => {
+      const d = describeTextureKey(f.key);
+      return { key: f.key, name: basename(f.path), source_name: f.sourceName ?? null, set: d.set, channel: d.channel };
+    });
   const report: MaterialLinkReport = {
     obj: obj.path,
     mtl: mtl?.path ?? null,
-    textures: textures.map((t) => t.path),
+    textures,
     mtllib: [],
     texture_maps: [],
     rewritten: [],
+    status: "complete",
     warnings: [],
   };
 
@@ -299,19 +388,20 @@ export async function relinkMaterials(files: readonly LinkableFile[]): Promise<M
     const ref = t.slice("mtllib".length).trim();
     if (!ref) return null;
     if (!mtlName) {
-      report.mtllib.push({ line: lineNo, reference: ref, resolved_to: null, method: "unresolved" });
+      report.mtllib.push({ line: lineNo, material: null, reference: ref, resolved_to: null, method: "unresolved" });
       return null;
     }
     if (ref === mtlName) {
-      report.mtllib.push({ line: lineNo, reference: ref, resolved_to: mtlName, method: "unchanged" });
+      report.mtllib.push({ line: lineNo, material: null, reference: ref, resolved_to: mtlName, method: "unchanged" });
       return null;
     }
-    report.mtllib.push({ line: lineNo, reference: ref, resolved_to: mtlName, method: "downloaded_mtl" });
+    report.mtllib.push({ line: lineNo, material: null, reference: ref, resolved_to: mtlName, method: "downloaded_mtl" });
     const indent = /^\s*/.exec(line)?.[0] ?? "";
     return `${indent}mtllib ${mtlName}`;
   });
   if (objChanged) report.rewritten.push(obj.path);
   if (!mtlName && report.mtllib.length > 0) {
+    report.status = "incomplete";
     report.warnings.push(
       warning(
         "material_reference_unresolved",
@@ -320,7 +410,7 @@ export async function relinkMaterials(files: readonly LinkableFile[]): Promise<M
     );
   }
 
-  // --- MTL: every map_* points at a texture that was actually saved.
+  // --- MTL: every map_* points at a texture that was actually saved, and only when the match is unambiguous.
   if (mtl) {
     let size = 0;
     try {
@@ -329,46 +419,51 @@ export async function relinkMaterials(files: readonly LinkableFile[]): Promise<M
       size = 0;
     }
     if (size > MAX_MTL_BYTES) {
+      report.status = "incomplete";
       report.warnings.push(warning("material_reference_unresolved", `${basename(mtl.path)} is ${size} bytes; too large for an MTL, texture references were not checked`));
       return report;
-    }
-    const textureNames = textures.map((t) => basename(t.path));
-    const byChannel = new Map<string, string>();
-    for (const t of textures) {
-      const ch = channelOfTextureKey(t.key);
-      if (ch && !byChannel.has(ch)) byChannel.set(ch, basename(t.path));
     }
     const distinctRefs = new Set<string>();
     for (const raw of readFileSync(mtl.path, "utf8").split(/\r?\n/)) {
       const parsed = parseMapLine(raw);
       if (parsed) distinctRefs.add(parsed.ref);
     }
-    const resolve = (key: string, ref: string): { name: string; method: ReferenceLink["method"] } | null => {
-      const refBase = basename(ref.replaceAll("\\", "/"));
-      const exact = textureNames.find((n) => n === refBase) ?? textureNames.find((n) => n.toLowerCase() === refBase.toLowerCase());
-      if (exact) return { name: exact, method: exact === ref ? "unchanged" : "exact" };
-      const inName = channelInFileName(refBase);
-      if (inName && byChannel.has(inName)) return { name: byChannel.get(inName)!, method: "channel_in_name" };
-      const ofKey = MAP_KEY_CHANNEL[key.toLowerCase()];
-      if (ofKey && byChannel.has(ofKey)) return { name: byChannel.get(ofKey)!, method: "channel_of_key" };
-      if (textureNames.length === 1 && distinctRefs.size === 1) return { name: textureNames[0]!, method: "only_texture" };
-      return null;
-    };
+    let material: string | null = null;
     const mtlChanged = await rewriteLines(mtl.path, (line, lineNo) => {
-      const parsed = parseMapLine(line);
-      if (!parsed) return null;
-      const hit = resolve(parsed.key, parsed.ref);
-      if (!hit) {
-        report.texture_maps.push({ line: lineNo, reference: parsed.ref, resolved_to: null, method: "unresolved" });
+      const t = line.trim();
+      if (keywordOf(t) === "newmtl") {
+        material = t.slice("newmtl".length).trim() || null;
         return null;
       }
-      report.texture_maps.push({ line: lineNo, reference: parsed.ref, resolved_to: hit.name, method: hit.method });
-      if (hit.name === parsed.ref) return null;
-      return `${parsed.indent}${parsed.key}${parsed.options ? ` ${parsed.options}` : ""} ${hit.name}`;
+      const parsed = parseMapLine(line);
+      if (!parsed) return null;
+      const res = resolveTextureReference(parsed.key, parsed.ref, textures, distinctRefs.size);
+      if (res.kind === "none") {
+        report.texture_maps.push({ line: lineNo, material, reference: parsed.ref, resolved_to: null, method: "unresolved" });
+        return null;
+      }
+      if (res.kind === "ambiguous") {
+        report.texture_maps.push({ line: lineNo, material, reference: parsed.ref, resolved_to: null, method: "ambiguous", candidates: res.candidates });
+        return null;
+      }
+      report.texture_maps.push({ line: lineNo, material, reference: parsed.ref, resolved_to: res.name, method: res.method });
+      if (res.name === parsed.ref) return null;
+      return `${parsed.indent}${parsed.key}${parsed.options ? ` ${parsed.options}` : ""} ${res.name}`;
     });
     if (mtlChanged) report.rewritten.push(mtl.path);
-    const unresolved = report.texture_maps.filter((l) => l.resolved_to === null);
+    const ambiguous = report.texture_maps.filter((l) => l.method === "ambiguous");
+    const unresolved = report.texture_maps.filter((l) => l.method === "unresolved");
+    if (ambiguous.length > 0) {
+      report.status = "incomplete";
+      report.warnings.push(
+        warning(
+          "material_reference_ambiguous",
+          `${basename(mtl.path)}: ${ambiguous.map((l) => `'${l.reference}'${l.material ? ` (${l.material})` : ""} could be ${l.candidates!.join(" or ")}`).join("; ")}; the references stay as written — the CLI does not guess between material groups`,
+        ),
+      );
+    }
     if (unresolved.length > 0) {
+      report.status = "incomplete";
       report.warnings.push(
         warning(
           "material_reference_unresolved",
