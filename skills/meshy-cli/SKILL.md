@@ -170,8 +170,12 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
 - Exit 9 → run `meshy balance`, relay the number, do not retry.
 - Exit 6 → back off; the CLI does not retry for you.
 - Exit 8 → `wait`/`stream` the same task id again; it was not cancelled.
-- Exit 130 after `-o` → the transfer was cancelled; `result.downloads.files` lists what
-  already landed (`status: written`), the rest can be fetched with `meshy download`.
+- Exit 130 after `-o` → the transfer (or the material rewrite) was cancelled;
+  `result.downloads.files` lists what already landed (`status: written`), the rest can
+  be fetched with `meshy download`. `downloads.failed_step` (`relink` | `digest` |
+  `sidecar`) means every asset is on disk and only that step is missing.
+- Legacy-schema errors (no `--output-schema v1`) after a create carry additive
+  `task_id` / `operation_id` fields and a `hint` with the resume command — never re-create.
 - `result.downloads.material_links.status: "incomplete"` → name the references that
   stayed unresolved or ambiguous (`texture_maps[].method`) instead of claiming the model loads.
 - Exit 10 → reconcile with `<resource> list`; never submit the same create again blindly.

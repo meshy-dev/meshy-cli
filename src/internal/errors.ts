@@ -373,13 +373,21 @@ export function toErrorPayload(err: unknown): { name: string; message: string; [
     return { ...err.toJSON(), ...hintForApiError(err), name: err.name, message: err.message };
   }
   if (err instanceof CliError) {
+    // Additive convenience fields: a legacy consumer reading an error after a
+    // create must find the accepted task without digging into `result`.
+    const result = err.result ?? undefined;
+    const taskId = typeof result?.["task_id"] === "string" ? (result["task_id"] as string) : undefined;
+    const submission = result?.["submission"] as { operation_id?: unknown } | undefined;
+    const operationId = typeof submission?.operation_id === "string" ? submission.operation_id : undefined;
     return {
       name: err.name,
       message: err.message,
       code: err.code,
       ...(err.httpStatus !== null ? { status: err.httpStatus } : {}),
       ...(err.hint ? { hint: err.hint } : {}),
-      ...(err.result ? { result: err.result } : {}),
+      ...(taskId ? { task_id: taskId } : {}),
+      ...(operationId ? { operation_id: operationId } : {}),
+      ...(result ? { result } : {}),
     };
   }
   if (err instanceof CommanderError) {

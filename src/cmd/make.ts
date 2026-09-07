@@ -311,12 +311,33 @@ async function finalOutcome(
   executed: ExecutedStep[],
   warnings: Warning[],
 ): Promise<void> {
+  const descriptor = requireTaskResource(step.resource);
+  const submission = { state: "accepted", operation_id: executed[executed.length - 1]?.operation_id ?? null, task_id: task.id };
   if (opened.schema !== "v1") {
-    await emitTerminalOutcome(task, false, elapsed, step.resource, runtime);
+    // Legacy shape, same rule as the resource commands: a download failure
+    // after the chain succeeded still names the task, its submission and the
+    // command that fetches the assets again.
+    try {
+      await emitTerminalOutcome(task, false, elapsed, step.resource, runtime);
+    } catch (err) {
+      const wrapped = wrapWithResult(err, { route: plan.route, executed, task_id: task.id, submission, next: taskNextCommands(descriptor, task.id) });
+      throw new CliError({
+        code: wrapped.code,
+        message: wrapped.message,
+        exitCode: wrapped.exitCode,
+        httpStatus: wrapped.httpStatus,
+        retryable: wrapped.retryable,
+        recovery: wrapped.recovery ?? { action: "download", automatic: false, command: `meshy download --resource ${step.resource} --task-id ${task.id} --all --output-dir <dir>` },
+        hint: wrapped.hint ?? wrapped.recovery?.command ?? `meshy download --resource ${step.resource} --task-id ${task.id} --all --output-dir <dir>`,
+        details: wrapped.details,
+        warnings: wrapped.warnings,
+        result: wrapped.result,
+        cause: err,
+      });
+    }
     return;
   }
-  const descriptor = requireTaskResource(step.resource);
-  const base = buildTaskResult({ task, raw, descriptor, includeRaw: false, submission: { state: "accepted", operation_id: null, task_id: task.id } });
+  const base = buildTaskResult({ task, raw, descriptor, includeRaw: false, submission });
   let downloads = base.downloads as Record<string, unknown>;
   if (runtime.flags.output) {
     try {

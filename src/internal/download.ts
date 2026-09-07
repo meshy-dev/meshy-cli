@@ -21,7 +21,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, unlinkSync } from "node:fs";
 import { Transform } from "node:stream";
 import { basename, dirname, extname, join, relative, resolve as resolvePath } from "node:path";
 import { Readable } from "node:stream";
@@ -410,8 +410,39 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
     opts.onFile?.(entry);
   }
   const sources = new Map(assets.map((a) => [a.key, a.url ? basenameOfUrl(a.url) : null] as const));
-  const materialLinks = await relinkWritten(files, warnings, sources);
+  let materialLinks: MaterialLinkReport | null = null;
+  try {
+    if (opts.signal?.aborted) throw new CliError({ code: "interrupted", message: "interrupted before the material references were relinked" });
+    materialLinks = await relinkWritten(files, warnings, sources, opts.signal);
+  } catch (err) {
+    // Every file is on disk; say so, with the bytes actually there.
+    redigest(files);
+    const interrupted = (err instanceof CliError && err.code === "interrupted") || Boolean(opts.signal?.aborted);
+    throw new CliError({
+      code: interrupted ? "interrupted" : err instanceof CliError ? err.code : "local_io",
+      message: `${files.length} file(s) were written but relinking the material references ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`,
+      httpStatus: err instanceof CliError ? err.httpStatus : null,
+      result: { downloads: { state: "partial", files, metadata_path: null, failed_step: "relink" } },
+      warnings,
+      cause: err,
+    });
+  }
   return { files, complete: files.every((f) => f.status === "written"), warnings, materialLinks };
+}
+
+/** Re-take each committed file's digest from disk (a relink may have rewritten it before a later step failed). */
+function redigest(files: Array<{ status: string; path: string; bytes: number; sha256: string; relinked: boolean }>): void {
+  for (const f of files) {
+    if (f.status !== "written") continue;
+    try {
+      const d = fileDigest(f.path);
+      if (d.sha256 !== f.sha256) f.relinked = true;
+      f.bytes = d.bytes;
+      f.sha256 = d.sha256;
+    } catch {
+      /* keep the recorded digest */
+    }
+  }
 }
 
 /** Last path segment of an asset URL (decoded), the name the server knew the file by; null when unparseable. */
@@ -431,9 +462,9 @@ export function basenameOfUrl(url: string): string | null {
 }
 
 /** After the set landed: point OBJ → MTL → textures at the saved names and re-take the digests of rewritten files. */
-async function relinkWritten(files: DownloadedFile[], warnings: Array<{ code: string; message: string }>, sources: Map<string, string | null>): Promise<MaterialLinkReport | null> {
+async function relinkWritten(files: DownloadedFile[], warnings: Array<{ code: string; message: string }>, sources: Map<string, string | null>, signal: AbortSignal | undefined): Promise<MaterialLinkReport | null> {
   const written = files.filter((f) => f.status === "written" && f.container_format === null);
-  const links = await relinkMaterials(written.map((f) => ({ key: f.key, path: f.path, sourceName: sources.get(f.key) ?? null })));
+  const links = await relinkMaterials(written.map((f) => ({ key: f.key, path: f.path, sourceName: sources.get(f.key) ?? null })), { signal });
   if (!links) return null;
   for (const path of links.rewritten) {
     const entry = files.find((f) => f.path === path);
@@ -670,7 +701,36 @@ export interface DownloadArtifactsOptions {
 }
 
 function interruptedBefore(what: string): CliError {
-  return new CliError({ code: "interrupted", message: `interrupted before ${what} was downloaded; nothing further was fetched` });
+  return new CliError({ code: "interrupted", message: `interrupted before ${what}; nothing further was written` });
+}
+
+/**
+ * A failure *after* every transfer landed (relink, digest refresh, sidecar).
+ * The manifest keeps every committed file with the bytes actually on disk —
+ * a relink may already have rewritten some — and names the step that failed;
+ * a cooperative interrupt is `interrupted` (130), everything else keeps its class.
+ */
+function finalisationFailure(step: "relink" | "digest" | "sidecar", err: unknown, files: LegacyDownloadedFile[], signal: AbortSignal | undefined): CliError {
+  redigest(files);
+  const downloads = { state: "partial", files, metadata_path: null, failed_step: step };
+  const written = files.filter((f) => f.status === "written").length;
+  const interrupted = (err instanceof CliError && err.code === "interrupted") || Boolean(signal?.aborted);
+  const message = `${written} file(s) were written but the ${step} step ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`;
+  if (err instanceof CliError) {
+    return new CliError({
+      code: interrupted ? "interrupted" : err.code,
+      message,
+      httpStatus: err.httpStatus,
+      retryable: err.retryable,
+      recovery: err.recovery,
+      hint: err.hint,
+      details: err.details,
+      warnings: err.warnings,
+      result: { ...(err.result ?? {}), downloads },
+      cause: err,
+    });
+  }
+  return new CliError({ code: interrupted ? "interrupted" : "local_io", message, result: { downloads }, cause: err });
 }
 
 /**
@@ -764,7 +824,7 @@ export async function downloadArtifacts(
   const files: LegacyDownloadedFile[] = [];
   const saved: string[] = [];
   for (const { artifact, target } of plan) {
-    if (opts.signal?.aborted) throw downloadFailure(artifact, interruptedBefore(artifact.key), files);
+    if (opts.signal?.aborted) throw downloadFailure(artifact, interruptedBefore(`${artifact.key} was downloaded`), files);
     try {
       const placed = await downloadArtifact(artifact, target, root, opts.signal);
       saved.push(placed.path);
@@ -774,20 +834,36 @@ export async function downloadArtifacts(
       throw downloadFailure(artifact, err, files);
     }
   }
-  if (opts.signal?.aborted) throw downloadFailure(plan[plan.length - 1]!.artifact, new CliError({ code: "interrupted", message: "interrupted before the material references were relinked and the sidecar written" }), files);
-  const materialLinks = await relinkMaterials(plan.map((p, i) => ({ key: p.artifact.key, path: resolvePath(saved[i]!), sourceName: basenameOfUrl(p.artifact.url) })));
-  if (materialLinks) {
-    for (const path of materialLinks.rewritten) {
-      const entry = files.find((f) => resolvePath(f.path) === path);
-      if (!entry) continue;
-      const digest = fileDigest(path);
-      entry.bytes = digest.bytes;
-      entry.sha256 = digest.sha256;
-      entry.relinked = true;
+  // --- Finalisation: relink, refresh digests, publish the sidecar. Every step
+  // runs under the same failure handling as the transfers: whatever fails or is
+  // interrupted, the manifest still lists every committed file with the bytes
+  // actually on disk, and the sidecar is published like an asset (root re-proven
+  // at publication, symlink refused, exclusive — never truncating a file that
+  // appeared since the preflight).
+  const linkables = plan.map((p, i) => ({ key: p.artifact.key, path: resolvePath(saved[i]!), sourceName: basenameOfUrl(p.artifact.url) }));
+  let step: "relink" | "digest" | "sidecar" = "relink";
+  let materialLinks: MaterialLinkReport | null = null;
+  try {
+    if (opts.signal?.aborted) throw interruptedBefore("the material references were relinked");
+    materialLinks = await relinkMaterials(linkables, { signal: opts.signal });
+    step = "digest";
+    if (materialLinks) {
+      for (const path of materialLinks.rewritten) {
+        const entry = files.find((f) => resolvePath(f.path) === path);
+        if (!entry) continue;
+        const digest = fileDigest(path);
+        entry.bytes = digest.bytes;
+        entry.sha256 = digest.sha256;
+        entry.relinked = true;
+      }
+      for (const w of materialLinks.warnings) logger.warn(w.message);
     }
-    for (const w of materialLinks.warnings) logger.warn(w.message);
+    step = "sidecar";
+    if (opts.signal?.aborted) throw interruptedBefore("the sidecar was written");
+    writeMeta(task, resource, metadataPath, saved, root);
+  } catch (err) {
+    throw finalisationFailure(step, err, files, opts.signal);
   }
-  writeMeta(task, resource, metadataPath, saved);
   return { savedFiles: saved, metadataPath, materialLinks, files };
 }
 
@@ -905,19 +981,25 @@ function saveReportOnly(task: Task, outputPath: string, resource: string, worksp
     resolveWithinRoot(metadataPath, workspaceReal, { label: "planned download path" });
   }
   mkdirSync(abs, { recursive: true });
-  writeMeta(task, resource, metadataPath, []);
+  writeMeta(task, resource, metadataPath, [], workspaceReal ?? realpathLenient(abs));
   return { savedFiles: [], metadataPath, materialLinks: null, files: [] };
 }
 
-function writeMeta(task: Task, resource: string, path: string, savedFiles: string[]): void {
+/**
+ * The legacy sidecar (`meta.json` / `<stem>_meta.json`), published under the
+ * same rules as an asset: the real path is re-proven inside `root` at
+ * publication time (a symlink or file that appeared since the preflight is
+ * refused, never followed or truncated) and the write is exclusive and atomic.
+ */
+function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], root: string): void {
   const meta = {
     resource,
     task,
     saved_files: savedFiles,
     downloaded_at: new Date().toISOString(),
   };
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  const resolved = resolveWithinRoot(path, root, { label: "sidecar path" }).path;
+  writeJsonFile(resolved, meta, { overwrite: false, mode: 0o644 });
 }
 
 export { safeSegment as _safeSegmentForTests };

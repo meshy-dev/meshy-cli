@@ -256,7 +256,15 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   task; `result.downloads.files` is a per-file manifest (key, path, bytes,
   sha256, status). When the second asset fails, the state is `partial`, the files
   already written stay listed and on disk, and the error keeps the asset host's
-  class and HTTP status (a 503 is `network`, exit 7, not a local I/O error).
+  class and HTTP status (a 503 is `network`, exit 7, not a local I/O error). The
+  same holds for a failure *after* the transfers — relinking, digesting or
+  publishing the `meta.json` sidecar: `downloads.failed_step` names the step, the
+  manifest carries the digests actually on disk. The sidecar itself is published
+  like an asset (exclusive, no symlink, inside the root), so a file that appears
+  at its path during the download is never overwritten. The legacy schema
+  reports the same failures with additive `task_id`/`operation_id` fields and the
+  resume command as `hint`, so the accepted task is never lost from a default
+  `create -o` error.
 - Ctrl-C stops waiting, streaming or downloading (exit 130) and sends no DELETE;
   the envelope carries the task id, the command that resumes and the files that
   had already landed. An interrupted transfer leaves no temp file behind.
@@ -364,7 +372,9 @@ actually saved (`model.mtl`, `texture_0_base_color.png`, …) so the model loads
 from that directory. Textures are matched by the name the server served them
 under (then by channel), one candidate only: with several material groups a
 reference that could mean two files is left as written and reported as
-ambiguous. Every link is listed under `result.downloads.material_links`
+ambiguous, and a reference that merely equals one of the CLI's generated names
+(`texture_0_base_color.png`) while the server called that image something else
+is ambiguous too — identity follows the source, never the file name on disk. Every link is listed under `result.downloads.material_links`
 (`status: complete | incomplete`, the `newmtl` group of each map), rewritten
 files carry `relinked: true` with their final sha256, and a reference that
 matches no or several downloaded files stays as written and is warned

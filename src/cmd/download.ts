@@ -22,7 +22,7 @@ import { emitResult, openCommand, saveRawJson, type OpenedCommand } from "../int
 import { abortSignal } from "../internal/context.js";
 import { downloadAssets, type DownloadedFile } from "../internal/download.js";
 import { CliError, UsageError, type Warning } from "../internal/errors.js";
-import { resolveWithinRoot, safeSegment } from "../internal/paths.js";
+import { realpathLenient, resolveWithinRoot, safeSegment } from "../internal/paths.js";
 import { warning } from "../internal/result.js";
 import { indexRootFor, recordTask, stageFromTaskType } from "../internal/project-store.js";
 import { buildLocalRuntime, buildRuntime } from "../internal/runtime.js";
@@ -265,7 +265,14 @@ export const downloadCommand = new Command("download")
     let project: Record<string, unknown> | null = null;
     if (projectDir && task) {
       const taskId = String(task["id"] ?? "");
-      const files = result.files.filter((f) => f.status === "written").map((f) => relative(projectDir, f.path).split(/[\\/]/).join("/")).filter((f) => !f.startsWith(".."));
+      // Compare in one real-path frame: the project may be reached through an
+      // alias (a symlinked parent, macOS /var → /private/var) while the
+      // downloader reports real paths; the recorded name is relative to the real project.
+      const projectReal = realpathLenient(projectDir);
+      const files = result.files
+        .filter((f) => f.status === "written")
+        .map((f) => relative(projectReal, realpathLenient(f.path)).split(/[\\/]/).join("/"))
+        .filter((f) => f.length > 0 && !f.startsWith("..") && !f.startsWith("/"));
       const indexRoot = indexRootFor(projectDir, undefined, opened.flags.workspace);
       const rec = recordTask(projectDir, {
         taskId,

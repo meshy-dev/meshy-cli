@@ -116,6 +116,8 @@ export interface DownloadOutcome {
   metadata_path: string | null;
   /** OBJ/MTL/texture reference report when the download contained a text OBJ. */
   material_links?: MaterialLinkReport | null;
+  /** Set when the transfers landed but a later step (relink | digest | sidecar) failed or was interrupted. */
+  failed_step?: string;
 }
 
 export interface SubmissionInfo {
@@ -236,7 +238,7 @@ function withTaskContext(err: unknown, ctx: TaskContext): CliError {
     httpStatus: wrapped.httpStatus,
     retryable: wrapped.retryable,
     recovery: wrapped.recovery,
-    hint: wrapped.hint,
+    hint: wrapped.hint ?? wrapped.recovery?.command ?? next.wait,
     details: wrapped.details,
     warnings: wrapped.warnings,
     result: { ...base, ...own, task_id: ctx.taskId, next },
@@ -509,7 +511,12 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         );
         return;
       }
-      await emitLegacyOutcome(task, false, undefined, spec.name, runtime, { query: true });
+      // Legacy shape, same rule: a download failure still names the task.
+      try {
+        await emitLegacyOutcome(task, false, undefined, spec.name, runtime, { query: true });
+      } catch (err) {
+        throw withTaskContext(err, { ...ctx, savedJson, extra: project ? { project } : {} });
+      }
     },
   );
 
@@ -945,7 +952,14 @@ async function waitAndReport(
   const projectExtra = project ? { project } : {};
 
   if (opened.schema !== "v1") {
-    await emitLegacyOutcome(task, timedOut, elapsed, descriptor.id, runtime, { query: false });
+    // The legacy reporter downloads too; whatever fails there — an asset host
+    // 503, a sidecar that cannot be published, Ctrl-C — the error still
+    // carries the accepted task id, the real submission and the resume command.
+    try {
+      await emitLegacyOutcome(task, timedOut, elapsed, descriptor.id, runtime, { query: false });
+    } catch (err) {
+      throw withTaskContext(err, { ...ctx, savedJson, extra: { wait: waitInfo, ...projectExtra } });
+    }
     return;
   }
 
@@ -1110,7 +1124,13 @@ async function streamAndReport(
   if (opened.schema !== "v1") {
     // Legacy has no stream shape to preserve: reuse the terminal summary path (which honours -o itself).
     if (finalError) throw finalError;
-    if (outcome.task) await emitLegacyOutcome(outcome.task, false, outcome.elapsedMs / 1000, descriptor.id, runtime, { query: false });
+    if (outcome.task) {
+      try {
+        await emitLegacyOutcome(outcome.task, false, outcome.elapsedMs / 1000, descriptor.id, runtime, { query: false });
+      } catch (err) {
+        throw withTaskContext(err, { ...ctx, savedJson, extra: { stream: streamInfo, ...projectExtra } });
+      }
+    }
     return;
   }
 

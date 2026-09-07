@@ -454,3 +454,76 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   and the one real-timer smoke asserts only the invariant a real clock can prove:
   no GET *starts* after the deadline. The subprocess tests with slow headers/bodies
   (R03) are kept.
+
+## D-045 The legacy sidecar is published like an asset
+
+- Codex review round 3 (R3-F01): `writeMeta` wrote `meta.json` / `<stem>_meta.json`
+  with a truncating `writeFileSync` after a preflight that could be minutes old,
+  so a symlink or file planted in the output directory during the transfer was
+  followed or overwritten — even outside `--workspace`. The sidecar now goes
+  through the same rules as every asset: the real path is re-proven inside the
+  root at publication time (symlink leaf refused), the JSON is published
+  exclusively and atomically (`writeJsonFile` → `link`), and an existing file,
+  symlink or directory is a `local_io` refusal that keeps the committed model in
+  the manifest. Preflight remains an early exit, never a substitute for the
+  publication check. `saveReportOnly` (directory mode) uses the same path.
+
+## D-046 Legacy-schema post-processing runs in the task's context
+
+- R3-F02: only the v1 `maybeDownloadV1` wrapped download failures in the task
+  context; the legacy reporter (`-o` on a default-schema `create`, `wait`, `get`,
+  `stream`, `make`) let the raw error escape, so a paid create whose asset host
+  answered 503 printed an error without the accepted task id. Every legacy
+  post-processing call is now wrapped with `withTaskContext` / `wrapWithResult`:
+  the legacy error payload keeps its shape (`name`, `message`, `code`, `status`,
+  `hint`, `result`) and gains additive `task_id` and `operation_id` fields, the
+  `result` carries the real `submission`, `next` and the partial manifest, and the
+  `hint` (printed on stderr) is the resume/download command, which names the task.
+
+## D-047 Source identity beats a generated file name
+
+- R3-F03: a saved-name match ran before the source-name match, so an MTL that
+  referenced `texture_1_base_color.png` — the *server's* name for the image the
+  CLI saved as `texture_0_base_color.png` — kept pointing at the wrong file and
+  was reported `unchanged`/`complete`. The order is now: the server-side source
+  name; then a saved file of that name *only if* its own source is unknown or the
+  same name (a generated name that belongs to a different source is an ambiguity
+  with an explanatory `note`); then source stem, channel word, MTL-key channel and
+  the single-texture rule. Channel rules additionally refuse to decide when two
+  distinct references compete for the only texture of that channel. The
+  conservative fallback without source evidence (unit callers) is unchanged.
+
+## D-048 Download finalisation shares the transfer failure handling
+
+- R3-F04: relink, digest refresh and sidecar publication ran outside the
+  per-artifact `try`, so a failure there reached the caller as a bare error and
+  the manifest collapsed to `files: []` although every asset was on disk. The
+  three steps now run under one handler (`finalisationFailure`): the thrown
+  CliError keeps the original class, re-takes every committed file's digest from
+  disk (a relink may have rewritten some), marks `relinked` from the digest
+  change, reports `downloads.state = "partial"` with the full `files` list and
+  names the step in `downloads.failed_step` (`relink` | `digest` | `sidecar`).
+  `downloadAssets` (`meshy download`) does the same for its relink step.
+
+## D-049 The material rewrite is cooperative with SIGINT
+
+- R3-F05: the abort signal stopped at the HTTP transfer; the asynchronous relink
+  that followed did not receive it, so a Ctrl-C during a multi-megabyte OBJ
+  rewrite printed "interrupted" and then exited 0 with a published sidecar.
+  `relinkMaterials` now takes the signal and `rewriteLines` checks it before the
+  first read, after every chunk and before publication, removing its temp file
+  and throwing `interrupted`; `downloadArtifacts`/`downloadAssets` check it again
+  before the sidecar. The result is exit 130 with the task id, `next`, the
+  committed files (digests re-taken) and `failed_step: "relink"`; the OBJ on disk
+  is either the original or the fully rewritten file, never a partial one.
+
+## D-050 Project file records are computed in the real-path frame
+
+- R3-F06: `download --project` compared the downloader's real paths with the
+  project directory as given, so a project reached through an alias (a symlinked
+  parent, macOS `/var` → `/private/var`) produced `../…` relative paths that were
+  filtered out: the asset was inside the project but `metadata.tasks[].files`
+  stayed empty and a false `files_outside_project` warning appeared. Both sides
+  are now resolved with `realpathLenient` before the containment test and the
+  relative path (as `saveTaskSnapshot` already did); the user-facing paths in the
+  result are unchanged. Files genuinely outside the project are still not recorded.

@@ -142,6 +142,17 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 | Ctrl-C during a task `-o` transfer | download completes, exit 0 | exit 130 `interrupted`, manifest of what landed, temp file removed | R2-F05 |
 | OAuth profile without `user_id` and the same `--operation-id` | replayed the other login's task | `login_id` minted at login binds the journal; profiles with neither are refused a replay (exit 2, `credential_unverified`) until `meshy auth login` | R2-F06 |
 
+### 3.3 Corrections from Codex review round 3 (visible in both schemas)
+
+| Behaviour | before the fix | after | Finding |
+| --- | --- | --- | --- |
+| a file/symlink/directory appears at `meta.json` (or `<stem>_meta.json`) during the transfer | followed or truncated, even outside `--workspace` | refused at publication (`local_io`), model kept in the manifest, nothing outside touched | R3-F01 |
+| legacy-schema `-o` failure after a `create`/`wait`/`get`/`stream`/`make` | payload without the task | additive `task_id`/`operation_id` fields, `result.submission`/`next`/manifest, hint names the task on stderr | R3-F02 |
+| MTL reference equal to a generated texture name that belongs to another source | rewritten to the wrong image, `complete` | mapped by the server-side name; a generated-name reference with a different source is `ambiguous` (kept, warned, `incomplete`) | R3-F03 |
+| relink/digest/sidecar failure after every asset landed | `downloads.files: []` | `downloads.state=partial`, full manifest with on-disk digests, `failed_step` | R3-F04 |
+| Ctrl-C during the OBJ/MTL rewrite | download completes, exit 0 | exit 130 `interrupted`, committed files kept, no sidecar, no temp file | R3-F05 |
+| `download --project` through an alias path | files not recorded, false `files_outside_project` | files recorded relative to the real project directory | R3-F06 |
+
 New global flags: `--output-schema`, `--api-key-file`, `--workspace`, `--no-update-check`,
 `--base-url-creative-lab`. New per-command flags on task verbs: `--save-json`,
 `--include-raw`, `--project`, `--stage`, `--operation-id`, `--stop-after-first` (make),
