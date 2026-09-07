@@ -10,6 +10,8 @@
 
 import { classifyError, type ErrorRecovery, type Warning } from "./errors.js";
 
+export type { Warning } from "./errors.js";
+
 export const SCHEMA_VERSION = "meshy.cli/v1";
 
 export type OutputSchema = "legacy" | "v1";

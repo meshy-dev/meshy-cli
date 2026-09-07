@@ -6,9 +6,10 @@
 
 import { Command, Option } from "commander";
 import type { TaskEndpoint } from "../client/endpoints/base.js";
-import type { MeshyClient, ResourceName } from "../client/index.js";
+import type { MeshyClient } from "../client/index.js";
+import { requireTaskResource } from "../client/resource-registry.js";
 import { downloadArtifacts } from "./download.js";
-import { resolveImageFields, resolveModelFields } from "./file-input.js";
+import { normalizeMediaPayload } from "./file-input.js";
 import { pollUntilTerminal } from "./poll.js";
 import { emit } from "./output.js";
 import { mergePayload, parseJsonFlag } from "./payload.js";
@@ -34,14 +35,18 @@ export interface CreateSpec {
 }
 
 export interface ResourceCommandSpec {
-  name: ResourceName;
+  /** Registry id of the task resource this command drives. */
+  name: string;
   description: string;
   supportsList?: boolean;
   create: CreateSpec;
-  endpointOf(client: MeshyClient): TaskEndpoint;
+  /** Optional override; defaults to the registry endpoint for `name`. */
+  endpointOf?(client: MeshyClient): TaskEndpoint;
 }
 
 export function buildResourceCommand(spec: ResourceCommandSpec): Command {
+  const descriptor = requireTaskResource(spec.name);
+  const endpointOf = spec.endpointOf ?? ((client: MeshyClient) => client.endpointFor(descriptor));
   const cmd = new Command(spec.name).description(spec.description);
 
   // create
@@ -58,15 +63,14 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
     .addOption(new Option("--timeout <seconds>", "max seconds to poll in sync mode").default("600"))
     .action(async (opts: Record<string, unknown>, thisCmd: Command) => {
       const runtime = await buildRuntime(readGlobalFlags(thisCmd));
-      const endpoint = spec.endpointOf(runtime.client);
+      const endpoint = endpointOf(runtime.client);
       const data = parseJsonFlag(opts.data as string | undefined, "--data");
-      // Resolve local file paths + preflight URLs for image and 3D-model
-      // inputs before building the payload — fail fast on missing inputs.
-      await resolveImageFields(opts);
-      await resolveModelFields(opts);
       const flagPayload = spec.create.toPayload(opts);
       const defaults = spec.create.toDefaults?.(opts) ?? {};
-      const payload = mergePayload(defaults, data, flagPayload);
+      // Media is normalised on the merged payload so a local path or URL
+      // works identically from a typed flag and from --data; only the fields
+      // the registry declares are touched. Missing files fail before any POST.
+      const { payload } = await normalizeMediaPayload(mergePayload(defaults, data, flagPayload), descriptor.mediaFields);
       logger.debug("create payload", payload);
       const taskId = await endpoint.create(payload);
       const runAsync = Boolean(opts.async);
@@ -99,7 +103,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
     .description("Retrieve a single task by id")
     .action(async (taskId: string, _opts: Record<string, unknown>, thisCmd: Command) => {
       const runtime = await buildRuntime(readGlobalFlags(thisCmd));
-      const task = await spec.endpointOf(runtime.client).retrieve(taskId);
+      const task = await endpointOf(runtime.client).retrieve(taskId);
       await emitTerminalOutcome(task, false, undefined, spec.name, runtime);
     });
 
@@ -110,7 +114,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
     .option("--timeout <seconds>", "max seconds to wait", "600")
     .action(async (taskId: string, opts: { timeout?: string }, thisCmd: Command) => {
       const runtime = await buildRuntime(readGlobalFlags(thisCmd));
-      const endpoint = spec.endpointOf(runtime.client);
+      const endpoint = endpointOf(runtime.client);
       const timeoutSeconds = Number(opts.timeout ?? 600);
       const started = Date.now();
       const { task, timedOut } = await pollUntilTerminal(endpoint, taskId, {
@@ -127,7 +131,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
     .description("Delete a task")
     .action(async (taskId: string, _opts: Record<string, unknown>, thisCmd: Command) => {
       const runtime = await buildRuntime(readGlobalFlags(thisCmd));
-      await spec.endpointOf(runtime.client).delete(taskId);
+      await endpointOf(runtime.client).delete(taskId);
       emit({ resource: spec.name, task_id: taskId, deleted: true }, {
         format: runtime.flags.format,
         file: runtime.flags.output,
@@ -144,7 +148,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       .option("--sort-by <field>", "sort order (e.g. -created_at)", "-created_at")
       .action(async (opts: { page?: string; pageSize?: string; sortBy?: string }, thisCmd: Command) => {
         const runtime = await buildRuntime(readGlobalFlags(thisCmd));
-        const tasks = await spec.endpointOf(runtime.client).list({
+        const tasks = await endpointOf(runtime.client).list({
           page_num: Number(opts.page ?? 1),
           page_size: Number(opts.pageSize ?? 10),
           sort_by: opts.sortBy ?? "-created_at",

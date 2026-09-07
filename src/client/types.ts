@@ -1,5 +1,9 @@
 /**
  * Zod schemas for Meshy request/response shapes (permissive passthrough).
+ *
+ * `TaskSchema` fills a few defaults so 0.2.0 summaries keep their shape. The
+ * v1 TaskView is built from the *raw* JSON (see task-view.ts), never from the
+ * defaulted object, so a field the server did not send stays null there.
  */
 
 import { z } from "zod";
@@ -38,6 +42,10 @@ export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
 export const TERMINAL_STATUSES = new Set<string>(["SUCCEEDED", "FAILED", "CANCELED"]);
 
+export function isTerminalStatus(status: string | null | undefined): boolean {
+  return typeof status === "string" && TERMINAL_STATUSES.has(status);
+}
+
 export const PrintabilitySchema = z
   .object({
     _version: z.string().optional(),
@@ -55,6 +63,7 @@ export const TaskSchema = z
   .object({
     id: z.string(),
     type: z.string().default(""),
+    name: z.string().nullable().optional(),
     status: z.string().default(""),
     progress: z.number().default(0),
     preceding_tasks: z.number().default(0),
@@ -69,12 +78,17 @@ export const TaskSchema = z
     model_urls: z.record(z.string(), z.string().nullable()).nullable().optional(),
     texture_urls: z.array(TextureSetSchema).nullable().optional(),
     thumbnail_url: z.string().nullable().optional(),
+    thumbnail_urls: z.record(z.string(), z.string().nullable()).nullable().optional(),
+    alpha_thumbnail_url: z.string().nullable().optional(),
 
     image_urls: z.array(z.string()).nullable().optional(),
 
     result: z.record(z.string(), z.any()).nullable().optional(),
 
     printability: PrintabilitySchema.nullable().optional(),
+
+    face_count: z.number().nullable().optional(),
+    consumed_credits: z.number().nullable().optional(),
 
     ai_model: z.string().nullable().optional(),
     prompt: z.string().nullable().optional(),
@@ -108,6 +122,7 @@ export interface TaskSummary {
   elapsed_seconds?: number;
 }
 
+/** Legacy (0.2.0) summary — shape preserved for existing consumers. */
 export function summarizeTask(task: Task, elapsedSeconds?: number): TaskSummary {
   const summary: TaskSummary = {
     id: task.id,

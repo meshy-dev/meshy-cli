@@ -1,18 +1,24 @@
 /**
- * Base class for async-task Meshy endpoints:
+ * Async-task endpoint over one Transport:
  *   POST   /<resource>               → { result: <task_id> }
  *   GET    /<resource>/:id           → Task
  *   GET    /<resource>               → Task[]
  *   DELETE /<resource>/:id           → 200
+ *   GET    /<resource>/:id/stream    → text/event-stream
+ *
+ * The `*Detailed` variants also return the raw JSON exactly as received, which
+ * is what --save-json, --include-raw and the v1 TaskView are built from.
  */
 
-import { mapHttpError, MeshyApiError } from "../errors.js";
+import { MeshyApiError } from "../errors.js";
+import type { Transport, StreamHandle } from "../transport.js";
 import {
   TaskCreateResponseSchema,
   TaskSchema,
   type Task,
 } from "../types.js";
 
+/** Legacy fetch signature kept for the `api` passthrough and older call sites. */
 export type HttpFetch = (path: string, init?: RequestInit) => Promise<Response>;
 
 export interface ListParams {
@@ -21,78 +27,120 @@ export interface ListParams {
   sort_by?: string;
 }
 
+export interface CreateResult {
+  taskId: string;
+  raw: unknown;
+  requestId: string | null;
+}
+
+export interface RetrieveResult {
+  task: Task;
+  raw: unknown;
+}
+
+export interface ListResult {
+  tasks: Task[];
+  raw: unknown;
+}
+
+export interface RequestExtras {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
 export class TaskEndpoint {
   readonly resourcePath: string;
-  protected readonly http: HttpFetch;
+  protected readonly transport: Transport;
 
-  constructor(http: HttpFetch, resourcePath: string) {
+  constructor(transport: Transport, resourcePath: string) {
     if (!resourcePath.startsWith("/")) {
       throw new Error(`resourcePath must start with "/" (got ${resourcePath})`);
     }
-    this.http = http;
+    this.transport = transport;
     this.resourcePath = resourcePath;
   }
 
-  async create(payload: Record<string, unknown>): Promise<string> {
-    const resp = await this.http(this.resourcePath, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload ?? {}),
+  async create(payload: Record<string, unknown>, extras: RequestExtras = {}): Promise<string> {
+    return (await this.createDetailed(payload, extras)).taskId;
+  }
+
+  async createDetailed(payload: Record<string, unknown>, extras: RequestExtras = {}): Promise<CreateResult> {
+    const resp = await this.transport.requestJson("POST", this.resourcePath, {
+      body: payload ?? {},
+      signal: extras.signal,
+      timeoutMs: extras.timeoutMs,
     });
-    if (!resp.ok) throw await mapHttpError(resp, this.resourcePath);
-    const raw: unknown = await resp.json();
-    const parsed = TaskCreateResponseSchema.safeParse(raw);
+    const parsed = TaskCreateResponseSchema.safeParse(resp.json);
     if (!parsed.success) {
       throw new MeshyApiError({
         message: `unexpected response from POST ${this.resourcePath}: ${parsed.error.message}`,
         status: resp.status,
         code: "server",
         path: this.resourcePath,
-        body: raw,
+        body: resp.json,
       });
     }
-    return parsed.data.result;
+    return { taskId: parsed.data.result, raw: resp.json, requestId: resp.requestId };
   }
 
-  async retrieve(taskId: string): Promise<Task> {
+  async retrieve(taskId: string, extras: RequestExtras = {}): Promise<Task> {
+    return (await this.retrieveDetailed(taskId, extras)).task;
+  }
+
+  async retrieveDetailed(taskId: string, extras: RequestExtras = {}): Promise<RetrieveResult> {
     if (!taskId) throw new Error("task_id is required");
     const path = `${this.resourcePath}/${encodeURIComponent(taskId)}`;
-    const resp = await this.http(path, { method: "GET" });
-    if (!resp.ok) throw await mapHttpError(resp, path);
-    const raw: unknown = await resp.json();
-    const parsed = TaskSchema.safeParse(raw);
+    const resp = await this.transport.requestJson("GET", path, { signal: extras.signal, timeoutMs: extras.timeoutMs });
+    const parsed = TaskSchema.safeParse(resp.json);
     if (!parsed.success) {
       throw new MeshyApiError({
         message: `unexpected task shape from GET ${path}: ${parsed.error.message}`,
         status: resp.status,
         code: "server",
         path,
-        body: raw,
+        body: resp.json,
       });
     }
-    return parsed.data;
+    return { task: parsed.data, raw: resp.json };
   }
 
-  async list(params: ListParams = {}): Promise<Task[]> {
-    const search = new URLSearchParams();
-    search.set("page_num", String(params.page_num ?? 1));
-    search.set("page_size", String(params.page_size ?? 10));
-    search.set("sort_by", params.sort_by ?? "-created_at");
-    const path = `${this.resourcePath}?${search.toString()}`;
-    const resp = await this.http(path, { method: "GET" });
-    if (!resp.ok) throw await mapHttpError(resp, this.resourcePath);
-    const raw: unknown = await resp.json();
-    if (!Array.isArray(raw)) return [];
-    return raw.map((t) => {
+  async list(params: ListParams = {}, extras: RequestExtras = {}): Promise<Task[]> {
+    return (await this.listDetailed(params, extras)).tasks;
+  }
+
+  async listDetailed(params: ListParams = {}, extras: RequestExtras = {}): Promise<ListResult> {
+    const resp = await this.transport.requestJson("GET", this.resourcePath, {
+      query: {
+        page_num: params.page_num ?? 1,
+        page_size: params.page_size ?? 10,
+        sort_by: params.sort_by ?? "-created_at",
+      },
+      signal: extras.signal,
+      timeoutMs: extras.timeoutMs,
+    });
+    const raw = resp.json;
+    if (!Array.isArray(raw)) return { tasks: [], raw };
+    const tasks = raw.map((t) => {
       const parsed = TaskSchema.safeParse(t);
       return parsed.success ? parsed.data : (t as Task);
     });
+    return { tasks, raw };
   }
 
-  async delete(taskId: string): Promise<void> {
+  async delete(taskId: string, extras: RequestExtras = {}): Promise<unknown> {
     if (!taskId) throw new Error("task_id is required");
     const path = `${this.resourcePath}/${encodeURIComponent(taskId)}`;
-    const resp = await this.http(path, { method: "DELETE" });
-    if (!resp.ok) throw await mapHttpError(resp, path);
+    const resp = await this.transport.requestJson("DELETE", path, { signal: extras.signal, timeoutMs: extras.timeoutMs });
+    return resp.json;
+  }
+
+  streamPath(taskId: string): string {
+    if (!taskId) throw new Error("task_id is required");
+    return `${this.resourcePath}/${encodeURIComponent(taskId)}/stream`;
+  }
+
+  /** Open the SSE connection; the caller parses events and owns the deadlines. */
+  async openStream(taskId: string, opts: { signal?: AbortSignal; connectTimeoutMs?: number } = {}): Promise<StreamHandle> {
+    return this.transport.openStream(this.streamPath(taskId), opts);
   }
 }

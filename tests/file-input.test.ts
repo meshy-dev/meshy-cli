@@ -162,11 +162,13 @@ test("resolveImageFields — retexture's multi-view list resolves local paths to
   }
 });
 
-test("resolveImageFields — data: URIs rejected with helpful message", async () => {
-  await assert.rejects(
-    () => resolveImageFields({ imageUrl: "data:image/png;base64,iVBORw0KGgo=" }),
-    /data: URIs aren't accepted on the command line/,
-  );
+test("resolveImageFields — well-formed data: URIs pass through; malformed ones are refused", async () => {
+  const opts = { imageUrl: "data:image/png;base64,iVBORw0KGgo=" };
+  await resolveImageFields(opts);
+  assert.equal(opts.imageUrl, "data:image/png;base64,iVBORw0KGgo=");
+  await assert.rejects(() => resolveImageFields({ imageUrl: "data:image/png,notbase64" }), /must be base64/);
+  await assert.rejects(() => resolveImageFields({ imageUrl: "data:model/gltf-binary;base64,Z2xURg==" }), /expected an image/);
+  await assert.rejects(() => resolveImageFields({ imageUrl: "data:garbage" }), /malformed data: URI/);
 });
 
 test("resolveImageFields — fields that aren't image inputs are ignored", async () => {
@@ -259,9 +261,43 @@ test("resolveModelFields — URL preflighted, passed through on 2xx", async () =
   }
 });
 
-test("resolveModelFields — data: URIs rejected", async () => {
-  await assert.rejects(
-    () => resolveModelFields({ modelUrl: "data:model/gltf-binary;base64,Z2xURg==" }),
-    /data: URIs aren't accepted on the command line/,
+test("resolveModelFields — model data: URIs pass through; image data: URIs are refused", async () => {
+  const opts = { modelUrl: "data:model/gltf-binary;base64,Z2xURg==" };
+  await resolveModelFields(opts);
+  assert.equal(opts.modelUrl, "data:model/gltf-binary;base64,Z2xURg==");
+  await assert.rejects(() => resolveModelFields({ modelUrl: "data:image/png;base64,iVBORw0KGgo=" }), /expected a 3D-model/);
+});
+
+test("normalizeMediaPayload — only declared fields are touched; size cap and format lists are enforced (T-029, T-030)", async () => {
+  const { normalizeMediaPayload } = await import("../src/internal/file-input.js");
+  const dir = mkdtempSync(join(tmpdir(), "meshy-media-"));
+  const png = join(dir, "a.png");
+  writeFileSync(png, await tinyPng());
+  const glbPath = join(dir, "m.glb");
+  writeFileSync(glbPath, fakeGlb());
+  const objPath = join(dir, "m.obj");
+  writeFileSync(objPath, "v 0 0 0\n");
+
+  const fields = [
+    { path: "image_url", kind: "image" as const, many: false },
+    { path: "model_url", kind: "model" as const, many: false, formats: ["glb"] },
+    { path: "image_urls", kind: "image" as const, many: true },
+  ];
+  const { payload, media } = await normalizeMediaPayload(
+    { image_url: png, model_url: glbPath, image_urls: [png, "data:image/png;base64,iVBORw0KGgo="], prompt: "./looks/like/a/path.png", untouched: 1 },
+    fields,
   );
+  assert.match(payload.image_url as string, /^data:image\/png;base64,/);
+  assert.match(payload.model_url as string, /^data:model\/gltf-binary;base64,/);
+  assert.equal(payload.prompt, "./looks/like/a/path.png", "undeclared strings are never read as files");
+  assert.equal(payload.untouched, 1);
+  assert.equal((payload.image_urls as string[]).length, 2);
+  assert.deepEqual(media.map((m) => [m.field, m.index, m.source]), [["image_url", null, "local-file"], ["model_url", null, "local-file"], ["image_urls", 0, "local-file"], ["image_urls", 1, "data-uri"]]);
+
+  // Format list: uv-unwrap/rigging accept GLB only.
+  await assert.rejects(() => normalizeMediaPayload({ model_url: objPath }, [fields[1]!]), /accepts glb only/);
+  // Size cap is enforced before reading.
+  await assert.rejects(() => normalizeMediaPayload({ image_url: png }, [fields[0]!], { limits: { maxFileBytes: 10 } }), /above the 10-byte limit/);
+  // Non-http schemes are refused, not read.
+  await assert.rejects(() => normalizeMediaPayload({ image_url: "file:///etc/passwd" }, [fields[0]!]), /only http\(s\) URLs/);
 });

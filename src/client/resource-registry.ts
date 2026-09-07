@@ -185,7 +185,7 @@ export interface QueryResourceDescriptor {
 export const QUERY_RESOURCES: readonly QueryResourceDescriptor[] = [
   { id: "balance", commandPath: ["balance"], base: "v1", method: "GET", relativePath: "/balance", auth: "bearer", billing: "none", summary: "remaining credit balance" },
   { id: "animation-catalog", commandPath: ["animation-catalog", "list"], base: "public-web", method: "GET", relativePath: "/animations/resources", auth: "none", billing: "none", summary: "public animation library (action ids); no key needed" },
-  { id: "showcases", commandPath: ["showcases", "list"], base: "v1", method: "GET", relativePath: "/showcases", auth: "bearer", billing: "may-charge", summary: "Enterprise community showcases (1 credit per request)" },
+  { id: "showcases", commandPath: ["showcases", "list"], base: "v1", method: "GET", relativePath: "/showcases", auth: "bearer", billing: "may-charge", summary: "Enterprise community showcases (every request is billed)" },
 ];
 
 export interface LocalToolDescriptor {

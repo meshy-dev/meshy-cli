@@ -19,6 +19,7 @@ import {
 } from "./internal/global-options.js";
 import { analyzePrintabilityCommand } from "./cmd/analyze-printability.js";
 import { animateCommand } from "./cmd/animate.js";
+import { animationCatalogCommand } from "./cmd/animation-catalog.js";
 import { apiCommand } from "./cmd/api.js";
 import { authCommand } from "./cmd/auth.js";
 import { balanceCommand } from "./cmd/balance.js";
@@ -35,6 +36,7 @@ import { resizeCommand } from "./cmd/resize.js";
 import { resourcesCommand } from "./cmd/resources.js";
 import { retextureCommand } from "./cmd/retexture.js";
 import { riggingCommand } from "./cmd/rigging.js";
+import { showcasesCommand } from "./cmd/showcases.js";
 import { textTo3dCommand } from "./cmd/text-to-3d.js";
 import { textToImageCommand } from "./cmd/text-to-image.js";
 import { textToMotionCommand } from "./cmd/text-to-motion.js";
@@ -186,6 +188,8 @@ export function buildRootCommand(): Command {
     analyzePrintabilityCommand,
     repairPrintabilityCommand,
     deleteCommand,
+    animationCatalogCommand,
+    showcasesCommand,
   ]) {
     program.addCommand(cmd, { hidden: true });
   }
