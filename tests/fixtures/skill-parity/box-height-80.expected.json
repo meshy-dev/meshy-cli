@@ -1,0 +1,106 @@
+{
+  "fixture_origin": "synthetic independent geometry oracle; not generated from the implementation under test",
+  "input": "box-y-up.obj",
+  "height_mm": 80,
+  "scale": 20,
+  "rotation": "(x,y,z)->(x,-z,y)",
+  "translation": [
+    0,
+    0,
+    -40
+  ],
+  "vertices": [
+    [
+      -20,
+      60,
+      0
+    ],
+    [
+      20,
+      60,
+      0
+    ],
+    [
+      20,
+      60,
+      80
+    ],
+    [
+      -20,
+      60,
+      80
+    ],
+    [
+      -20,
+      -60,
+      0
+    ],
+    [
+      20,
+      -60,
+      0
+    ],
+    [
+      20,
+      -60,
+      80
+    ],
+    [
+      -20,
+      -60,
+      80
+    ]
+  ],
+  "normals": [
+    [
+      0,
+      1,
+      0
+    ],
+    [
+      0,
+      -1,
+      0
+    ],
+    [
+      -1,
+      0,
+      0
+    ],
+    [
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      -1
+    ],
+    [
+      0,
+      0,
+      1
+    ]
+  ],
+  "bbox_min": [
+    -20,
+    -60,
+    0
+  ],
+  "bbox_max": [
+    20,
+    60,
+    80
+  ],
+  "face_count": 6,
+  "vertex_count": 8,
+  "uv_count": 4,
+  "preserve_vertex_extra_fields": true,
+  "preserve_face_vertex_uv_normal_indices": true,
+  "material_dependency": "box.mtl",
+  "tolerance": {
+    "absolute_mm": 0.00001,
+    "relative_to_height": 1e-9
+  }
+}

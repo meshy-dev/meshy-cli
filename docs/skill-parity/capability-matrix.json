@@ -1,0 +1,802 @@
+{
+  "schema_version": 1,
+  "title": "Meshy CLI S1 capability matrix — implementation tracking",
+  "date": "2026-09-07",
+  "status": "in_progress",
+  "baseline": {
+    "cli_sha": "fd94490916376e691efcea51324ac4326b459e1f",
+    "skills_sha": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610"
+  },
+  "completion_rule": "All mandatory capabilities need implementation and evidence for G1-code. G1-release additionally requires review, applicable live/OS checks and a released pinned version. Not-run is not pass.",
+  "capabilities": [
+    {
+      "id": "CAP-001",
+      "title": "任务创建与异步单次提交",
+      "area": "create",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "legacy scripts/src/meshy_task.py:create_task/_cmd_create",
+      "target": "meshy <resource> create --async",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-040",
+        "T-043",
+        "T-044",
+        "T-045"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-002",
+      "title": "完整任务查询与字段",
+      "area": "get",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "meshy_task.py:_cmd_get",
+      "target": "meshy <resource> get --include-raw --save-json",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-006",
+        "T-008",
+        "T-010"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-003",
+      "title": "有界等待与恢复",
+      "area": "wait",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "meshy_task.py:poll_task/_cmd_poll",
+      "target": "meshy <resource> wait",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-007",
+        "T-047",
+        "T-048"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-004",
+      "title": "SSE 状态流",
+      "area": "stream",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "skills/*/reference.md:SSE examples",
+      "target": "meshy <resource> stream",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-049",
+        "T-050",
+        "T-051",
+        "T-052",
+        "T-053"
+      ],
+      "evidence": [
+        "meshyd api_stream_handlers.go: event message (task), event error {message,status_code}, keep-alive re-emits message every 10 s"
+      ],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-005",
+      "title": "余额查询、列表与删除",
+      "area": "list/delete",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "meshy_task.py:balance; Skill REST list/delete examples",
+      "target": "meshy balance; meshy <resource> list|delete",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-001",
+        "T-011",
+        "T-020",
+        "T-103"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-006",
+      "title": "旧工作流模型参数和默认值对齐",
+      "area": "payload",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "skills/*/references/pipelines.md",
+      "target": "existing commands with explicit supported payload",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-028",
+        "T-033",
+        "T-034"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-007",
+      "title": "本地媒体/URL/data URI",
+      "area": "media",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "pipelines.md:base64 Python snippets",
+      "target": "typed media flags and final payload normalization",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-029",
+        "T-030",
+        "T-031"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-008",
+      "title": "UV Unwrap",
+      "area": "uv-unwrap",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:UV Unwrap API",
+      "target": "meshy uv-unwrap create/get/list/wait/stream/delete",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-021",
+        "T-020"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/uv-unwrap (input_task_id|model_url, GLB only, 40k faces, Statsig-gated 404)",
+        "meshyd server.go: /openapi/v1/uv-unwrap registers POST, GET list, GET :id, GET :id/stream, DELETE :id"
+      ],
+      "intentional_differences": [],
+      "external_verification": "required_when_applicable_not_run"
+    },
+    {
+      "id": "CAP-009",
+      "title": "Creative Lab Figure",
+      "area": "creative-lab.figure",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Creative Lab API",
+      "target": "meshy creative-lab figure prototype|build <action>",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-022",
+        "T-023",
+        "T-024",
+        "T-025"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/creative-lab-figure (prototype image_urls; build glb/obj/mtl + texture base_color; webapp prototypes 404)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "required_when_applicable_not_run"
+    },
+    {
+      "id": "CAP-010",
+      "title": "Creative Lab Lamp",
+      "area": "creative-lab.lamp",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Creative Lab API",
+      "target": "meshy creative-lab lamp prototype|build <action>",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-022",
+        "T-023",
+        "T-024",
+        "T-025"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/creative-lab-lamp (image_subject; prototype model_urls.glb; build options/output stl|zip; lamp_stl/base_stl/bundle_zip)",
+        "meshyd pkg/model/task_creative_lab_lamp.go artifact keys and enums"
+      ],
+      "intentional_differences": [],
+      "external_verification": "required_when_applicable_not_run"
+    },
+    {
+      "id": "CAP-011",
+      "title": "Creative Lab Keychain",
+      "area": "creative-lab.keychain",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Creative Lab API",
+      "target": "meshy creative-lab keychain prototype|build <action>",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-022",
+        "T-023",
+        "T-024",
+        "T-025"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/creative-lab-keychain (relief options; output glb|obj|zip; obj is a ZIP bundle)",
+        "meshyd pkg/model/task_creative_lab_keychain.go"
+      ],
+      "intentional_differences": [],
+      "external_verification": "required_when_applicable_not_run"
+    },
+    {
+      "id": "CAP-012",
+      "title": "Creative Lab Fridge Magnet",
+      "area": "creative-lab.fridge-magnet",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Creative Lab API",
+      "target": "meshy creative-lab fridge-magnet prototype|build <action>",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-022",
+        "T-023",
+        "T-024",
+        "T-025"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/creative-lab-fridge-magnet (own defaults: rounded-rect, 60 mm, 3.3 mm relief, 2.0 mm base)",
+        "meshyd pkg/model/task_creative_lab_fridge_magnet.go"
+      ],
+      "intentional_differences": [],
+      "external_verification": "required_when_applicable_not_run"
+    },
+    {
+      "id": "CAP-013",
+      "title": "动画目录",
+      "area": "animation-catalog",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "pipelines.md:/web/public/animations/resources",
+      "target": "meshy animation-catalog list",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-026"
+      ],
+      "evidence": [
+        "Skill pipelines.md: GET /web/public/animations/resources?category=…; response {result:{total,list}}",
+        "meshyd api.go AnimationResource + ListAnimationsResourcesRequest (q, category, subCategory)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-014",
+      "title": "Enterprise showcases",
+      "area": "showcases",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Enterprise API",
+      "target": "meshy showcases list",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-027",
+        "T-111"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/enterprise-api (1 credit per request; page_size 1-10; sort_by; format; showcase_type)",
+        "meshyd api.go ListShowcasesForOpenAPIRequest: showcase_type oneof all animate static (docs say animated)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "required_when_applicable_not_run"
+    },
+    {
+      "id": "CAP-015",
+      "title": "完整资产枚举",
+      "area": "artifacts",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "pipelines.md:rig/basic_animations/thumbnail",
+      "target": "download asset registry with role and dependencies",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-060",
+        "T-062",
+        "T-071"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-016",
+      "title": "选择性下载与缩略图",
+      "area": "selection",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:_cmd_download/_cmd_thumbnail",
+      "target": "meshy download --asset/--kind/--model-format",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-061",
+        "T-063"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-017",
+      "title": "下载最终路径与中断恢复",
+      "area": "download",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:download; CLI existing download.ts",
+      "target": "safe download with actual final-path manifest",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-064",
+        "T-065",
+        "T-066",
+        "T-067",
+        "T-068",
+        "T-069",
+        "T-070"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-018",
+      "title": "完整 JSON 保存",
+      "area": "save-json",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:_cmd_get/_cmd_poll",
+      "target": "--save-json and project task snapshots",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-010",
+        "T-063"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-019",
+      "title": "项目初始化",
+      "area": "project.init",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:get_project_dir",
+      "target": "meshy project init",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-072",
+        "T-077"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-020",
+      "title": "任务历史记录",
+      "area": "project.record",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:record_task",
+      "target": "meshy project record/show",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-073",
+        "T-074",
+        "T-075"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-021",
+      "title": "项目索引与恢复",
+      "area": "project.index",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:record_task history.json",
+      "target": "meshy project list/rebuild-index",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-073",
+        "T-075",
+        "T-076",
+        "T-077"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-022",
+      "title": "面数检查",
+      "area": "inspect.faces",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C05",
+      "source_hint": "meshy_task.py:_cmd_check_faces",
+      "target": "meshy inspect faces",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-080",
+        "T-081",
+        "T-082"
+      ],
+      "evidence": [
+        "meshyd httpapi/dto.go: public task DTO has no face_count → unknown semantics required"
+      ],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-023",
+      "title": "OBJ 打印变换",
+      "area": "mesh.prepare-print",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C06",
+      "source_hint": "fix_obj.py:fix_obj_for_printing",
+      "target": "meshy mesh prepare-print",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-083",
+        "T-084",
+        "T-085",
+        "T-086",
+        "T-087"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-024",
+      "title": "七种切片器检测",
+      "area": "slicer.detect",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C06",
+      "source_hint": "slicers.py:detect_slicers/SLICER_MAP",
+      "target": "meshy slicer detect",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-088",
+        "T-091"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-025",
+      "title": "切片器启动",
+      "area": "slicer.open",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C06",
+      "source_hint": "slicers.py:open_in_slicer",
+      "target": "meshy slicer open",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-089",
+        "T-090",
+        "T-091",
+        "T-112"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "required_when_applicable_not_run"
+    },
+    {
+      "id": "CAP-026",
+      "title": "环境诊断",
+      "area": "doctor",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C07",
+      "source_hint": "meshy_task.py:_cmd_check_env",
+      "target": "meshy doctor",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-102",
+        "T-103"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-027",
+      "title": "env-file 与凭据优先级",
+      "area": "config",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C07",
+      "source_hint": "meshy_task.py:load_api_key",
+      "target": "--env-file without automatic dotenv/shell scanning",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-100",
+        "T-101"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-028",
+      "title": "现有 Key/OAuth 登录兼容",
+      "area": "auth",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C07",
+      "source_hint": "CLI auth/config/credentials/runtime",
+      "target": "preserve existing auth commands and token protocol",
+      "baseline_status": "existing_needs_regression",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-104",
+        "T-105"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "required_when_applicable_not_run"
+    },
+    {
+      "id": "CAP-029",
+      "title": "稳定 JSON 与退出码",
+      "area": "output",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "CLI task-command/output/errors",
+      "target": "--output-schema v1; legacy compatibility",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004",
+        "T-005",
+        "T-011"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-030",
+      "title": "make async 语义",
+      "area": "make",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "CLI cmd/make.ts:runChain",
+      "target": "make --async / --stop-after-first",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-041",
+        "T-042"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-031",
+      "title": "本地 operation 恢复记录",
+      "area": "operations",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "old workflows persist task ids; new recovery requirement",
+      "target": "operation journal; never claim server idempotency",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-043",
+        "T-044",
+        "T-045",
+        "T-046",
+        "T-048"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-032",
+      "title": "认证 transport 与公共 fetch 隔离",
+      "area": "transport",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "CLI client/index.ts and file-input/download",
+      "target": "explicit origin and no auth on public/assets",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-031",
+        "T-032",
+        "T-105",
+        "T-106"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-033",
+      "title": "无 Key/无网络本地运行",
+      "area": "local-runtime",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C07",
+      "source_hint": "CLI runtime.ts/index.ts plus local Skill helpers",
+      "target": "local runtime; update-check control",
+      "baseline_status": "missing",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-012",
+        "T-072",
+        "T-102"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    },
+    {
+      "id": "CAP-034",
+      "title": "打包与无 Python 安装",
+      "area": "packaging",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C08",
+      "source_hint": "CLI package.json/bin and Skill install metadata",
+      "target": "candidate tarball; both bins; Node24; no Python",
+      "baseline_status": "existing_needs_regression",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-107",
+        "T-108",
+        "T-109"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "required_when_applicable_not_run"
+    },
+    {
+      "id": "CAP-035",
+      "title": "帮助与能力发现",
+      "area": "discovery",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C08",
+      "source_hint": "CLI root/resources; CLI bundled skill",
+      "target": "registry-driven help and capability/version metadata",
+      "baseline_status": "partial",
+      "implementation_status": "not_started",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-020",
+        "T-108"
+      ],
+      "evidence": [],
+      "intentional_differences": [],
+      "external_verification": "offline_primary"
+    }
+  ],
+  "knowledge_only": [
+    {
+      "id": "KN-001",
+      "title": "Webhook 网页配置和领域流程知识",
+      "reason": "No executable webhook management API in the frozen Skill baseline; keep documentation, do not implement a daemon."
+    }
+  ],
+  "deferred_new_scope": [
+    {
+      "id": "DF-001",
+      "title": "基线 Skill 未使用的新 Creative Lab 产品、Usage API、托管 Agent/MCP/A2A",
+      "reason": "Do not expand current parity scope based solely on newer server/docs discovery."
+    }
+  ],
+  "implementation": {
+    "repo": "https://github.com/meshy-dev/meshy-cli",
+    "branch": "feat/skill-parity-s1",
+    "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
+    "package_version_at_start": "0.2.0",
+    "updated_at": "2026-09-07T06:26:21.988Z"
+  }
+}

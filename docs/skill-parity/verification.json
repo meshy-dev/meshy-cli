@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "status": "in_progress",
+  "rules": "Every entry binds a command or test id to the code SHA it ran against. not_run is not passed. Entries are replaced when re-run on a newer HEAD.",
+  "environment": {
+    "os": "macOS 26.6 (Darwin 25.6.0) arm64",
+    "node": "v24.20.0",
+    "pnpm": "11.24.0"
+  },
+  "baseline_runs": [
+    { "command": "pnpm install --frozen-lockfile", "sha": "fd94490916376e691efcea51324ac4326b459e1f", "exit_code": 0, "duration_s": 10, "result": "passed" },
+    { "command": "pnpm typecheck", "sha": "fd94490916376e691efcea51324ac4326b459e1f", "exit_code": 0, "duration_s": 0, "result": "passed" },
+    { "command": "pnpm test", "sha": "fd94490916376e691efcea51324ac4326b459e1f", "exit_code": 0, "duration_s": 41, "result": "passed", "tests": 363, "pass": 363, "fail": 0 },
+    { "command": "pnpm build", "sha": "fd94490916376e691efcea51324ac4326b459e1f", "exit_code": 0, "duration_s": 1, "result": "passed" }
+  ],
+  "final_runs": [],
+  "behavior_tests": {},
+  "live_verification": [
+    { "id": "T-104", "scope": "API Key and OAuth profile regression against a real account", "result": "not_run", "reason": "no credential configured in this session" },
+    { "id": "T-109", "scope": "macOS arm64 / Windows x64 / Linux x64 install and local commands", "result": "not_run", "reason": "only macOS arm64 available; recorded per OS when run" },
+    { "id": "T-110", "scope": "real free queries, existing task get, asset download", "result": "not_run", "reason": "no credential configured" },
+    { "id": "T-111", "scope": "UV Unwrap / Creative Lab / showcases smoke", "result": "not_run", "reason": "billable or account-gated; no budget authorised" },
+    { "id": "T-112", "scope": "real slicer open", "result": "not_run", "reason": "no slicer installed on this host" }
+  ]
+}
