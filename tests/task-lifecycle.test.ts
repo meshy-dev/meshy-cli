@@ -74,7 +74,7 @@ test("T-040 create --async: exactly one POST, zero GETs, accepted + id + operati
     const env = envOf(api);
     const r = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "a cactus", "--async", "--output-schema", "v1"], { env });
     assert.equal(r.code, 0, r.stderr);
-    const out = parseSingleJson(r.stdout) as { ok: boolean; result: { task: unknown; submission: { state: string; operation_id: string; task_id: string }; task_id: string; next: Record<string, string> } };
+    const out = parseSingleJson(r.stdout) as { ok: boolean; result: { task: unknown; submission: { state: string; operation_id: string; task_id: string }; task_id: string; next: { get: string; wait: string; stream: string } } };
     assert.equal(out.ok, true);
     assert.equal(out.result.task, null, "accepted but not queried: no fabricated PENDING task");
     assert.equal(out.result.submission.state, "accepted");
@@ -83,9 +83,10 @@ test("T-040 create --async: exactly one POST, zero GETs, accepted + id + operati
     assert.match(out.result.next.wait, /text-to-3d wait task-new/);
     assert.deepEqual(api.requests.map((q) => q.method), ["POST"]);
     assert.deepEqual(api.requests[0]!.json, { mode: "preview", prompt: "a cactus", target_formats: ["glb"] });
-    const ops = readdirSync(join(String(env["MESHY_CONFIG_DIR"]), "operations")).filter((f) => f.endsWith(".json"));
+    const configDir = String(env["MESHY_CONFIG_DIR"]);
+    const ops = readdirSync(join(configDir, "operations")).filter((f) => f.endsWith(".json"));
     assert.equal(ops.length, 1);
-    const rec = JSON.parse(readFileSync(join(String(env["MESHY_CONFIG_DIR"]), "operations", ops[0]!), "utf8")) as { state: string; task_id: string };
+    const rec = JSON.parse(readFileSync(join(configDir, "operations", ops[0] ?? ""), "utf8")) as { state: string; task_id: string };
     assert.equal(rec.state, "accepted");
     assert.equal(rec.task_id, "task-new");
 

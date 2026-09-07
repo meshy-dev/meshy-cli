@@ -1,31 +1,522 @@
 /**
- * Download a completed task's artifacts to the local filesystem.
+ * Asset downloads with explicit boundaries.
  *
- * Two target shapes:
- *   1. File path (e.g. `character/front.jpeg`) — used when the task has a
- *      single downloadable artifact (most 2D image tasks). The Content-Type
- *      of the HTTP response is authoritative; if the user-supplied extension
- *      disagrees, the file is saved with the correct extension instead.
- *   2. Directory path (anything without a recognized file extension) — used
- *      when the task emits multiple artifacts (3D models, thumbnails,
- *      textures, animation outputs). Each artifact is named after its role
- *      (model.glb, thumbnail.png, texture_0_base_color.png, ...).
+ * Every byte that lands on disk goes through `fetchToTemp`: http(s) only, no
+ * embedded credentials, no Authorization or Cookie ever attached (asset hosts
+ * are not the API), redirects re-validated hop by hop (max 5), private
+ * network literals refused (loopback is allowed for local test servers), a
+ * hard size cap enforced while streaming, sha256 computed on the way. The
+ * temp file lives in the target directory and is published exclusively
+ * (`link`), or replaced atomically with --overwrite; the final path — after
+ * any MIME-driven extension change — is checked against the authorised root.
  *
- * A `meta.json` alongside the artifacts records the full task response plus
- * the saved paths for later reference.
+ * Two entry points share the core:
+ *   downloadArtifacts — the 0.2.0 `-o` behaviour (all artifacts, role-based
+ *                       names, meta.json sidecar); output shape unchanged.
+ *   downloadAssets    — the selective downloader behind `meshy download` and
+ *                       the v1 manifest.
  */
 
-import { createWriteStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { Transform } from "node:stream";
+import { basename, dirname, extname, join, relative, resolve as resolvePath } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
 import type { Task } from "../client/types.js";
-import { UsageError } from "./errors.js";
+import { publishTempFile, tempPathFor, writeJsonFile } from "./atomic-file.js";
+import { CliError, UsageError } from "./errors.js";
 import { logger } from "./logger.js";
+import { isInside, realpathLenient, resolveWithinRoot, safeExtension, safeSegment } from "./paths.js";
+import { USER_AGENT } from "./user-agent.js";
+import type { Asset } from "./artifacts.js";
 
 /** Extensions sharp can transcode between. */
 const CONVERTIBLE_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "tiff", "tif", "avif"]);
+
+export const DEFAULT_DOWNLOAD_LIMITS = {
+  /** 2 GiB — engineering default, not a Meshy limit. */
+  maxBytes: 2 * 1024 * 1024 * 1024,
+  timeoutMs: 300_000,
+  maxRedirects: 5,
+} as const;
+
+export interface DownloadLimits {
+  maxBytes: number;
+  timeoutMs: number;
+  maxRedirects: number;
+}
+
+export interface DownloadPolicy {
+  /** Plain http is accepted only for loopback hosts (local test servers). */
+  allowHttpLoopback: boolean;
+  /** Private-network literals (10/8, 172.16/12, 192.168/16, link-local) are refused unless set. */
+  allowPrivateNetwork: boolean;
+}
+
+export const DEFAULT_DOWNLOAD_POLICY: DownloadPolicy = { allowHttpLoopback: true, allowPrivateNetwork: false };
+
+export interface FetchOptions {
+  limits?: Partial<DownloadLimits>;
+  policy?: Partial<DownloadPolicy>;
+  fetchImpl?: typeof fetch;
+  signal?: AbortSignal;
+}
+
+export interface FetchedFile {
+  tmpPath: string;
+  bytes: number;
+  sha256: string;
+  contentType: string | null;
+  finalUrl: string;
+  status: number;
+}
+
+function isLoopbackHost(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, "").toLowerCase();
+  return h === "localhost" || h === "::1" || /^127\.\d+\.\d+\.\d+$/.test(h);
+}
+
+function isPrivateLiteral(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, "").toLowerCase();
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 0) return true;
+    return false;
+  }
+  if (h.includes(":")) {
+    if (/^f[cd]/.test(h)) return true; // fc00::/7
+    if (/^fe[89ab]/.test(h)) return true; // fe80::/10
+    return false;
+  }
+  return false;
+}
+
+/** Validate an asset URL against the policy; throws CliError (local_io) with a clear reason. */
+export function validateAssetUrl(raw: string, policy: DownloadPolicy, label = "asset URL"): URL {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new CliError({ code: "validation", message: `${label} is not a valid URL: ${raw}` });
+  }
+  if (url.username || url.password) throw new CliError({ code: "validation", message: `${label} carries embedded credentials; refused` });
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new CliError({ code: "validation", message: `${label} must be http(s), got ${url.protocol}` });
+  }
+  const loopback = isLoopbackHost(url.hostname);
+  if (!loopback && isPrivateLiteral(url.hostname) && !policy.allowPrivateNetwork) {
+    throw new CliError({ code: "validation", message: `${label} points at a private network address (${url.hostname}); refused` });
+  }
+  if (url.protocol === "http:" && !(loopback && policy.allowHttpLoopback)) {
+    throw new CliError({ code: "validation", message: `${label} uses plain http to ${url.hostname}; only https (or http to a loopback test host) is accepted` });
+  }
+  return url;
+}
+
+/**
+ * Stream a URL into a temp file next to `target`, following at most
+ * `maxRedirects` re-validated redirects, without any credential header.
+ */
+export async function fetchToTemp(rawUrl: string, target: string, opts: FetchOptions = {}): Promise<FetchedFile> {
+  const limits: DownloadLimits = { ...DEFAULT_DOWNLOAD_LIMITS, ...(opts.limits ?? {}) };
+  const policy: DownloadPolicy = { ...DEFAULT_DOWNLOAD_POLICY, ...(opts.policy ?? {}) };
+  const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+  mkdirSync(dirname(target), { recursive: true });
+  const tmpPath = tempPathFor(target);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(`download timed out after ${limits.timeoutMs}ms`)), limits.timeoutMs);
+  const signal = opts.signal ? AbortSignal.any([controller.signal, opts.signal]) : controller.signal;
+
+  let url = validateAssetUrl(rawUrl, policy);
+  try {
+    let resp: Response | null = null;
+    for (let hop = 0; ; hop++) {
+      let r: Response;
+      try {
+        r = await fetchImpl(url, { method: "GET", redirect: "manual", signal, headers: { "User-Agent": USER_AGENT, Accept: "*/*" } });
+      } catch (err) {
+        if (opts.signal?.aborted) throw new CliError({ code: "interrupted", message: `download of ${redact(url)} interrupted` });
+        if (controller.signal.aborted) throw new CliError({ code: "network", message: `download of ${redact(url)} timed out after ${limits.timeoutMs}ms` });
+        throw new CliError({ code: "network", message: `download of ${redact(url)} failed: ${err instanceof Error ? err.message : String(err)}`, cause: err });
+      }
+      if (r.status >= 300 && r.status < 400) {
+        const loc = r.headers.get("location");
+        await r.body?.cancel().catch(() => undefined);
+        if (!loc) throw new CliError({ code: "network", message: `redirect from ${redact(url)} without a Location header` });
+        if (hop >= limits.maxRedirects) throw new CliError({ code: "network", message: `too many redirects downloading ${redact(url)}` });
+        const next = new URL(loc, url);
+        if (url.protocol === "https:" && next.protocol === "http:") {
+          throw new CliError({ code: "validation", message: `refusing https → http downgrade redirect from ${redact(url)}` });
+        }
+        url = validateAssetUrl(next.href, policy, "redirect target");
+        continue;
+      }
+      resp = r;
+      break;
+    }
+    if (!resp.ok) {
+      await resp.body?.cancel().catch(() => undefined);
+      throw new CliError({
+        code: resp.status === 404 ? "not_found" : resp.status === 401 || resp.status === 403 || resp.status === 410 ? "validation" : "network",
+        message: `download failed for ${redact(url)} (HTTP ${resp.status}${resp.statusText ? ` ${resp.statusText}` : ""})`,
+        httpStatus: resp.status,
+        details: { expired_or_denied: resp.status === 401 || resp.status === 403 || resp.status === 410 },
+      });
+    }
+    const declared = resp.headers.get("content-length");
+    if (declared && Number(declared) > limits.maxBytes) {
+      await resp.body?.cancel().catch(() => undefined);
+      throw new CliError({ code: "local_io", message: `asset ${redact(url)} declares ${declared} bytes, above the ${limits.maxBytes}-byte limit` });
+    }
+    const hash = createHash("sha256");
+    let bytes = 0;
+    const source = resp.body ? Readable.fromWeb(resp.body as unknown as import("node:stream/web").ReadableStream) : Readable.from([]);
+    const counter = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        bytes += chunk.length;
+        if (bytes > limits.maxBytes) {
+          cb(new CliError({ code: "local_io", message: `asset ${redact(url)} exceeds the ${limits.maxBytes}-byte limit` }));
+          return;
+        }
+        hash.update(chunk);
+        cb(null, chunk);
+      },
+    });
+    try {
+      await pipeline(source, counter, createWriteStream(tmpPath, { mode: 0o600 }));
+    } catch (err) {
+      removeQuietly(tmpPath);
+      if (err instanceof CliError) throw err;
+      if (opts.signal?.aborted) throw new CliError({ code: "interrupted", message: `download of ${redact(url)} interrupted` });
+      if (controller.signal.aborted) throw new CliError({ code: "network", message: `download of ${redact(url)} timed out after ${limits.timeoutMs}ms` });
+      throw new CliError({ code: "network", message: `download of ${redact(url)} failed mid-stream: ${err instanceof Error ? err.message : String(err)}`, cause: err });
+    }
+    return { tmpPath, bytes, sha256: hash.digest("hex"), contentType: resp.headers.get("content-type"), finalUrl: url.href, status: resp.status };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** URL without its query string — signed parameters never reach logs or messages. */
+export function redact(url: URL | string): string {
+  try {
+    const u = typeof url === "string" ? new URL(url) : url;
+    return `${u.origin}${u.pathname}`;
+  } catch {
+    return "<invalid url>";
+  }
+}
+
+function removeQuietly(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch {
+    /* gone */
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Content checks
+// ---------------------------------------------------------------------------
+
+export function extFromContentType(ct: string | null): string {
+  if (!ct) return "";
+  const base = ct.split(";")[0]!.trim().toLowerCase();
+  const map: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/tiff": "tiff",
+    "image/bmp": "bmp",
+    "model/gltf-binary": "glb",
+    "model/gltf+json": "gltf",
+    "model/obj": "obj",
+    "model/vnd.usdz+zip": "usdz",
+    "model/stl": "stl",
+    "model/3mf": "3mf",
+    "application/zip": "zip",
+    "application/json": "json",
+    "video/mp4": "mp4",
+  };
+  return map[base] ?? "";
+}
+
+function extEquivalent(a: string, b: string): boolean {
+  const groups = [new Set(["jpg", "jpeg"]), new Set(["tif", "tiff"])];
+  return groups.some((g) => g.has(a) && g.has(b));
+}
+
+function readHead(path: string, n = 16): Buffer {
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(n);
+    const read = readSync(fd, buf, 0, n, 0);
+    return buf.subarray(0, read);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Reject bodies that cannot be what the asset claims: an HTML error page
+ * served as a model, a non-GLB under .glb, a non-ZIP under .zip.
+ */
+export function validateContent(tmpPath: string, expectedFormat: string | null, kind: Asset["kind"], contentType: string | null): void {
+  const ct = (contentType ?? "").split(";")[0]!.trim().toLowerCase();
+  const head = readHead(tmpPath, 16);
+  const text = head.toString("latin1").toLowerCase();
+  if ((kind === "model" || kind === "rig" || kind === "animation" || kind === "motion") && (ct === "text/html" || text.startsWith("<!doctype") || text.startsWith("<html"))) {
+    throw new CliError({ code: "validation", message: "asset body is an HTML page, not a model file (the download URL may have expired)" });
+  }
+  if (expectedFormat === "glb" && !(head.length >= 4 && head.subarray(0, 4).toString("ascii") === "glTF")) {
+    throw new CliError({ code: "validation", message: "asset saved under .glb does not start with the glTF magic; refusing to keep an invalid GLB" });
+  }
+  if (expectedFormat === "zip" && !(head.length >= 2 && head[0] === 0x50 && head[1] === 0x4b)) {
+    throw new CliError({ code: "validation", message: "asset expected to be a ZIP container does not start with the PK magic" });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Selective downloader (meshy download, v1)
+// ---------------------------------------------------------------------------
+
+export interface DownloadedFile {
+  key: string;
+  path: string;
+  relative_path: string | null;
+  bytes: number;
+  sha256: string;
+  content_type: string | null;
+  format: string | null;
+  container_format: string | null;
+  extracted: boolean | null;
+  status: "written" | "failed" | "skipped";
+  error: string | null;
+  publish_method: string | null;
+}
+
+export interface DownloadAssetsOptions extends FetchOptions {
+  /** Directory mode. */
+  targetDir?: string;
+  /** Single-file mode (exactly one asset). */
+  targetFile?: string;
+  overwrite?: boolean;
+  /** Authorised root every final path must stay inside. */
+  root: string;
+  /** Validate magic/content-type for models (the legacy wrapper turns this off). */
+  validateContent?: boolean;
+  /** Bounded URL refresh hook (API source): returns fresh URLs by key or null. */
+  refreshUrls?: () => Promise<Map<string, string> | null>;
+  onFile?: (file: DownloadedFile) => void;
+}
+
+export interface DownloadAssetsResult {
+  files: DownloadedFile[];
+  /** True when every requested asset was written. */
+  complete: boolean;
+  warnings: Array<{ code: string; message: string }>;
+}
+
+function plannedName(asset: Asset, targetFile: string | undefined): string {
+  if (targetFile) return basename(targetFile);
+  return asset.filename;
+}
+
+/**
+ * Download the given assets one by one. Each file is published on its own;
+ * a failure stops the loop and the result lists what was written so far.
+ * No rollback deletes anything the user already had.
+ */
+export async function downloadAssets(assets: readonly Asset[], opts: DownloadAssetsOptions): Promise<DownloadAssetsResult> {
+  if (opts.targetFile && assets.length !== 1) {
+    throw new UsageError(`--output names a single file but ${assets.length} assets were selected; pass --output-dir <dir> instead`);
+  }
+  if (!opts.targetFile && !opts.targetDir) throw new UsageError("an output file or directory is required");
+  const files: DownloadedFile[] = [];
+  const warnings: Array<{ code: string; message: string }> = [];
+  const dir = opts.targetFile ? dirname(resolvePath(opts.targetFile)) : resolvePath(opts.targetDir!);
+  const rootReal = realpathLenient(opts.root);
+  mkdirSync(dir, { recursive: true });
+  // The directory and every planned leaf must be inside the root (and no
+  // symlink) before anything is fetched; the check repeats after any
+  // MIME-driven rename.
+  resolveWithinRoot(dir, rootReal, { label: "output directory" });
+  for (const asset of assets) {
+    resolveWithinRoot(join(dir, plannedName(asset, opts.targetFile)), rootReal, { label: "planned download path" });
+  }
+
+  let refreshed: Map<string, string> | null | undefined;
+  for (const asset of assets) {
+    const planned = join(dir, plannedName(asset, opts.targetFile));
+    let entry: DownloadedFile;
+    try {
+      if (asset.kind === "report") {
+        const target = resolveWithinRoot(planned.endsWith(".json") ? planned : `${planned}.json`, rootReal, { label: "report path" }).path;
+        const res = writeJsonFile(target, asset.report, { overwrite: opts.overwrite ?? false });
+        const bytes = statSync(target).size;
+        entry = { key: asset.key, path: target, relative_path: rel(rootReal, target), bytes, sha256: createHash("sha256").update(readFileSync(target)).digest("hex"), content_type: "application/json", format: "json", container_format: null, extracted: null, status: "written", error: null, publish_method: res.method };
+      } else {
+        if (!asset.url) throw new CliError({ code: "validation", message: `asset ${asset.key} has no URL` });
+        let url = asset.url;
+        let fetched: FetchedFile;
+        try {
+          fetched = await fetchToTemp(url, planned, opts);
+        } catch (err) {
+          const expired = err instanceof CliError && (err.details as { expired_or_denied?: boolean } | undefined)?.expired_or_denied;
+          if (expired && opts.refreshUrls) {
+            if (refreshed === undefined) refreshed = await opts.refreshUrls();
+            const fresh = refreshed?.get(asset.key);
+            if (fresh && fresh !== url) {
+              warnings.push({ code: "asset_url_refreshed", message: `${asset.key}: signed URL rejected; refreshed once from the task` });
+              url = fresh;
+              fetched = await fetchToTemp(url, planned, opts);
+            } else throw err;
+          } else throw err;
+        }
+        entry = await placeFetched(asset, fetched, planned, rootReal, opts, warnings);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const failed: DownloadedFile = { key: asset.key, path: planned, relative_path: rel(rootReal, planned), bytes: 0, sha256: "", content_type: null, format: asset.format, container_format: asset.containerFormat, extracted: null, status: "failed", error: message, publish_method: null };
+      files.push(failed);
+      opts.onFile?.(failed);
+      const code = err instanceof CliError ? err.code : "local_io";
+      throw new CliError({
+        code: code === "interrupted" ? "interrupted" : code === "network" || code === "not_found" || code === "validation" ? code : "local_io",
+        message: `${asset.key}: ${message}`,
+        httpStatus: err instanceof CliError ? err.httpStatus : null,
+        result: { downloads: { state: files.some((f) => f.status === "written") ? "partial" : "failed", files, metadata_path: null } },
+        warnings,
+        cause: err,
+      });
+    }
+    files.push(entry);
+    opts.onFile?.(entry);
+  }
+  return { files, complete: files.every((f) => f.status === "written"), warnings };
+}
+
+function rel(root: string, path: string): string | null {
+  const r = relative(root, path);
+  return isInside(root, path) ? r.split(/[\\/]/).join("/") : null;
+}
+
+/** Reconcile the extension with the real content type, validate, and publish exclusively. */
+async function placeFetched(
+  asset: Asset,
+  fetched: FetchedFile,
+  planned: string,
+  rootReal: string,
+  opts: DownloadAssetsOptions,
+  warnings: Array<{ code: string; message: string }>,
+): Promise<DownloadedFile> {
+  const actualExt = extFromContentType(fetched.contentType);
+  const requestedExt = safeExtension(extname(planned));
+  let finalPath = planned;
+  let tmp = fetched.tmpPath;
+  let bytes = fetched.bytes;
+  let sha = fetched.sha256;
+
+  if (asset.containerFormat === "zip") {
+    // Bundles are delivered as ZIP whatever the content-type says.
+    if (requestedExt !== "zip") finalPath = `${stripExt(planned)}.zip`;
+  } else if (!requestedExt && actualExt) {
+    finalPath = `${planned}.${actualExt}`;
+  } else if (requestedExt && actualExt && requestedExt !== actualExt && !extEquivalent(requestedExt, actualExt)) {
+    if (CONVERTIBLE_IMAGE_EXTS.has(actualExt) && CONVERTIBLE_IMAGE_EXTS.has(requestedExt)) {
+      const converted = `${tmp}.conv`;
+      await convertImage(readFileSync(tmp), requestedExt, converted);
+      removeQuietly(tmp);
+      tmp = converted;
+      bytes = statSync(converted).size;
+      sha = createHash("sha256").update(readFileSync(converted)).digest("hex");
+      warnings.push({ code: "image_transcoded", message: `${asset.key}: server sent ${actualExt}, transcoded to ${requestedExt} as requested` });
+    } else {
+      finalPath = `${stripExt(planned)}.${actualExt}`;
+      warnings.push({ code: "extension_corrected", message: `${asset.key}: requested .${requestedExt} but the server sent ${fetched.contentType ?? "unknown"}; saved as ${basename(finalPath)}` });
+    }
+  }
+
+  const expectedFormat = asset.containerFormat === "zip" ? "zip" : safeExtension(extname(finalPath)) || null;
+  if (opts.validateContent !== false) {
+    try {
+      validateContent(tmp, expectedFormat, asset.kind, fetched.contentType);
+    } catch (err) {
+      removeQuietly(tmp);
+      throw err;
+    }
+  }
+
+  // The final path — possibly renamed — must still be inside the root, and
+  // must not be a symlink or an existing file (unless --overwrite).
+  let resolved: string;
+  try {
+    resolved = resolveWithinRoot(finalPath, rootReal, { label: "final download path" }).path;
+  } catch (err) {
+    removeQuietly(tmp);
+    throw err;
+  }
+  const res = publishTempFile(tmp, resolved, { overwrite: opts.overwrite ?? false });
+  return {
+    key: asset.key,
+    path: resolved,
+    relative_path: rel(rootReal, resolved),
+    bytes,
+    sha256: sha,
+    content_type: fetched.contentType,
+    format: asset.containerFormat === "zip" ? "zip" : safeExtension(extname(resolved)) || asset.format,
+    container_format: asset.containerFormat,
+    extracted: asset.containerFormat ? false : null,
+    status: "written",
+    error: null,
+    publish_method: res.method,
+  };
+}
+
+function stripExt(path: string): string {
+  const ext = extname(path);
+  return ext ? path.slice(0, -ext.length) : path;
+}
+
+async function convertImage(buffer: Buffer, targetExt: string, targetPath: string): Promise<void> {
+  const pipe = sharp(buffer);
+  switch (targetExt) {
+    case "jpg":
+    case "jpeg":
+      await pipe.jpeg({ quality: 92 }).toFile(targetPath);
+      return;
+    case "png":
+      await pipe.png().toFile(targetPath);
+      return;
+    case "webp":
+      await pipe.webp({ quality: 92 }).toFile(targetPath);
+      return;
+    case "gif":
+      await pipe.gif().toFile(targetPath);
+      return;
+    case "tiff":
+    case "tif":
+      await pipe.tiff().toFile(targetPath);
+      return;
+    case "avif":
+      await pipe.avif({ quality: 60 }).toFile(targetPath);
+      return;
+    default:
+      throw new Error(`unsupported image target extension: ${targetExt}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Legacy `-o` wrapper (0.2.0 layout preserved)
+// ---------------------------------------------------------------------------
 
 export interface Artifact {
   /** Stable slot name ("model_glb", "image_0", "texture_0_base_color", ...) */
@@ -69,10 +560,19 @@ export function enumerateArtifacts(task: Task): Artifact[] {
     });
   }
 
-  // Rigging / animate-style endpoints nest outputs under `result`.
+  // Rigging / animate-style endpoints nest outputs under `result`; the
+  // bundled walking/running clips live one level deeper.
   if (task.result && typeof task.result === "object") {
     const motionFormat = task.result["motion_format"];
     for (const [key, value] of Object.entries(task.result)) {
+      if (key === "basic_animations" && value && typeof value === "object" && !Array.isArray(value)) {
+        for (const [sub, url] of Object.entries(value as Record<string, unknown>)) {
+          if (typeof url !== "string" || !/^https?:/.test(url)) continue;
+          const extMatch = sub.match(/_(fbx|glb|usdz|obj|png|jpg|jpeg|webp)_url$/i);
+          out.push({ key: `basic_animations_${sub}`, url, preferredExt: extMatch ? extMatch[1]!.toLowerCase() : "" });
+        }
+        continue;
+      }
       if (typeof value !== "string" || !/^https?:/.test(value)) continue;
       const extMatch = key.match(/_(fbx|glb|usdz|obj|png|jpg|jpeg|webp)_url$/i);
       let preferredExt = extMatch ? extMatch[1]!.toLowerCase() : "";
@@ -150,13 +650,14 @@ export async function downloadArtifacts(
   }
 
   mkdirSync(targetDir, { recursive: true });
+  const root = realpathLenient(targetDir);
   const saved: string[] = [];
   if (singleFileMode) {
-    saved.push(await downloadArtifact(artifacts[0]!, outputPath));
+    saved.push(await downloadArtifact(artifacts[0]!, outputPath, root));
   } else {
     for (const artifact of artifacts) {
       const targetPath = join(targetDir, deriveFilename(artifact));
-      saved.push(await downloadArtifact(artifact, targetPath));
+      saved.push(await downloadArtifact(artifact, targetPath, root));
     }
   }
   writeMeta(task, resource, metadataPath, saved);
@@ -180,122 +681,45 @@ function deriveFilename(artifact: Artifact): string {
   return artifact.preferredExt ? `${stem}.${artifact.preferredExt}` : stem;
 }
 
-function stripExt(path: string): string {
-  const ext = extname(path);
-  return ext ? path.slice(0, -ext.length) : path;
-}
-
-async function downloadArtifact(artifact: Artifact, targetPath: string): Promise<string> {
-  logger.debug(`GET ${artifact.url}`);
-  const resp = await fetch(artifact.url);
-  if (!resp.ok) {
-    throw new Error(`download failed for ${artifact.key} (${resp.status} ${resp.statusText})`);
+async function downloadArtifact(artifact: Artifact, targetPath: string, root: string): Promise<string> {
+  logger.debug(`GET ${redact(artifact.url)}`);
+  let fetched: FetchedFile;
+  try {
+    fetched = await fetchToTemp(artifact.url, targetPath);
+  } catch (err) {
+    throw new Error(`download failed for ${artifact.key} (${err instanceof Error ? err.message : String(err)})`);
   }
-  if (!resp.body) throw new Error(`empty body for ${artifact.url}`);
-
-  const contentType = resp.headers.get("content-type") ?? "";
-  const actualExt = extFromContentType(contentType);
+  const actualExt = extFromContentType(fetched.contentType);
   const requestedExt = extname(targetPath).slice(1).toLowerCase();
-  mkdirSync(dirname(targetPath), { recursive: true });
+  let finalPath = targetPath;
+  let tmp = fetched.tmpPath;
 
-  // No extension requested (e.g. unknown-format image artifact) — pick one
-  // from the content-type so the file has a reasonable suffix.
   if (!requestedExt && actualExt) {
-    const finalPath = `${targetPath}.${actualExt}`;
-    await pipeline(
-      Readable.fromWeb(resp.body as unknown as import("node:stream/web").ReadableStream),
-      createWriteStream(finalPath),
-    );
-    return finalPath;
+    // No extension requested (e.g. unknown-format image artifact) — pick one
+    // from the content-type so the file has a reasonable suffix.
+    finalPath = `${targetPath}.${actualExt}`;
+  } else if (actualExt && requestedExt && actualExt !== requestedExt && !extEquivalent(actualExt, requestedExt)) {
+    if (CONVERTIBLE_IMAGE_EXTS.has(actualExt) && CONVERTIBLE_IMAGE_EXTS.has(requestedExt)) {
+      // Both sides are image formats sharp understands — convert.
+      logger.debug(`converting ${actualExt} → ${requestedExt} for ${artifact.key}`);
+      const converted = `${tmp}.conv`;
+      await convertImage(readFileSync(tmp), requestedExt, converted);
+      removeQuietly(tmp);
+      tmp = converted;
+    } else {
+      // Can't convert safely — save with the true extension so the file isn't a lie.
+      finalPath = `${targetPath.slice(0, targetPath.length - (requestedExt.length + 1))}.${actualExt}`;
+      logger.warn(
+        `extension mismatch for ${artifact.key}: requested .${requestedExt}, got ${fetched.contentType || "?"}; ` +
+          `cannot transcode ${actualExt} → ${requestedExt}, saving as ${finalPath}`,
+      );
+    }
   }
-
-  // Fast path: extensions agree (or the server didn't specify one) — stream through.
-  if (
-    !actualExt ||
-    !requestedExt ||
-    actualExt === requestedExt ||
-    extEquivalent(actualExt, requestedExt)
-  ) {
-    await pipeline(
-      Readable.fromWeb(resp.body as unknown as import("node:stream/web").ReadableStream),
-      createWriteStream(targetPath),
-    );
-    return targetPath;
-  }
-
-  // Extensions differ. Buffer the body so we can either transcode or rename.
-  const buffer = Buffer.from(await resp.arrayBuffer());
-
-  // Both sides are image formats sharp understands — convert.
-  if (CONVERTIBLE_IMAGE_EXTS.has(actualExt) && CONVERTIBLE_IMAGE_EXTS.has(requestedExt)) {
-    logger.debug(`converting ${actualExt} → ${requestedExt} for ${artifact.key}`);
-    await convertImage(buffer, requestedExt, targetPath);
-    return targetPath;
-  }
-
-  // Can't convert safely — save with the true extension so the file isn't a lie.
-  const base = targetPath.slice(0, targetPath.length - (requestedExt.length + 1));
-  const fallback = `${base}.${actualExt}`;
-  logger.warn(
-    `extension mismatch for ${artifact.key}: requested .${requestedExt}, got ${contentType || "?"}; ` +
-      `cannot transcode ${actualExt} → ${requestedExt}, saving as ${fallback}`,
-  );
-  await pipeline(Readable.from(buffer), createWriteStream(fallback));
-  return fallback;
-}
-
-async function convertImage(buffer: Buffer, targetExt: string, targetPath: string): Promise<void> {
-  const pipe = sharp(buffer);
-  switch (targetExt) {
-    case "jpg":
-    case "jpeg":
-      await pipe.jpeg({ quality: 92 }).toFile(targetPath);
-      return;
-    case "png":
-      await pipe.png().toFile(targetPath);
-      return;
-    case "webp":
-      await pipe.webp({ quality: 92 }).toFile(targetPath);
-      return;
-    case "gif":
-      await pipe.gif().toFile(targetPath);
-      return;
-    case "tiff":
-    case "tif":
-      await pipe.tiff().toFile(targetPath);
-      return;
-    case "avif":
-      await pipe.avif({ quality: 60 }).toFile(targetPath);
-      return;
-    default:
-      throw new Error(`unsupported image target extension: ${targetExt}`);
-  }
-}
-
-function extFromContentType(ct: string): string {
-  const base = ct.split(";")[0]!.trim().toLowerCase();
-  const map: Record<string, string> = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-    "image/gif": "gif",
-    "image/tiff": "tiff",
-    "image/bmp": "bmp",
-    "model/gltf-binary": "glb",
-    "model/gltf+json": "gltf",
-    "model/obj": "obj",
-    "model/vnd.usdz+zip": "usdz",
-    "model/stl": "stl",
-    "model/3mf": "3mf",
-    "application/json": "json",
-    "video/mp4": "mp4",
-  };
-  return map[base] ?? "";
-}
-
-function extEquivalent(a: string, b: string): boolean {
-  const groups = [new Set(["jpg", "jpeg"]), new Set(["tif", "tiff"])];
-  return groups.some((g) => g.has(a) && g.has(b));
+  // The final name may differ from the pre-checked one; it still may not
+  // clobber anything and must stay under the output directory.
+  const resolved = resolveWithinRoot(finalPath, root, { label: "download target" }).path;
+  publishTempFile(tmp, resolved, { overwrite: false });
+  return finalPath === targetPath ? targetPath : finalPath;
 }
 
 /**
@@ -352,3 +776,5 @@ function writeMeta(task: Task, resource: string, path: string, savedFiles: strin
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
 }
+
+export { safeSegment as _safeSegmentForTests };

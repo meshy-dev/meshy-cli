@@ -46,6 +46,7 @@ export const RESOURCES: ResourceEntry[] = [
   { name: "creative-lab", summary: "photo → printable product: figure | lamp | keychain | fridge-magnet (prototype then build)" },
   { name: "animation-catalog", summary: "public animation library (action ids); no key needed" },
   { name: "showcases", summary: "Enterprise community showcases (every request is billed)" },
+  { name: "download", summary: "download selected assets of a task (saved task JSON, URL, or API)" },
 ];
 
 const VERBS = `Every task resource carries the same verbs:

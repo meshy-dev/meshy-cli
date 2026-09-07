@@ -26,6 +26,7 @@ import { balanceCommand } from "./cmd/balance.js";
 import { convertCommand } from "./cmd/convert.js";
 import { creativeLabCommand } from "./cmd/creative-lab.js";
 import { deleteCommand } from "./cmd/delete.js";
+import { downloadCommand } from "./cmd/download.js";
 import { imageTo3dCommand } from "./cmd/image-to-3d.js";
 import { imageToImageCommand } from "./cmd/image-to-image.js";
 import { makeCommand } from "./cmd/make.js";
@@ -194,6 +195,7 @@ export function buildRootCommand(): Command {
     creativeLabCommand,
     animationCatalogCommand,
     showcasesCommand,
+    downloadCommand,
   ]) {
     program.addCommand(cmd, { hidden: true });
   }
