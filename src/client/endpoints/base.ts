@@ -60,6 +60,11 @@ export class TaskEndpoint {
     this.resourcePath = resourcePath;
   }
 
+  /** Base URL of the API family this endpoint talks to (for journaling the origin). */
+  get transportBaseUrl(): string {
+    return this.transport.baseUrl;
+  }
+
   async create(payload: Record<string, unknown>, extras: RequestExtras = {}): Promise<string> {
     return (await this.createDetailed(payload, extras)).taskId;
   }

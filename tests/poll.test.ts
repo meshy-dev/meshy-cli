@@ -11,11 +11,16 @@ import type { Task } from "../src/client/types.js";
 
 function fakeEndpoint(statuses: string[]): TaskEndpoint {
   let i = 0;
+  const retrieve = async (id: string): Promise<Task> => {
+    const status = statuses[Math.min(i, statuses.length - 1)] ?? "PENDING";
+    i += 1;
+    return { id, status, type: "", progress: 0, preceding_tasks: 0, created_at: 0, started_at: 0, finished_at: 0, expires_at: 0 } as unknown as Task;
+  };
   return {
-    async retrieve(id: string): Promise<Task> {
-      const status = statuses[Math.min(i, statuses.length - 1)] ?? "PENDING";
-      i += 1;
-      return { id, status, type: "", progress: 0, preceding_tasks: 0, created_at: 0, started_at: 0, finished_at: 0, expires_at: 0 } as unknown as Task;
+    retrieve,
+    async retrieveDetailed(id: string): Promise<{ task: Task; raw: unknown }> {
+      const task = await retrieve(id);
+      return { task, raw: task };
     },
   } as unknown as TaskEndpoint;
 }

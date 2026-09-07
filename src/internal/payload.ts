@@ -5,20 +5,30 @@
  */
 
 import { readFileSync } from "node:fs";
+import { UsageError } from "./errors.js";
 
 export function parseJsonFlag(raw: string | undefined, flag: string): Record<string, unknown> {
   if (!raw) return {};
   const trimmed = raw.trim();
-  const text = trimmed.startsWith("@") ? readFileSync(trimmed.slice(1), "utf8") : trimmed;
+  let text: string;
+  if (trimmed.startsWith("@")) {
+    try {
+      text = readFileSync(trimmed.slice(1), "utf8");
+    } catch (err) {
+      throw new UsageError(`${flag}: cannot read ${trimmed.slice(1)}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  } else {
+    text = trimmed;
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`invalid JSON passed to ${flag}: ${msg}`);
+    throw new UsageError(`invalid JSON passed to ${flag}: ${msg}`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${flag} must be a JSON object (got ${Array.isArray(parsed) ? "array" : typeof parsed})`);
+    throw new UsageError(`${flag} must be a JSON object (got ${Array.isArray(parsed) ? "array" : typeof parsed})`);
   }
   return parsed as Record<string, unknown>;
 }

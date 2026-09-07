@@ -24,6 +24,7 @@ import { apiCommand } from "./cmd/api.js";
 import { authCommand } from "./cmd/auth.js";
 import { balanceCommand } from "./cmd/balance.js";
 import { convertCommand } from "./cmd/convert.js";
+import { creativeLabCommand } from "./cmd/creative-lab.js";
 import { deleteCommand } from "./cmd/delete.js";
 import { imageTo3dCommand } from "./cmd/image-to-3d.js";
 import { imageToImageCommand } from "./cmd/image-to-image.js";
@@ -40,6 +41,7 @@ import { showcasesCommand } from "./cmd/showcases.js";
 import { textTo3dCommand } from "./cmd/text-to-3d.js";
 import { textToImageCommand } from "./cmd/text-to-image.js";
 import { textToMotionCommand } from "./cmd/text-to-motion.js";
+import { uvUnwrapCommand } from "./cmd/uv-unwrap.js";
 
 /**
  * Commands added in S1. They only speak the v1 envelope; the error exit uses
@@ -188,6 +190,8 @@ export function buildRootCommand(): Command {
     analyzePrintabilityCommand,
     repairPrintabilityCommand,
     deleteCommand,
+    uvUnwrapCommand,
+    creativeLabCommand,
     animationCatalogCommand,
     showcasesCommand,
   ]) {

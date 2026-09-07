@@ -19,7 +19,7 @@
       "source_hint": "legacy scripts/src/meshy_task.py:create_task/_cmd_create",
       "target": "meshy <resource> create --async",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-040",
@@ -27,7 +27,9 @@
         "T-044",
         "T-045"
       ],
-      "evidence": [],
+      "evidence": [
+        "src/internal/task-command.ts submitOnce: journal → single POST → journal; tests/task-lifecycle.test.ts T-040/T-043/T-044"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -41,14 +43,16 @@
       "source_hint": "meshy_task.py:_cmd_get",
       "target": "meshy <resource> get --include-raw --save-json",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-006",
         "T-008",
         "T-010"
       ],
-      "evidence": [],
+      "evidence": [
+        "task-view.ts + task-command get: any status exit 0, --include-raw, --save-json; tests T-006/T-008/T-009/T-010"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -62,14 +66,16 @@
       "source_hint": "meshy_task.py:poll_task/_cmd_poll",
       "target": "meshy <resource> wait",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-007",
         "T-047",
         "T-048"
       ],
-      "evidence": [],
+      "evidence": [
+        "poll.ts monotonic deadline, cancellable sleep, --timeout 0 single query; tests T-007/T-047/T-048"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -83,7 +89,7 @@
       "source_hint": "skills/*/reference.md:SSE examples",
       "target": "meshy <resource> stream",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-049",
@@ -93,7 +99,8 @@
         "T-053"
       ],
       "evidence": [
-        "meshyd api_stream_handlers.go: event message (task), event error {message,status_code}, keep-alive re-emits message every 10 s"
+        "meshyd api_stream_handlers.go: event message (task), event error {message,status_code}, keep-alive re-emits message every 10 s",
+        "stream.ts SSE parser + streamTask; task-command stream (ndjson events + outcome, json envelope); tests/sse.test.ts, T-053"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
@@ -108,7 +115,7 @@
       "source_hint": "meshy_task.py:balance; Skill REST list/delete examples",
       "target": "meshy balance; meshy <resource> list|delete",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-001",
@@ -116,8 +123,12 @@
         "T-020",
         "T-103"
       ],
-      "evidence": [],
-      "intentional_differences": [],
+      "evidence": [
+        "balance/list/delete v1 + legacy; rigging list enabled per registry; tests cli-contract T-001, T-011"
+      ],
+      "intentional_differences": [
+        "rigging list enabled (0.2.0 marked it unsupported; official docs and server routes provide it)"
+      ],
       "external_verification": "offline_primary"
     },
     {
@@ -130,14 +141,16 @@
       "source_hint": "skills/*/references/pipelines.md",
       "target": "existing commands with explicit supported payload",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-028",
         "T-033",
         "T-034"
       ],
-      "evidence": [],
+      "evidence": [
+        "payload merge defaults < --data < flags with explicit false/0 preserved; tests T-028; surface.test.ts unchanged"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -151,14 +164,16 @@
       "source_hint": "pipelines.md:base64 Python snippets",
       "target": "typed media flags and final payload normalization",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-029",
         "T-030",
         "T-031"
       ],
-      "evidence": [],
+      "evidence": [
+        "file-input.ts normalizeMediaPayload on merged payload: URL preflight (no auth), data URI, local file; tests T-029/T-030"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -172,7 +187,7 @@
       "source_hint": "reference.md:UV Unwrap API",
       "target": "meshy uv-unwrap create/get/list/wait/stream/delete",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-021",
@@ -180,7 +195,8 @@
       ],
       "evidence": [
         "docs.meshy.ai/en/api/uv-unwrap (input_task_id|model_url, GLB only, 40k faces, Statsig-gated 404)",
-        "meshyd server.go: /openapi/v1/uv-unwrap registers POST, GET list, GET :id, GET :id/stream, DELETE :id"
+        "meshyd server.go: /openapi/v1/uv-unwrap registers POST, GET list, GET :id, GET :id/stream, DELETE :id",
+        "src/cmd/uv-unwrap.ts: exclusive source, GLB-only, 404 reported as not_found; tests T-021"
       ],
       "intentional_differences": [],
       "external_verification": "required_when_applicable_not_run"
@@ -195,7 +211,7 @@
       "source_hint": "reference.md:Creative Lab API",
       "target": "meshy creative-lab figure prototype|build <action>",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-022",
@@ -204,7 +220,8 @@
         "T-025"
       ],
       "evidence": [
-        "docs.meshy.ai/en/api/creative-lab-figure (prototype image_urls; build glb/obj/mtl + texture base_color; webapp prototypes 404)"
+        "docs.meshy.ai/en/api/creative-lab-figure (prototype image_urls; build glb/obj/mtl + texture base_color; webapp prototypes 404)",
+        "src/cmd/creative-lab.ts figure prototype/build; tests T-022..T-025"
       ],
       "intentional_differences": [],
       "external_verification": "required_when_applicable_not_run"
@@ -219,7 +236,7 @@
       "source_hint": "reference.md:Creative Lab API",
       "target": "meshy creative-lab lamp prototype|build <action>",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-022",
@@ -229,9 +246,12 @@
       ],
       "evidence": [
         "docs.meshy.ai/en/api/creative-lab-lamp (image_subject; prototype model_urls.glb; build options/output stl|zip; lamp_stl/base_stl/bundle_zip)",
-        "meshyd pkg/model/task_creative_lab_lamp.go artifact keys and enums"
+        "meshyd pkg/model/task_creative_lab_lamp.go artifact keys and enums",
+        "src/cmd/creative-lab.ts lamp: image_subject, text rejected, options/output stl|zip, include_result_json rule; tests T-022..T-025"
       ],
-      "intentional_differences": [],
+      "intentional_differences": [
+        "deprecated lamp `text` prototype input is rejected before submission; official lamp page documents image_url"
+      ],
       "external_verification": "required_when_applicable_not_run"
     },
     {
@@ -244,7 +264,7 @@
       "source_hint": "reference.md:Creative Lab API",
       "target": "meshy creative-lab keychain prototype|build <action>",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-022",
@@ -254,7 +274,8 @@
       ],
       "evidence": [
         "docs.meshy.ai/en/api/creative-lab-keychain (relief options; output glb|obj|zip; obj is a ZIP bundle)",
-        "meshyd pkg/model/task_creative_lab_keychain.go"
+        "meshyd pkg/model/task_creative_lab_keychain.go",
+        "src/cmd/creative-lab.ts keychain relief options, output glb|obj|zip; tests T-022..T-025"
       ],
       "intentional_differences": [],
       "external_verification": "required_when_applicable_not_run"
@@ -269,7 +290,7 @@
       "source_hint": "reference.md:Creative Lab API",
       "target": "meshy creative-lab fridge-magnet prototype|build <action>",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-022",
@@ -279,7 +300,8 @@
       ],
       "evidence": [
         "docs.meshy.ai/en/api/creative-lab-fridge-magnet (own defaults: rounded-rect, 60 mm, 3.3 mm relief, 2.0 mm base)",
-        "meshyd pkg/model/task_creative_lab_fridge_magnet.go"
+        "meshyd pkg/model/task_creative_lab_fridge_magnet.go",
+        "src/cmd/creative-lab.ts fridge-magnet relief options; tests T-022..T-025"
       ],
       "intentional_differences": [],
       "external_verification": "required_when_applicable_not_run"
@@ -294,14 +316,15 @@
       "source_hint": "pipelines.md:/web/public/animations/resources",
       "target": "meshy animation-catalog list",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-026"
       ],
       "evidence": [
         "Skill pipelines.md: GET /web/public/animations/resources?category=…; response {result:{total,list}}",
-        "meshyd api.go AnimationResource + ListAnimationsResourcesRequest (q, category, subCategory)"
+        "meshyd api.go AnimationResource + ListAnimationsResourcesRequest (q, category, subCategory)",
+        "src/cmd/animation-catalog.ts: public transport, no credential, local search; tests T-026"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
@@ -316,7 +339,7 @@
       "source_hint": "reference.md:Enterprise API",
       "target": "meshy showcases list",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-027",
@@ -324,9 +347,12 @@
       ],
       "evidence": [
         "docs.meshy.ai/en/api/enterprise-api (1 credit per request; page_size 1-10; sort_by; format; showcase_type)",
-        "meshyd api.go ListShowcasesForOpenAPIRequest: showcase_type oneof all animate static (docs say animated)"
+        "meshyd api.go ListShowcasesForOpenAPIRequest: showcase_type oneof all animate static (docs say animated)",
+        "src/cmd/showcases.ts: single billable GET, alias warning, no retry; tests T-027"
       ],
-      "intentional_differences": [],
+      "intentional_differences": [
+        "showcase_type accepts docs spelling \"animated\" and sends the server enum \"animate\" with a warning (decisions D-007)"
+      ],
       "external_verification": "required_when_applicable_not_run"
     },
     {
@@ -596,14 +622,18 @@
       "source_hint": "meshy_task.py:load_api_key",
       "target": "--env-file without automatic dotenv/shell scanning",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-100",
         "T-101"
       ],
-      "evidence": [],
-      "intentional_differences": [],
+      "evidence": [
+        "config.ts + env-file.ts (--api-key-file); tests env-file.test.ts, T-100"
+      ],
+      "intentional_differences": [
+        "flag is --api-key-file, not --env-file: Node.js intercepts --env-file anywhere in argv (decisions D-025)"
+      ],
       "external_verification": "offline_primary"
     },
     {
@@ -636,7 +666,7 @@
       "source_hint": "CLI task-command/output/errors",
       "target": "--output-schema v1; legacy compatibility",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-001",
@@ -646,7 +676,9 @@
         "T-005",
         "T-011"
       ],
-      "evidence": [],
+      "evidence": [
+        "result.ts envelope, errors.ts codes/exits, Commander errors → exit 2; tests result.test.ts, cli-contract T-002..T-005"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -660,13 +692,15 @@
       "source_hint": "CLI cmd/make.ts:runChain",
       "target": "make --async / --stop-after-first",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-041",
         "T-042"
       ],
-      "evidence": [],
+      "evidence": [
+        "src/cmd/make.ts --async single POST, --stop-after-first, mutual exclusion; tests T-041/T-042"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -680,7 +714,7 @@
       "source_hint": "old workflows persist task ids; new recovery requirement",
       "target": "operation journal; never claim server idempotency",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-043",
@@ -689,7 +723,9 @@
         "T-046",
         "T-048"
       ],
-      "evidence": [],
+      "evidence": [
+        "operation-store.ts journal with lock, replay and conflict; tests operation-store.test.ts, T-046"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -703,7 +739,7 @@
       "source_hint": "CLI client/index.ts and file-input/download",
       "target": "explicit origin and no auth on public/assets",
       "baseline_status": "partial",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-031",
@@ -711,7 +747,9 @@
         "T-105",
         "T-106"
       ],
-      "evidence": [],
+      "evidence": [
+        "transport.ts path validation, redirect refusal, public transport; config.ts origin policy; tests transport.test.ts"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -725,14 +763,16 @@
       "source_hint": "CLI runtime.ts/index.ts plus local Skill helpers",
       "target": "local runtime; update-check control",
       "baseline_status": "missing",
-      "implementation_status": "not_started",
+      "implementation_status": "implemented",
       "review_status": "not_run",
       "test_ids": [
         "T-012",
         "T-072",
         "T-102"
       ],
-      "evidence": [],
+      "evidence": [
+        "runtime.ts buildLocalRuntime; index.ts update-check policy; tests T-102, T-012"
+      ],
       "intentional_differences": [],
       "external_verification": "offline_primary"
     },
@@ -797,6 +837,6 @@
     "branch": "feat/skill-parity-s1",
     "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
     "package_version_at_start": "0.2.0",
-    "updated_at": "2026-09-07T06:26:21.988Z"
+    "updated_at": "2026-09-07T07:11:01.359Z"
   }
 }

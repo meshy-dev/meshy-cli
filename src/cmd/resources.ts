@@ -42,6 +42,8 @@ export const RESOURCES: ResourceEntry[] = [
   { name: "balance", summary: "remaining credit balance" },
   { name: "delete", summary: "delete any task, whatever its resource" },
   // Added in S1 (appended so 0.2.0 consumers keep their positions).
+  { name: "uv-unwrap", summary: "generate fresh UVs for a GLB (≤40k faces) — a UV white model for external texturing" },
+  { name: "creative-lab", summary: "photo → printable product: figure | lamp | keychain | fridge-magnet (prototype then build)" },
   { name: "animation-catalog", summary: "public animation library (action ids); no key needed" },
   { name: "showcases", summary: "Enterprise community showcases (every request is billed)" },
 ];
