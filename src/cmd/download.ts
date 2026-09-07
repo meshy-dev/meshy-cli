@@ -15,7 +15,7 @@
 
 import { Command, Option } from "commander";
 import { readFileSync, statSync } from "node:fs";
-import { basename, dirname, resolve as resolvePath } from "node:path";
+import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { findTaskResource, TASK_RESOURCES, type TaskResourceDescriptor } from "../client/resource-registry.js";
 import { enumerateAssets, selectAssets, SelectionError, type Asset, type AssetKind } from "../internal/artifacts.js";
 import { emitResult, openCommand, saveRawJson, type OpenedCommand } from "../internal/command-helpers.js";
@@ -24,8 +24,11 @@ import { downloadAssets, type DownloadedFile } from "../internal/download.js";
 import { CliError, UsageError, type Warning } from "../internal/errors.js";
 import { safeSegment } from "../internal/paths.js";
 import { warning } from "../internal/result.js";
+import { recordTask, stageFromTaskType } from "../internal/project-store.js";
 import { buildLocalRuntime, buildRuntime } from "../internal/runtime.js";
 import { extractTaskObject } from "../internal/task-view.js";
+import { existsSync } from "node:fs";
+import { relative } from "node:path";
 
 const TASK_JSON_MAX_BYTES = 16 * 1024 * 1024;
 const KINDS: readonly AssetKind[] = ["model", "image", "texture", "thumbnail", "rig", "animation", "motion", "report"];
@@ -46,6 +49,8 @@ interface DownloadOpts {
   geometryOnly?: boolean;
   saveJson?: string;
   includeRaw?: boolean;
+  project?: string;
+  stage?: string;
 }
 
 function collect(v: string, prev: string[] = []): string[] {
@@ -105,6 +110,8 @@ export const downloadCommand = new Command("download")
   .option("--geometry-only", "for OBJ selections fetch the OBJ alone")
   .option("--save-json <file>", "save the raw task JSON (API source) alongside")
   .option("--include-raw", "v1: include the raw task under result.source.raw")
+  .option("--project <dir>", "initialised meshy_output project: default output directory, and the files are recorded in metadata.json")
+  .option("--stage <name>", "stage label for the project record (default: derived from the task type)")
   .action(async (opts: DownloadOpts, thisCmd: Command) => {
     const opened = openCommand(thisCmd, "download", "v1");
     const sources = [opts.taskJson ? "task-json" : null, opts.url ? "url" : null, opts.resource || opts.taskId ? "api" : null].filter(Boolean);
@@ -114,6 +121,11 @@ export const downloadCommand = new Command("download")
     if (selectors.length > 1) throw new UsageError(`selectors are mutually exclusive (got ${selectors.map((s) => `--${s}`).join(", ")})`);
     if (opts.withDependencies && opts.geometryOnly) throw new UsageError("--with-dependencies and --geometry-only are mutually exclusive");
     if (opened.flags.output && opts.outputDir) throw new UsageError("--output/-o and --output-dir are mutually exclusive");
+    const projectDir = opts.project ? resolvePath(opts.project) : null;
+    if (projectDir && !existsSync(join(projectDir, "metadata.json"))) {
+      throw new UsageError(`--project ${opts.project} is not an initialised project (no metadata.json); run \`meshy project init\` first`);
+    }
+    if (projectDir && opts.url) throw new UsageError("--project needs a task context; it cannot be combined with --url");
     const warnings: Warning[] = [];
 
     // ---- source ----
@@ -207,7 +219,7 @@ export const downloadCommand = new Command("download")
     const toDownload = [...selected, ...dependencies];
     // ---- output placement ----
     const outputFile = opened.flags.output;
-    const outputDir = opts.outputDir;
+    const outputDir = opts.outputDir ?? (projectDir && !outputFile ? projectDir : undefined);
     if (!outputFile && !outputDir) throw new UsageError("pass --output <file> (single asset) or --output-dir <dir>");
     if (outputFile && toDownload.length > 1) {
       throw new UsageError(`${toDownload.length} files would be written (${toDownload.map((a) => a.key).join(", ")}); --output names one file — use --output-dir <dir>`);
@@ -246,12 +258,30 @@ export const downloadCommand = new Command("download")
       throw err;
     }
     warnings.push(...result.warnings.map((w) => warning(w.code, w.message)));
+    let project: Record<string, unknown> | null = null;
+    if (projectDir && task) {
+      const taskId = String(task["id"] ?? "");
+      const files = result.files.filter((f) => f.status === "written").map((f) => relative(projectDir, f.path).split(/[\\/]/).join("/")).filter((f) => !f.startsWith(".."));
+      const rec = recordTask(projectDir, {
+        taskId,
+        stage: opts.stage ?? stageFromTaskType(task["type"], descriptor?.id ?? "download"),
+        resource: descriptor?.id ?? null,
+        taskType: typeof task["type"] === "string" ? (task["type"] as string) : null,
+        endpoint: descriptor?.legacyEndpoint ?? null,
+        status: typeof task["status"] === "string" ? (task["status"] as string) : null,
+        files,
+      });
+      if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}`));
+      if (files.length !== result.files.filter((f) => f.status === "written").length) warnings.push(warning("files_outside_project", "some files were written outside the project directory and were not recorded"));
+      project = { project_dir: projectDir, action: rec.action, stage: rec.entry.stage, recorded_files: files };
+    }
     await emitResult(opened, null, {
       source: sourceInfo,
       selection: { selected: selected.map((a) => a.key), dependencies: dependencies.map((a) => a.key) },
       downloads: { state: result.complete ? "completed" : "partial", files: result.files, metadata_path: null },
       unknown_urls: enumeration?.unknown_urls ?? [],
       saved_json: savedJson,
+      project,
       ...(opts.includeRaw ? { raw } : {}),
     }, { warnings });
   });

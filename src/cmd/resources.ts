@@ -47,6 +47,7 @@ export const RESOURCES: ResourceEntry[] = [
   { name: "animation-catalog", summary: "public animation library (action ids); no key needed" },
   { name: "showcases", summary: "Enterprise community showcases (every request is billed)" },
   { name: "download", summary: "download selected assets of a task (saved task JSON, URL, or API)" },
+  { name: "project", summary: "meshy_output project folders: init | record | show | list | rebuild-index" },
 ];
 
 const VERBS = `Every task resource carries the same verbs:

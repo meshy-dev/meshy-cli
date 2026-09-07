@@ -32,6 +32,7 @@ import { imageToImageCommand } from "./cmd/image-to-image.js";
 import { makeCommand } from "./cmd/make.js";
 import { multiColorPrintCommand } from "./cmd/multi-color-print.js";
 import { multiImageTo3dCommand } from "./cmd/multi-image-to-3d.js";
+import { projectCommand } from "./cmd/project.js";
 import { remeshCommand } from "./cmd/remesh.js";
 import { repairPrintabilityCommand } from "./cmd/repair-printability.js";
 import { resizeCommand } from "./cmd/resize.js";
@@ -196,6 +197,7 @@ export function buildRootCommand(): Command {
     animationCatalogCommand,
     showcasesCommand,
     downloadCommand,
+    projectCommand,
   ]) {
     program.addCommand(cmd, { hidden: true });
   }
