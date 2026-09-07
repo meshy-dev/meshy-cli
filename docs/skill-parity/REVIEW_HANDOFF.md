@@ -1,34 +1,31 @@
 # Meshy CLI S1 Review Handoff
 
-Filled from the 2026-09-07 / v1 implementation package. `not_run` means not verified. 本文件为 **Round 3**（Codex review 第 2 轮修复后的复审交接）。第 1 轮 review 见 `meshy-agent-integrations-research/reviews/cli-s1-6273d9a/`，第 2 轮见 `…/reviews/cli-s1-730132b/`；两处 reviewer 证据目录均未被改动，复现脚本从副本运行。
+Filled from the 2026-09-07 / v1 implementation package. `not_run` means not verified. 本文件为 **Round 4**（Codex review 第 3 轮修复后的复审交接）。历次 review：第 1 轮 `…/reviews/cli-s1-6273d9a/`，第 2 轮 `…/reviews/cli-s1-730132b/`，第 3 轮 `…/reviews/cli-s1-cf8905d/`；三处 reviewer 证据目录均未被改动，所有复现脚本从副本运行。
 
-## 0. 第 2 轮 review 结论与本轮修复
+## 0. 第 3 轮 review 结论与本轮修复
 
-- 被 review 的 HEAD：`730132bd99a471ed41d6bbf6b200219f13f569ba`（代码 `0388fe8`）；结论 **changes_requested**：7 项 finding（1 P1、6 P2），8 个独立复现（N01–N08）；reviewer 全量测试 521/522（唯一失败为真实时钟的 poll 断言）；首轮 12 个场景已被 reviewer 正向核对通过。
-- 修复 commit：`cf8905dd285bf16896df053aac253dbf8c672979`（`fix(review): address Codex review round 2 findings R2-F01–R2-F07`）；` 22 files changed, 1379 insertions(+), 189 deletions(-)`（相对 730132b）。
-- 复现脚本重跑（副本，`cf8905d`）：`round2-probes.mjs` **0/8 复现**（exit 1 = 并非全部复现）；`round1-probes.mjs` **0/12 复现**（首轮修复未回退）。逐项结果与 exit code 见 verification.json `review_rounds[1].probe_rerun`。
-- 正向回归：`tests/codex-review-round2.test.ts`（10 项，N01–N08 逐项按 acceptance 断言：退出码、envelope 形状、task_id/submission、请求次数、落盘内容与部分 manifest、ndjson 唯一 outcome 与递增 sequence、被拒目标连目录都不创建）；`tests/poll.test.ts` 改为确定性时钟（9 项，连续 8 次 8/8）；`tests/auth-headless.test.ts` 断言设备登录写入 `login_id`；round-1 `R10` 的期望随 HTTP 分类保留改为 not_found/exit 5。
-- 全量：`pnpm typecheck` 通过；`pnpm test` **535/535**（上轮 522 + 本轮 13）；`git diff --check fd94490` exit 0。
+- 被 review 的 HEAD：`566f3bdbcdd85d1139e48e3a87d4c6f5e844e43a`（代码 `cf8905d`）；结论 **changes_requested**：6 项 finding（2 P1、4 P2），6 个扩展复现（C01–C06）；reviewer 全量 535/535、首两轮 20 项正向核对通过。
+- 修复 commit：`30536d8`（`fix(review): address Codex review round 3 findings R3-F01–R3-F06`）；测试稳定性 commit：`235d6de`（`test(poll)`：真实定时器 smoke 改用循环自身的时钟读数判定——在 30536d8 的一次全量运行中它以 +0.003 ms 误报失败一次，源于 endpoint 内重新取 `performance.now()` 的调用开销；不放宽容差、不跳过）。` 12 files changed, 846 insertions(+), 65 deletions(-)`（相对 566f3bd）。
+- 复现脚本重跑（副本，`235d6de`）：`round3-probes.mjs` **0/6 复现**；`round2-probes.mjs` **0/8**；`round1-probes.mjs` **0/12**（均 exit 1 = 并非全部复现）；reviewer 自己的正向核对脚本 `verify-original-regressions.py` 对重跑结果 **20/20 通过**；`stream-finalization-check.mjs` 通过。
+- 正向回归：`tests/codex-review-round3.test.ts`（7 项，C01–C06 逐条按 acceptance 断言 + relinkMaterials 已中止/中途中止单测 + v1 make SIGINT）；两轮旧回归全部保留并通过。
+- 全量：`pnpm typecheck` 通过；`pnpm test` **542/542**；`git diff --check fd94490` exit 0；`poll.test.ts` 连续 12 次 12/12；round2+round3 套件连续 3 次 3/3。
 
 | ID | 优先级 | 问题 | 修复 | 决策 | 回归测试 | 复现脚本重跑 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R2-F01 | P1 | --workspace 仍未限制所有实际写入路径（报告任务 -o、隐式索引根、拒绝前 mkdir） | `saveReportOnly` 接收 workspace 并在 mkdir 前校验文件/`meta.json`；`downloadAssets` 先校验目录与每个计划叶子再创建目录；`indexRootFor` 判定历史索引根（显式 `--root`，否则项目父目录）：越界时 `project record`/任务 `--project`/`download --project` 只记录 metadata，索引以 `index.updated=false` + 原因跳过并给 `index_dirty`；显式 `--root` 越界仍在写入前拒绝 | D-038 | N01、N02、N03（codex-review-round2；报告任务 get/wait/stream 的文件/目录/符号链接父目录/工作区内正常路径；父目录清单前后一致；被拒目标目录不存在） | N01: exit 11, 不再复现 / N02: exit 0, 不再复现 / N03: exit 11, 不再复现 |
-| R2-F02 | P2 | 多组材质的同通道贴图被错误地指向第一张 | 每张贴图携带服务端文件名（URL 末段）；解析顺序：已保存名 → 源文件名（忽略大小写）→ 源文件 stem（忽略扩展名/目录）→ 引用名中的通道词 → MTL key 通道 → 唯一贴图；每条规则只在**恰好一个**候选时命中，多候选为 ambiguous：引用原样保留、列出 candidates、`material_links.status=incomplete`、warning `material_reference_ambiguous`；记录 `newmtl` 组；legacy `-o` 同一解析器 | D-039 | N04 ×2（双材质各自正确；大小写/目录/扩展名变体；歧义保留并报警，且断言未指向第一张） | N04: exit 0, 不再复现 |
-| R2-F03 | P2 | SSE 保存或项目记账失败时没有终结 outcome 事件 | stream 结束后的 save-json/project 记录在同一终结处理内执行：失败成为唯一的 `outcome`（ndjson，序号递增）或唯一 envelope（json/pretty），保留任务上下文；若流本身已失败，记账错误作为 `bookkeeping_failed` warning 附带 | D-040 | N05（save-json 冲突、project 未初始化、资产 404 × ndjson/json/pretty） | N05: exit 11, 不再复现 |
-| R2-F04 | P2 | 任务 -o 下载失败仍丢失已落盘文件和 HTTP 分类 | `downloadArtifacts` 返回逐文件 manifest（key/path/bytes/sha256/status），失败抛出保留原 code/http_status/recovery 的 CliError 并携带 `result.downloads={state: partial|failed, files}`；`maybeDownloadV1`/make 合并而非覆盖；legacy 错误 payload 现含 `code`/`status`/`result.downloads` | D-041 | N06（503/404/403 × get/wait；make；legacy）；round-1 R10 期望改为 not_found/5 | N06: exit 7, 不再复现 |
-| R2-F05 | P2 | 任务 -o 下载没有接入 SIGINT，取消后仍返回成功 | abort signal 从所有任务动词、make、legacy 报告器一路传入 `fetchToTemp`；中断即停止传输、删除临时文件、跳过重链接/sidecar，以 `interrupted`/130 返回 task_id/submission/next 与已提交文件；`index.ts` 顶层重包装保留 result/recovery | D-042 | N08（响应头前、body 中途、第二个资产；legacy；无 DELETE/POST；无临时文件） | N08: exit 130, 不再复现 |
-| R2-F06 | P2 | OAuth 缺少 user_id 时仍会把不同登录视为同一账户 | `meshy auth login` 为每个 OAuth profile 生成 `login_id`（refresh 保留、重新登录更换）；journal 身份 = `subject:<user_id>`，否则 `login:<login_id>`；两者皆无的存量 profile 为 unverified：可发起新操作，但对已有记录的重放被拒绝（`operation_conflict`，`result.conflict=["credential_unverified"]`，recovery `meshy auth login`）；journal 不含 token 或 login_id 明文 | D-043（取代 D-029 的 profile 名限制） | N07（无 subject 换号被拒；login_id 轮换 token 重放；新 login_id 冲突；过期 token 静默 refresh 保留 login_id）；credentialBinding 单测；auth-headless 设备登录写入 login_id | N07: exit 2, 不再复现 |
-| R2-F07 | P2 | 新增 deadline 测试依赖真实毫秒时序，导致测试套件间歇失败 | poll 测试改用 `pollUntilTerminal` 的 `now`/`sleep` 注入：精确到期、提前 0.5 ms 唤醒、迟到唤醒、deadline 约束的请求超时、读超时约束的网络错误均为确定性；唯一真实定时器 smoke 只断言“截止时间后不启动 GET”；慢 header/body 的子进程测试保留 | D-044 | tests/poll.test.ts 9 项；连续 8 次运行 8/8 通过；全量 535/535 | 全量 `pnpm test` 535/535；poll 重复 8/8 |
-
-第 1 轮（F01–F10）修复保持不变，仅 R10 的断言随 R2-F04 的分类保留而更新（404 → `not_found`/exit 5，仍是一条 outcome）。
+| R3-F01 | P1 | 下载 sidecar 仍可覆盖并发创建的文件或跟随新符号链接越界 | `writeMeta` 改为与资产相同的发布规则：发布时按 root 重新 `resolveWithinRoot`（拒绝符号链接叶子），用 `writeJsonFile` 独占原子发布（`link`），预检后出现的文件/符号链接/目录一律 `local_io` 拒绝且不截断；目录模式报告（`saveReportOnly`）同路径 | D-045 | C01+C02（预检后植入符号链接/普通文件/目录 × 目录模式、单文件 `<stem>_meta.json`、legacy；workspace 外文件字节前后一致；manifest 保留 model_glb written） | C01: exit 11, 不再复现 / C02: exit 11, 不再复现 |
+| R3-F02 | P1 | 默认 legacy 同步 create 下载失败时仍丢失已受理任务的输出上下文 | get/wait(同步 create)/stream/make 的 legacy 收尾全部套入 `withTaskContext`/`wrapWithResult`；legacy 错误 payload 保持 `name/message/code/status/hint/result` 形状并附加 `task_id`、`operation_id`；`result` 含真实 `submission`、`next`、部分 manifest；`hint`（stderr）为恢复命令，带任务 id | D-046 | C06（默认 schema 同步 create 资产 503：exit 7、task_id、journal 中真实 operation_id、next、manifest、stderr 含 id、1 次 POST；legacy wait 503；legacy sidecar 失败；legacy SIGINT；legacy make 503；v1 make SIGINT） | C06: exit 7, 不再复现 |
+| R3-F03 | P2 | 生成的落盘文件名抢先匹配，导致源贴图身份被错误替换 | 解析顺序改为：服务端源文件名 → 落盘名（仅当该文件来源未知或就是同名；若来源为其它文件则 ambiguous 并给出 `note`）→ 源 stem → 引用名通道词 → MTL key 通道 → 唯一贴图；通道规则在多个不同引用竞争同一唯一通道贴图时也判 ambiguous；无来源证据时保留保守回退 | D-047 | C05（源名与生成名交叉碰撞：按图像字节验证红/绿材质各指向正确文件；生成名引用而来源为 a.png → ambiguous + note + incomplete；无来源证据单测） | C05: exit 0, 不再复现 |
+| R3-F04 | P2 | 资产全部落盘后的收尾失败仍丢失 manifest | relink / 摘要刷新 / sidecar 发布纳入同一 `finalisationFailure`：保留原分类，重新从磁盘取每个已提交文件的 bytes/sha256（重写过的标 `relinked`），`downloads.state=partial`、完整 `files`、`failed_step`；`meshy download` 的 relink 同样处理 | D-048 | C01+C02（sidecar 目录/文件/符号链接失败后 manifest 完整且 sha 与磁盘一致）、C03（relink 中断）、C06 legacy sidecar 失败 | C02: exit 11, 不再复现 |
+| R3-F05 | P2 | SIGINT 在材质重写阶段仍被忽略，最终误报成功 | signal 传入 `relinkMaterials`/`rewriteLines`：首次读取前、每个 chunk 后、发布前检查，中断即删除临时文件并抛 `interrupted`；sidecar 前再检查；结果 exit 130，manifest 摘要重取，OBJ 为原文件或完整重写文件 | D-049 | C03（约 12 MB OBJ，观察到 `.model.obj.tmp-*` 后发送 SIGINT：exit 130、failed_step=relink、无 meta.json、无临时文件、manifest sha=磁盘 sha、OBJ 非部分文件）；relinkMaterials 已中止/中途中止单测 | C03: exit 130, 不再复现 |
+| R3-F06 | P2 | 项目目录经过路径别名时，成功下载的资产未记入 metadata | `download --project` 先把项目目录与文件路径 `realpathLenient` 到同一坐标系再算包含关系与相对路径（同 saveTaskSnapshot）；用户可见路径不变；真正在项目外的文件仍不记录 | D-050 | C04（符号链接父目录 + macOS /var 别名：recorded_files 与 metadata.tasks[].files 含 model.glb、无 files_outside_project；显式 --output-dir 项目外仍不记录且有 warning） | C04: exit 0, 不再复现 |
 
 ## 1. 代码定位
 
 - 仓库路径 / remote：`/Users/ark/Dev/meshy-cli`（fresh clone） / `https://github.com/meshy-dev/meshy-cli.git`
 - 分支：`feat/skill-parity-s1`（本地分支，未推送）
 - base SHA：`fd94490916376e691efcea51324ac4326b459e1f`（0.2.0，= 计划基线 = 开工时的 remote main）
-- head SHA（代码）：`cf8905dd285bf16896df053aac253dbf8c672979`；本文件与 verification.json/capability-matrix.json 在其后的 docs-only commit 中（见 `git log`，不改变任何 `src/`、`tests/`、`package.json`）
-- 历次被 review 的 HEAD：round 1 `6273d9aa6ef396cf1cc26838e2c0d09ab176f595`（代码 `e7c26fc053cea4e1bf7dee08953e25a3ec858137`）；round 2 `730132bd99a471ed41d6bbf6b200219f13f569ba`（代码 `0388fe804b456a931f871d2f227e2acf22359d77`）
+- head SHA（代码）：`235d6de34f4e78210cdf418a7273542fbd4ce906`（= 修复 `30536d8daa92dc9e8d39d99cbdf24d0d20799438` + 测试稳定性提交）；本文件与 verification.json/capability-matrix.json 在其后的 docs-only commit 中（见 `git log`，不改变任何 `src/`、`tests/`、`package.json`）
+- 历次被 review 的 HEAD：round 1 `6273d9aa6ef396cf1cc26838e2c0d09ab176f595`（代码 `e7c26fc053cea4e1bf7dee08953e25a3ec858137`）；round 2 `730132bd99a471ed41d6bbf6b200219f13f569ba`（代码 `0388fe804b456a931f871d2f227e2acf22359d77`）；round 3 `566f3bdbcdd85d1139e48e3a87d4c6f5e844e43a`（代码 `cf8905dd285bf16896df053aac253dbf8c672979`）
 - 工作区是否还有未提交修改：无（docs commit 之后 `git status` 干净）
 - 实施包版本：2026-09-07 / v1
 - 实际源码与计划基线的差异：无（remote main 与 Skills HEAD 均等于计划 SHA，见 `docs/skill-parity/baseline-delta.md`）
@@ -37,19 +34,21 @@ Filled from the 2026-09-07 / v1 implementation package. `not_run` means not veri
 
 ## 2. 完成状态
 
-- G1-code / review-ready：**第 2 轮 7 项 finding 已全部修复并有正向回归，首轮 10 项在新 HEAD 复核未回退；自评 passed，等待 Codex 复审确认**（上一轮结论 not_accepted）
+- G1-code / review-ready：**第 3 轮 6 项 finding 已全部修复并有正向回归，前两轮 17 项在新 HEAD 复核未回退（reviewer 正向脚本 20/20）；自评 passed，等待 Codex 复审确认**（上一轮结论 not_accepted）
 - G1-release / ready-for-S2：**not_run**（无复审结论、无真实账号/多 OS/切片器验证、未发布）
-- mandatory 能力实现数 / 总数：**35 / 35**（`docs/skill-parity/capability-matrix.json`；13 项带 `review_round_2: fixed`，21 项带 `review_round_1: fixed`，`review_status` 均为 "re-review pending"）
-- mandatory 离线测试通过 / 失败 / 未执行数：`pnpm test` **535 通过 / 0 失败 / 0 跳过**（535 项，含基线原有 363 项；覆盖 74 个 T-id 的离线部分，见 verification.json `behavior_tests`）
-- 真实 API / OS / GUI 验证通过 / 未执行项：通过 1 项部分（真实公开动画目录 GET，免费无鉴权，在 cf8905d 重跑）+ macOS arm64 tarball 安装 smoke 29 项；未执行：T-104（真实账号 OAuth/Key 回归，含真实 token 端点是否返回 user_id、真实重新登录）、T-109 Windows/Linux、T-110 鉴权 get/下载、T-111 UV/Creative Lab/showcases、T-112 真实切片器 open
-- 是否修改独立 Skills、MCP 或内部服务仓库：**没有**（meshyd 仅只读核对 6 个文件，见 baseline.json；两个 reviewer 目录未被改动）
+- mandatory 能力实现数 / 总数：**35 / 35**（`docs/skill-parity/capability-matrix.json`；10 项带 `review_round_3: fixed`，13 项 `review_round_2`，21 项 `review_round_1`，`review_status` 均为 "re-review pending"）
+- mandatory 离线测试通过 / 失败 / 未执行数：`pnpm test` **542 通过 / 0 失败 / 0 跳过**（542 项，含基线原有 363 项；覆盖 74 个 T-id 的离线部分，见 verification.json `behavior_tests`）
+- 真实 API / OS / GUI 验证通过 / 未执行项：通过 1 项部分（真实公开动画目录 GET，免费无鉴权，在 235d6de 重跑）+ macOS arm64 tarball 安装 smoke 29 项；未执行：T-104（真实账号 OAuth/Key 回归，含真实 token 端点是否返回 user_id）、T-109 Windows/Linux、T-110 鉴权 get/下载、T-111 UV/Creative Lab/showcases、T-112 真实切片器 open
+- 是否修改独立 Skills、MCP 或内部服务仓库：**没有**（meshyd 仅只读核对 6 个文件，见 baseline.json；三个 reviewer 目录未被改动）
 
 ## 3. 本次具体改动
 
 `git log --oneline fd94490..HEAD`（最早在下）：
 
 ```
-1d97ada docs(skill-parity): round-3 handoff after Codex review round 2 fixes
+235d6de test(poll): judge the real-timer smoke with the loop's own clock reading
+30536d8 fix(review): address Codex review round 3 findings R3-F01–R3-F06
+566f3bd docs(skill-parity): round-3 handoff after Codex review round 2 fixes
 cf8905d fix(review): address Codex review round 2 findings R2-F01–R2-F07
 730132b docs(skill-parity): round-2 handoff after Codex review round 1 fixes
 0388fe8 fix(review): address Codex review round 1 findings F01–F10
@@ -64,7 +63,7 @@ e7ea577 feat(cli): B01 v1 envelope, exit codes, local runtime, --api-key-file an
 c75588e docs(skill-parity): B00 baseline, endpoint contracts, decisions and fixtures
 ```
 
-` 116 files changed, 20618 insertions(+), 930 deletions(-)`
+` 117 files changed, 21456 insertions(+), 935 deletions(-)`
 
 | 批次 | commit | 改动与用户行为 | 关键验证 |
 | --- | --- | --- | --- |
@@ -77,18 +76,19 @@ c75588e docs(skill-parity): B00 baseline, endpoint contracts, decisions and fixt
 | B06–B08 | `feat(local): B06-B08` | `inspect faces`（unknown≠0，exit 12/13，仅描述 remesh）；`mesh prepare-print`（两遍流式、oracle 校验、材质依赖、`--in-place`）；`slicer detect/open`（七注册、三 OS 规则、无默认应用 fallback）；`doctor`（默认本地，`--check-api` 单次 balance） | tests/inspect, obj-transform, slicers, doctor |
 | B09 | `chore(release)` + docs commit | 0.3.0 候选版本、README、随包 SKILL.md、.env.example、T-105；verification.json、REVIEW_HANDOFF | 本节 5、7 |
 | Review R1 | `fix(review)` `0388fe8` | F01–F10（任务上下文/预检/共享 `submitCreate`、workspace 写入根、依赖复制根检查、凭据/媒体指纹、截止时间、嵌套合并、材质重链接、stream -o） | tests/codex-review-round1, operation-store, poll |
-| Review R2 | `fix(review)` `cf8905d` | §0 表中的 R2-F01–R2-F07：`download.ts` legacy 下载器逐文件 manifest/信号/报告分支 root/mkdir 顺序；`material-links.ts` 源文件名解析与歧义报告；`task-command.ts` stream 统一 outcome、部分 manifest、索引根、OAuth 身份校验；`project-store.ts` `indexRootFor`/`skipIndex`、快照相对路径 realpath 帧；`operation-store.ts` `credentialBinding`/unverified 拒绝；`credentials.ts`/`config.ts`/`auth.ts`/`runtime.ts` `login_id`；`index.ts` 中断重包装保留上下文；`make.ts`/`project.ts`/`cmd/download.ts` 相应接线；decisions D-038..D-044、migration-notes §3.2、README、SKILL.md | tests/codex-review-round2, poll（确定性）, auth-headless + 两个复现脚本重跑 |
+| Review R2 | `fix(review)` `cf8905d` | R2-F01–R2-F07（报告 -o/索引根/mkdir 顺序、多材质源名映射、stream 统一 outcome、部分 manifest、传输阶段 SIGINT、OAuth login_id、确定性 deadline 测试） | tests/codex-review-round2, poll, auth-headless |
+| Review R3 | `fix(review)` `30536d8` + `test(poll)` `235d6de` | §0 表中的 R3-F01–R3-F06：`download.ts` sidecar 安全发布、统一收尾失败处理（`finalisationFailure`、`redigest`、`failed_step`）、relink 信号；`material-links.ts` 源身份优先与通道竞争歧义、`rewriteLines` 合作式中断；`task-command.ts`/`make.ts` legacy 收尾任务上下文；`errors.ts` legacy payload 附加 `task_id`/`operation_id`；`cmd/download.ts` realpath 坐标系记录项目文件；decisions D-045..D-050、migration-notes §3.3、README、SKILL.md；poll smoke 以循环时钟读数判定 | tests/codex-review-round3 + 三轮复现脚本重跑 + reviewer 正向脚本 20/20 |
 
 ## 4. 能力与接口证据
 
-- 更新后的 capability-matrix 路径：`docs/skill-parity/capability-matrix.json`（`review_rounds`、各能力 `review_round_1`/`review_round_2`）
+- 更新后的 capability-matrix 路径：`docs/skill-parity/capability-matrix.json`（`review_rounds[0..2]`、各能力 `review_round_1/2/3`）
 - endpoint-contracts 与模型/媒体参数映射：`docs/skill-parity/endpoint-contracts.json`（与 `src/client/resource-registry.ts` 由 `tests/resource-registry.test.ts` 逐字段对账；本轮未改）
-- v1 JSON schema / 错误码定义：`src/internal/result.ts`（六固定键）、`src/internal/errors.ts`（`CliErrorCode` → 退出码表）；`README.md` "Stable machine output"。本轮新增/变化字段（均为附加或收窄）：任务 `-o` 的 `result.downloads.files[]` 现为逐文件 manifest（`key/path/bytes/sha256/status/error`），`downloads.state` 新增 `partial`；`material_links.status`（complete|incomplete）、`texture_maps[].material`/`candidates`、method 新值 `source_name`/`source_stem`/`ambiguous`；`result.conflict` 新值 `credential_unverified`；stream 的记账失败进入 `outcome`（流本身失败时附 `bookkeeping_failed` warning，D-040）；凭据文件 OAuth profile 新字段 `login_id`
-- legacy compatibility / migration notes：`docs/skill-parity/migration-notes.md`（§3 兼容表、§3.1 首轮修正、§3.2 本轮修正：legacy `-o` 错误 payload 现含 `code`/`status`/`result.downloads`，其余 legacy 输出与文件布局不变）
-- intentional differences：`docs/skill-parity/migration-notes.md` §2（2.1–2.12），关键项：`--api-key-file`（D-025）、`showcase_type=animate`（D-007）、公共 DTO 无 `face_count`（D-009）、`rigging list` 启用、lamp `text` 拒绝；本轮设计选择：材质重链接**拒绝在多候选间猜测**（D-039）；无账户身份的 OAuth 存量 profile **拒绝重放而非视为同一账户**（D-043，迁移路径为重新登录）
+- v1 JSON schema / 错误码定义：`src/internal/result.ts`（六固定键）、`src/internal/errors.ts`（`CliErrorCode` → 退出码表）；`README.md` "Stable machine output"。本轮新增/变化字段（均为附加）：`result.downloads.failed_step`（relink | digest | sidecar）；`material_links.texture_maps[].note`；legacy 错误 payload 顶层 `task_id`、`operation_id`；legacy 错误 `hint` 为恢复命令
+- legacy compatibility / migration notes：`docs/skill-parity/migration-notes.md`（§3 兼容表、§3.1–§3.3 三轮修正；legacy 输出与文件布局不变，错误 payload 只增字段）
+- intentional differences：`docs/skill-parity/migration-notes.md` §2（2.1–2.12）；三轮设计选择：材质映射按来源身份、多候选与通道竞争拒绝猜测（D-039/D-047）；无账户身份 OAuth 存量 profile 拒绝重放（D-043）；sidecar 与资产同规则发布（D-045）；越界索引根跳过而非越界写入（D-038）
 - 限权 API / 未支持的 OS / deferred 新功能：UV/Creative Lab/showcases 真实调用 not_run；Windows/Linux 仅 fixture 覆盖；新 Creative Lab 产品记录为 deferred（矩阵 DF-001）
 
-### 脱敏实际 CLI 输出（tarball 安装的 `cf8905d`，loopback mock；`<tmp>`/`<home>` 为替换后的路径）
+### 脱敏实际 CLI 输出（tarball 安装的 `235d6de`，loopback mock；`<tmp>`/`<home>` 为替换后的路径）
 
 `text-to-3d create --mode preview --prompt "a cactus" --async --output-schema v1`（exit=0）：
 
@@ -101,7 +101,7 @@ c75588e docs(skill-parity): B00 baseline, endpoint contracts, decisions and fixt
     "task": null,
     "submission": {
       "state": "accepted",
-      "operation_id": "86ff89fe-8775-4654-a8f0-8ee924a23615",
+      "operation_id": "f64531e3-a77a-4223-a4dd-de9de9d1fabb",
       "task_id": "fixture-task-a",
       "request_id": null
     },
@@ -304,7 +304,7 @@ c75588e docs(skill-parity): B00 baseline, endpoint contracts, decisions and fixt
   "result": {
     "submission": {
       "state": "unknown",
-      "operation_id": "f62a0362-51ce-45b4-a68d-f686a51062cf",
+      "operation_id": "d7354b5e-d51d-439a-8e8d-e47cd1738dce",
       "task_id": null
     },
     "task": null,
@@ -322,7 +322,7 @@ c75588e docs(skill-parity): B00 baseline, endpoint contracts, decisions and fixt
     "recovery": {
       "action": "reconcile",
       "automatic": false,
-      "command": "meshy text-to-3d list --output-schema v1   # then match operation f62a0362-51ce-45b4-a68d-f686a51062cf by time/prompt before creating again"
+      "command": "meshy text-to-3d list --output-schema v1   # then match operation d7354b5e-d51d-439a-8e8d-e47cd1738dce by time/prompt before creating again"
     }
   },
   "warnings": []
@@ -380,246 +380,9 @@ c75588e docs(skill-parity): B00 baseline, endpoint contracts, decisions and fixt
 }
 ```
 
-### 第 2 轮 finding 修复后的实际输出（`round2-probes.mjs` 副本重跑，`cf8905d`，脱敏）
+### 第 3 轮 finding 修复后的实际输出（`round3-probes.mjs` 副本重跑，`235d6de`，脱敏）
 
-N01 · `analyze-printability get --workspace W -o OUTSIDE/report.json`（exit 11，`outside_file_created=false`）：
-
-```json
-{
-  "schema_version": "meshy.cli/v1",
-  "command": "analyze-printability.get",
-  "ok": false,
-  "result": {
-    "task": {
-      "task_id": "round2-task",
-      "resource": "analyze-printability",
-      "endpoint": "/openapi/v1/print/analyze",
-      "type": "analyze-printability",
-      "name": null,
-      "status": "SUCCEEDED",
-      "progress": null,
-      "preceding_tasks": null,
-      "created_at": null,
-      "started_at": null,
-      "finished_at": null,
-      "expires_at": null,
-      "face_count": null,
-      "consumed_credits": null,
-      "model_urls": {},
-      "image_urls": [],
-      "texture_urls": [],
-      "thumbnail_url": null,
-      "thumbnail_urls": null,
-      "alpha_thumbnail_url": null,
-      "result": null,
-      "printability": {
-        "score": 0.9,
-        "issues": []
-      },
-      "task_error": null
-    },
-    "submission": {
-      "state": "accepted",
-      "operation_id": null
-    },
-    "downloads": {
-      "state": "failed",
-      "files": [],
-      "metadata_path": null
-    },
-    "saved_json": null,
-    "task_id": "round2-task",
-    "next": {
-      "get": "meshy analyze-printability get round2-task --output-schema v1",
-      "wait": "meshy analyze-printability wait round2-task --output-schema v1",
-      "stream": "meshy analyze-printability stream round2-task --format ndjson --output-schema v1"
-    }
-  },
-  "error": {
-    "code": "local_io",
-    "message": "task round2-task is SUCCEEDED but downloading its assets failed: report path <tmp>/outside-report/report.json resolves outside the authorised root /private<tmp>/workspace",
-    "http_status": null,
-    "retryable": false,
-    "recovery": {
-      "action": "download",
-      "automatic": false,
-      "command": "meshy download --resource analyze-printability --task-id round2-task --all --output-dir <dir>"
-    }
-  },
-  "warnings": []
-}
-```
-
-N02 · `project record --project P --workspace P`（无 `--root`；exit 0，metadata 记录、`index.updated=false`、父目录无 history.json）：
-
-```json
-{
-  "schema_version": "meshy.cli/v1",
-  "command": "project.record",
-  "ok": true,
-  "result": {
-    "project_dir": "/private<tmp>/project-root/20260907_182132_review_48aa",
-    "action": "added",
-    "entry": {
-      "task_id": "round2-task",
-      "task_type": null,
-      "resource": null,
-      "endpoint": null,
-      "stage": "preview",
-      "parent_task_id": null,
-      "status": null,
-      "files": [],
-      "task_json": null,
-      "operation_id": null,
-      "created_at": "2026-09-07T10:21:32.365Z",
-      "updated_at": "2026-09-07T10:21:32.365Z"
-    },
-    "task_count": 1,
-    "index": {
-      "updated": false,
-      "error": "history root /private<tmp>/project-root resolves outside --workspace <tmp>/project-root/20260907_182132_review_48aa; metadata.json was recorded but history.json was not touched (history root /private<tmp>/project-root resolves outside the authorised root /private<tmp>/project-root/20260907_182132_review_48aa) — run `meshy project rebuild-index --root /private<tmp>/project-root` from a workspace that contains it"
-    },
-    "migrated_from_legacy": false
-  },
-  "error": null,
-  "warnings": [
-    {
-      "code": "index_dirty",
-      "message": "metadata.json committed but history.json was not updated: history root /private<tmp>/project-root resolves outside --workspace <tmp>/project-root/20260907_182132_review_48aa; metadata.json was recorded but history.json was not touched (history root /private<tmp>/project-root resolves outside the authorised root /private<tmp>/project-root/20260907_182132_review_48aa) — run `meshy project rebuild-index --root /private<tmp>/project-root` from a workspace that contains it; run `meshy project rebuild-index`"
-    }
-  ]
-}
-```
-
-N04 · 双材质 OBJ 下载后的 `model.mtl`（两组各自指向自己的贴图）：
-
-```
-newmtl body
-map_Kd texture_0_base_color.png
-newmtl eyes
-map_Kd texture_1_base_color.png
-```
-
-N05 · `stream --format ndjson --save-json <已存在文件>`（exit 11；事件序列 task → outcome）：
-
-```json
-[
-  {
-    "schema_version": "meshy.cli/v1",
-    "command": "text-to-3d.stream",
-    "ok": true,
-    "result": {
-      "task": {
-        "task_id": "round2-task",
-        "resource": "text-to-3d",
-        "endpoint": "/openapi/v2/text-to-3d",
-        "type": "text-to-3d-preview",
-        "name": null,
-        "status": "SUCCEEDED",
-        "progress": null,
-        "preceding_tasks": null,
-        "created_at": null,
-        "started_at": null,
-        "finished_at": null,
-        "expires_at": null,
-        "face_count": null,
-        "consumed_credits": null,
-        "model_urls": {},
-        "image_urls": [],
-        "texture_urls": [],
-        "thumbnail_url": null,
-        "thumbnail_urls": null,
-        "alpha_thumbnail_url": null,
-        "result": null,
-        "printability": null,
-        "task_error": null
-      },
-      "submission": {
-        "state": "accepted",
-        "operation_id": null
-      },
-      "downloads": {
-        "state": "not_requested",
-        "files": [],
-        "metadata_path": null
-      },
-      "saved_json": null
-    },
-    "error": null,
-    "warnings": [],
-    "event": "task",
-    "sequence": 1
-  },
-  {
-    "schema_version": "meshy.cli/v1",
-    "command": "text-to-3d.stream",
-    "ok": false,
-    "result": {
-      "task": {
-        "task_id": "round2-task",
-        "resource": "text-to-3d",
-        "endpoint": "/openapi/v2/text-to-3d",
-        "type": "text-to-3d-preview",
-        "name": null,
-        "status": "SUCCEEDED",
-        "progress": null,
-        "preceding_tasks": null,
-        "created_at": null,
-        "started_at": null,
-        "finished_at": null,
-        "expires_at": null,
-        "face_count": null,
-        "consumed_credits": null,
-        "model_urls": {},
-        "image_urls": [],
-        "texture_urls": [],
-        "thumbnail_url": null,
-        "thumbnail_urls": null,
-        "alpha_thumbnail_url": null,
-        "result": null,
-        "printability": null,
-        "task_error": null
-      },
-      "submission": {
-        "state": "accepted",
-        "operation_id": null
-      },
-      "downloads": {
-        "state": "not_requested",
-        "files": [],
-        "metadata_path": null
-      },
-      "saved_json": null,
-      "task_id": "round2-task",
-      "next": {
-        "get": "meshy text-to-3d get round2-task --output-schema v1",
-        "wait": "meshy text-to-3d wait round2-task --output-schema v1",
-        "stream": "meshy text-to-3d stream round2-task --format ndjson --output-schema v1"
-      },
-      "stream": {
-        "events": 1,
-        "ended": "terminal",
-        "elapsed_seconds": 0.01
-      }
-    },
-    "error": {
-      "code": "local_io",
-      "message": "refusing to overwrite existing file: /private<tmp>/workspace/occupied.json (pass --overwrite, or choose another path)",
-      "http_status": null,
-      "retryable": false,
-      "recovery": {
-        "action": "choose_path",
-        "automatic": false
-      }
-    },
-    "warnings": [],
-    "event": "outcome",
-    "sequence": 2
-  }
-]
-```
-
-N06 · `get -o dir`，第一个资产成功、第二个 503（exit 7，`downloads.state=partial`，model.glb 在磁盘）：
+C01 · `get --workspace W -o W/out`，资产 GET 期间在 `W/out/meta.json` 植入指向 W 外文件的符号链接（exit 11，外部文件内容不变，manifest 保留 model_glb）：
 
 ```json
 {
@@ -643,11 +406,11 @@ N06 · `get -o dir`，第一个资产成功、第二个 503（exit 7，`download
       "face_count": null,
       "consumed_credits": null,
       "model_urls": {
-        "glb": "http://127.0.0.1:<port>/first.glb"
+        "glb": "http://127.0.0.1:<port>/asset.glb"
       },
       "image_urls": [],
       "texture_urls": [],
-      "thumbnail_url": "http://127.0.0.1:<port>/second.png",
+      "thumbnail_url": null,
       "thumbnail_urls": null,
       "alpha_thumbnail_url": null,
       "result": null,
@@ -663,26 +426,17 @@ N06 · `get -o dir`，第一个资产成功、第二个 503（exit 7，`download
       "files": [
         {
           "key": "model_glb",
-          "path": "<tmp>/workspace/partial/model.glb",
+          "path": "<tmp>/workspace/sidecar-race/model.glb",
           "bytes": 49,
           "sha256": "1390b094bb61759b837fcb096cf53f499d6a5724524a0b55f9700bd22bb87651",
           "content_type": "model/gltf-binary",
           "status": "written",
           "error": null,
           "relinked": false
-        },
-        {
-          "key": "thumbnail",
-          "path": "<tmp>/workspace/partial/thumbnail.png",
-          "bytes": 0,
-          "sha256": "",
-          "content_type": null,
-          "status": "failed",
-          "error": "download failed for http://127.0.0.1:<port>/second.png (HTTP 503 Service Unavailable)",
-          "relinked": false
         }
       ],
-      "metadata_path": null
+      "metadata_path": null,
+      "failed_step": "sidecar"
     },
     "saved_json": null,
     "task_id": "round2-task",
@@ -693,56 +447,22 @@ N06 · `get -o dir`，第一个资产成功、第二个 503（exit 7，`download
     }
   },
   "error": {
-    "code": "network",
-    "message": "task round2-task is SUCCEEDED but downloading its assets failed: download failed for thumbnail: download failed for http://127.0.0.1:<port>/second.png (HTTP 503 Service Unavailable)",
-    "http_status": 503,
+    "code": "local_io",
+    "message": "task round2-task is SUCCEEDED but downloading its assets failed: 1 file(s) were written but the sidecar step failed: sidecar path <tmp>/workspace/sidecar-race/meta.json is a symbolic link; refusing to write through it",
+    "http_status": null,
     "retryable": false,
     "recovery": {
       "action": "download",
       "automatic": false,
       "command": "meshy download --resource text-to-3d --task-id round2-task --all --output-dir <dir>"
     },
-    "details": {
-      "expired_or_denied": false
-    }
+    "hint": "meshy download --resource text-to-3d --task-id round2-task --all --output-dir <dir>"
   },
   "warnings": []
 }
 ```
 
-N07 · 无 user_id 的同名 OAuth profile 换 token 复用 `--operation-id`（exit 2，`credential_unverified`）：
-
-```json
-{
-  "schema_version": "meshy.cli/v1",
-  "command": "text-to-3d.create",
-  "ok": false,
-  "result": {
-    "submission": {
-      "state": "accepted",
-      "operation_id": "missing-subject-op",
-      "task_id": "oauth-account-a-task"
-    },
-    "conflict": [
-      "credential_unverified"
-    ]
-  },
-  "error": {
-    "code": "operation_conflict",
-    "message": "operation missing-subject-op already exists but the current OAuth login has no account identity (profile without user_id or login_id), so it cannot be confirmed as the same account; nothing was submitted — run `meshy auth login` to bind this login, or use a new --operation-id",
-    "http_status": null,
-    "retryable": false,
-    "recovery": {
-      "action": "login",
-      "automatic": false,
-      "command": "meshy auth login"
-    }
-  },
-  "warnings": []
-}
-```
-
-N08 · 资产传输中收到 SIGINT（exit 130，`file_created=false`）：
+C02 · 资产 GET 期间在 `meta.json` 位置出现同名目录（exit 11，`downloads.state=partial`、`failed_step=sidecar`、model.glb 在磁盘）：
 
 ```json
 {
@@ -766,7 +486,7 @@ N08 · 资产传输中收到 SIGINT（exit 130，`file_created=false`）：
       "face_count": null,
       "consumed_credits": null,
       "model_urls": {
-        "glb": "http://127.0.0.1:<port>/slow.glb"
+        "glb": "http://127.0.0.1:<port>/asset.glb"
       },
       "image_urls": [],
       "texture_urls": [],
@@ -782,20 +502,111 @@ N08 · 资产传输中收到 SIGINT（exit 130，`file_created=false`）：
       "operation_id": null
     },
     "downloads": {
-      "state": "failed",
+      "state": "partial",
       "files": [
         {
           "key": "model_glb",
-          "path": "<tmp>/workspace/interrupted.glb",
-          "bytes": 0,
-          "sha256": "",
-          "content_type": null,
-          "status": "failed",
-          "error": "download of http://127.0.0.1:<port>/slow.glb interrupted",
+          "path": "<tmp>/workspace/sidecar-failure/model.glb",
+          "bytes": 49,
+          "sha256": "1390b094bb61759b837fcb096cf53f499d6a5724524a0b55f9700bd22bb87651",
+          "content_type": "model/gltf-binary",
+          "status": "written",
+          "error": null,
           "relinked": false
         }
       ],
-      "metadata_path": null
+      "metadata_path": null,
+      "failed_step": "sidecar"
+    },
+    "saved_json": null,
+    "task_id": "round2-task",
+    "next": {
+      "get": "meshy text-to-3d get round2-task --output-schema v1",
+      "wait": "meshy text-to-3d wait round2-task --output-schema v1",
+      "stream": "meshy text-to-3d stream round2-task --format ndjson --output-schema v1"
+    }
+  },
+  "error": {
+    "code": "local_io",
+    "message": "task round2-task is SUCCEEDED but downloading its assets failed: 1 file(s) were written but the sidecar step failed: refusing to overwrite existing file: /private<tmp>/workspace/sidecar-failure/meta.json (pass --overwrite, or choose another path)",
+    "http_status": null,
+    "retryable": false,
+    "recovery": {
+      "action": "choose_path",
+      "automatic": false
+    },
+    "hint": "meshy text-to-3d wait round2-task --output-schema v1"
+  },
+  "warnings": []
+}
+```
+
+C03 · OBJ 重写阶段发送 SIGINT（exit 130，`failed_step=relink`，无 meta.json）：
+
+```json
+{
+  "schema_version": "meshy.cli/v1",
+  "command": "text-to-3d.get",
+  "ok": false,
+  "result": {
+    "task": {
+      "task_id": "round2-task",
+      "resource": "text-to-3d",
+      "endpoint": "/openapi/v2/text-to-3d",
+      "type": "text-to-3d-preview",
+      "name": null,
+      "status": "SUCCEEDED",
+      "progress": null,
+      "preceding_tasks": null,
+      "created_at": null,
+      "started_at": null,
+      "finished_at": null,
+      "expires_at": null,
+      "face_count": null,
+      "consumed_credits": null,
+      "model_urls": {
+        "obj": "http://127.0.0.1:<port>/large.obj",
+        "mtl": "http://127.0.0.1:<port>/original.mtl"
+      },
+      "image_urls": [],
+      "texture_urls": [],
+      "thumbnail_url": null,
+      "thumbnail_urls": null,
+      "alpha_thumbnail_url": null,
+      "result": null,
+      "printability": null,
+      "task_error": null
+    },
+    "submission": {
+      "state": "accepted",
+      "operation_id": null
+    },
+    "downloads": {
+      "state": "partial",
+      "files": [
+        {
+          "key": "model_obj",
+          "path": "<tmp>/workspace/relink-interrupt/model.obj",
+          "bytes": 4000028,
+          "sha256": "f00b46cb6d822e2ce93c6a7cf61251e80b76eb6ef71d9ef30bb07129330ac34d",
+          "content_type": "model/obj",
+          "status": "written",
+          "error": null,
+          "relinked": false
+        },
+        {
+          "key": "model_mtl",
+          "path": "<tmp>/workspace/relink-interrupt/model.mtl",
+          "bytes": 18,
+          "sha256": "997fd7d9f6b03ab40a1e252c6319d76c351d6f5ea2a431859077faee004243d6",
+          "content_type": "text/plain",
+          "status": "written",
+          "error": null,
+          "relinked": false
+        }
+      ],
+      "metadata_path": null,
+      "failed_step": "relink"
     },
     "saved_json": null,
     "task_id": "round2-task",
@@ -807,91 +618,241 @@ N08 · 资产传输中收到 SIGINT（exit 130，`file_created=false`）：
   },
   "error": {
     "code": "interrupted",
-    "message": "task round2-task is SUCCEEDED but downloading its assets was interrupted: download failed for model_glb: download of http://127.0.0.1:<port>/slow.glb interrupted",
+    "message": "task round2-task is SUCCEEDED but downloading its assets was interrupted: 2 file(s) were written but the relink step was interrupted: interrupted while rewriting model.obj",
     "http_status": null,
     "retryable": false,
     "recovery": {
       "action": "download",
       "automatic": false,
       "command": "meshy download --resource text-to-3d --task-id round2-task --all --output-dir <dir>"
-    }
+    },
+    "hint": "meshy download --resource text-to-3d --task-id round2-task --all --output-dir <dir>"
   },
   "warnings": []
 }
 ```
 
+C04 · 通过符号链接父目录访问的项目（exit 0，`recorded_files=["model.glb"]`）：
+
+```json
+{
+  "schema_version": "meshy.cli/v1",
+  "command": "download",
+  "ok": true,
+  "result": {
+    "source": {
+      "kind": "task-json",
+      "path": "<tmp>/alias-projects/20260907_232307_alias-review_3a3b/task.json",
+      "shape": "api",
+      "resource": "text-to-3d",
+      "task_id": "round2-task"
+    },
+    "selection": {
+      "selected": [
+        "model.glb"
+      ],
+      "dependencies": []
+    },
+    "downloads": {
+      "state": "completed",
+      "files": [
+        {
+          "key": "model.glb",
+          "path": "/private<tmp>/real-projects/20260907_232307_alias-review_3a3b/model.glb",
+          "relative_path": "model.glb",
+          "bytes": 49,
+          "sha256": "1390b094bb61759b837fcb096cf53f499d6a5724524a0b55f9700bd22bb87651",
+          "content_type": "model/gltf-binary",
+          "format": "glb",
+          "container_format": null,
+          "extracted": null,
+          "status": "written",
+          "error": null,
+          "publish_method": "link",
+          "relinked": false
+        }
+      ],
+      "metadata_path": null,
+      "material_links": null
+    },
+    "unknown_urls": [],
+    "saved_json": null,
+    "project": {
+      "project_dir": "<tmp>/alias-projects/20260907_232307_alias-review_3a3b",
+      "action": "added",
+      "stage": "preview",
+      "recorded_files": [
+        "model.glb"
+      ]
+    }
+  },
+  "error": null,
+  "warnings": []
+}
+```
+
+C05 · 源文件名与生成名交叉碰撞后的 `model.mtl`（红材质 → 红图 `texture_0_base_color.png`）：
+
+```
+newmtl red
+map_Kd texture_0_base_color.png
+newmtl green
+map_Kd texture_1_base_color.png
+```
+
+C06 · 默认 legacy schema 同步 create，资产 503（exit 7；payload 含 `task_id`/`operation_id`/`result.submission`/`next`/manifest）：
+
+```json
+{
+  "name": "CliError",
+  "message": "download failed for model_glb: download failed for http://127.0.0.1:<port>/missing.glb (HTTP 503 Service Unavailable)",
+  "code": "network",
+  "status": 503,
+  "hint": "meshy text-to-3d wait paid-legacy-created-id --output-schema v1",
+  "task_id": "paid-legacy-created-id",
+  "operation_id": "<uuid>",
+  "result": {
+    "task": {
+      "task_id": "paid-legacy-created-id",
+      "resource": "text-to-3d",
+      "endpoint": "/openapi/v2/text-to-3d",
+      "type": "text-to-3d-preview",
+      "name": null,
+      "status": "SUCCEEDED",
+      "progress": null,
+      "preceding_tasks": null,
+      "created_at": null,
+      "started_at": null,
+      "finished_at": null,
+      "expires_at": null,
+      "face_count": null,
+      "consumed_credits": null,
+      "model_urls": {
+        "glb": "http://127.0.0.1:<port>/missing.glb"
+      },
+      "image_urls": [],
+      "texture_urls": [],
+      "thumbnail_url": null,
+      "thumbnail_urls": null,
+      "alpha_thumbnail_url": null,
+      "result": null,
+      "printability": null,
+      "task_error": null
+    },
+    "submission": {
+      "state": "accepted",
+      "operation_id": "<uuid>",
+      "task_id": "paid-legacy-created-id",
+      "request_id": null
+    },
+    "downloads": {
+      "state": "failed",
+      "files": [
+        {
+          "key": "model_glb",
+          "path": "<tmp>/workspace/legacy-created/model.glb",
+          "bytes": 0,
+          "sha256": "",
+          "content_type": null,
+          "status": "failed",
+          "error": "download failed for http://127.0.0.1:<port>/missing.glb (HTTP 503 Service Unavailable)",
+          "relinked": false
+        }
+      ],
+      "metadata_path": null
+    },
+    "saved_json": null,
+    "task_id": "paid-legacy-created-id",
+    "next": {
+      "get": "meshy text-to-3d get paid-legacy-created-id --output-schema v1",
+      "wait": "meshy text-to-3d wait paid-legacy-created-id --output-schema v1",
+      "stream": "meshy text-to-3d stream paid-legacy-created-id --format ndjson --output-schema v1"
+    },
+    "wait": {
+      "timed_out": false,
+      "elapsed_seconds": 0,
+      "polls": 1
+    }
+  }
+}
+```
+
 ## 5. 实际验证记录
 
-全部绑定代码 HEAD `cf8905dd285bf16896df053aac253dbf8c672979`，环境 macOS 26.6 arm64 / Node v24.20.0 / pnpm 11.24.0；日志见 `docs/skill-parity/verification.json`（`final_runs`、`package_smoke`、`review_rounds`）。
+全部绑定代码 HEAD `235d6de34f4e78210cdf418a7273542fbd4ce906`，环境 macOS 26.6 arm64 / Node v24.20.0 / pnpm 11.24.0；日志见 `docs/skill-parity/verification.json`（`final_runs`、`package_smoke`、`review_rounds`）。
 
 | 命令 / 测试 ID | 代码 SHA | 环境 | exit code | 结果 | 日志/fixture/报告 |
 | --- | --- | --- | --- | --- | --- |
-| `node --version` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
-| `pnpm --version` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
-| `pnpm install --frozen-lockfile` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
-| `pnpm typecheck` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
-| `pnpm test` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed (535 tests, 535 pass, 0 fail) | verification.json final_runs |
-| `pnpm build` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
-| `bash -c test "$(node dist/index.js --version)" = "$(node -p "require(\"./package.json\").version")"` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
-| `npm pack --json --pack-destination /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r3` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
-| `npm install -g --prefix /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r3/prefix /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r3/meshy-cli-0.3.0.tgz` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
-| `git diff --check fd94490` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
-| `for i in 1..8: node --import tsx --test tests/poll.test.ts` | cf8905dd285b | macOS arm64, Node 24.20.0 | 0 | passed — 8/8 runs, 9 tests each (deterministic clock tests + real-timer smoke asserting no GET starts after the deadline) | verification.json final_runs |
-| npm pack 文件清单 + 必需文件 + 禁止内容 | cf8905dd285b | 同上 | 0 | passed（398 files；dist/skills/README/LICENSE/.env.example 存在；无 .env/credentials/tests/docs/src） | verification.json package_smoke |
-| smoke:version | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:version_cli | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:help | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:help_cli | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:balance_help | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:balance_nokey_json | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 3 (expected 3) | passed | verification.json package_smoke |
-| smoke:balance_nokey_v1 | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 3 (expected 3) | passed | verification.json package_smoke |
-| smoke:resources_v1 | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:doctor | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:doctor_check_slicers | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:doctor_check_api_nokey | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 3 (expected 3) | passed | verification.json package_smoke |
-| smoke:slicer_detect | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:inspect_pass | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:inspect_fail | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 12 (expected 12) | passed | verification.json package_smoke |
-| smoke:inspect_unknown | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 13 (expected 13) | passed | verification.json package_smoke |
-| smoke:mesh_prepare | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:mesh_refuse_overwrite | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 11 (expected 11) | passed | verification.json package_smoke |
-| smoke:project_init | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:project_record | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:project_show | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:project_list | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:download_list | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:download_no_selector | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 2 (expected 2) | passed | verification.json package_smoke |
-| smoke:make_dry_run | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:usage_unknown_flag | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 2 (expected 2) | passed | verification.json package_smoke |
-| smoke:uv_help | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:creative_lab_help | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:stream_help | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| smoke:catalog_live | cf8905dd285b | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
-| 第 2 轮复现脚本 `round2-probes.mjs`（8 场景） | cf8905dd285b | node v24.20.0，loopback，临时目录 | 1（= 并非全部复现） | 0/8 复现 | verification.json review_rounds[1].probe_rerun |
-| 第 1 轮复现脚本 `round1-probes.mjs`（12 场景） | cf8905dd285b | 同上 | 1 | 0/12 复现（无回退） | verification.json review_rounds[0].reverified_on |
-| 新增行为用例 T-001…T-108（离线部分）+ R01–R12 + N01–N08 | cf8905dd285b | node:test + tsx，loopback mock，临时目录 | 0 | passed（`pnpm test` 535/535） | tests/*.test.ts；verification.json behavior_tests |
+| `node --version` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
+| `pnpm --version` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
+| `pnpm install --frozen-lockfile` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
+| `pnpm typecheck` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
+| `pnpm test` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed (542 tests, 542 pass, 0 fail) | verification.json final_runs |
+| `pnpm build` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
+| `bash -c test "$(node dist/index.js --version)" = "$(node -p "require(\"./package.json\").version")"` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
+| `npm pack --json --pack-destination /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r5` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
+| `npm install -g --prefix /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r5/prefix /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r5/meshy-cli-0.3.0.tgz` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
+| `git diff --check fd94490` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed | verification.json final_runs |
+| `for i in 1..12: node --import tsx --test tests/poll.test.ts` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed — 12/12 runs; the real-timer smoke now judges with the loop's own clock reading (one +0.003 ms false failure was seen on 30536d8 before this change) | verification.json final_runs |
+| `for i in 1..3: node --import tsx --test tests/codex-review-round3.test.ts tests/codex-review-round2.test.ts` | 235d6de34f4e | macOS arm64, Node 24.20.0 | 0 | passed — 3/3 runs (SIGINT-during-relink, sidecar race and other timing-sensitive cases) | verification.json final_runs |
+| npm pack 文件清单 + 必需文件 + 禁止内容 | 235d6de34f4e | 同上 | 0 | passed（398 files；dist/skills/README/LICENSE/.env.example 存在；无 .env/credentials/tests/docs/src） | verification.json package_smoke |
+| smoke:version | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:version_cli | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:help | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:help_cli | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:balance_help | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:balance_nokey_json | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 3 (expected 3) | passed | verification.json package_smoke |
+| smoke:balance_nokey_v1 | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 3 (expected 3) | passed | verification.json package_smoke |
+| smoke:resources_v1 | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:doctor | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:doctor_check_slicers | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:doctor_check_api_nokey | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 3 (expected 3) | passed | verification.json package_smoke |
+| smoke:slicer_detect | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:inspect_pass | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:inspect_fail | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 12 (expected 12) | passed | verification.json package_smoke |
+| smoke:inspect_unknown | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 13 (expected 13) | passed | verification.json package_smoke |
+| smoke:mesh_prepare | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:mesh_refuse_overwrite | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 11 (expected 11) | passed | verification.json package_smoke |
+| smoke:project_init | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:project_record | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:project_show | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:project_list | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:download_list | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:download_no_selector | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 2 (expected 2) | passed | verification.json package_smoke |
+| smoke:make_dry_run | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:usage_unknown_flag | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 2 (expected 2) | passed | verification.json package_smoke |
+| smoke:uv_help | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:creative_lab_help | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:stream_help | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| smoke:catalog_live | 235d6de34f4e | tarball in temp prefix, macOS arm64, Node 24.20.0 | 0 (expected 0) | passed | verification.json package_smoke |
+| 第 3 轮复现脚本 `round3-probes.mjs`（6 场景） | 235d6de34f4e | node v24.20.0，loopback，临时目录 | 1（= 并非全部复现） | 0/6 复现 | verification.json review_rounds[2].probe_rerun |
+| 第 2 轮复现脚本 `round2-probes.mjs`（8 场景） | 235d6de34f4e | 同上 | 1 | 0/8 复现（无回退） | verification.json review_rounds[1].reverified_on |
+| 第 1 轮复现脚本 `round1-probes.mjs`（12 场景） | 235d6de34f4e | 同上 | 1 | 0/12 复现（无回退） | verification.json review_rounds[0].reverified_on |
+| reviewer 正向核对 `verify-original-regressions.py`（20 项） | 235d6de34f4e | 对上述重跑结果 | 0 | 20/20 passed | verification.json review_rounds[2].reviewer_positive_checker |
+| reviewer 补测 `stream-finalization-check.mjs` | 235d6de34f4e | 同上 | 0 | passed | verification.json review_rounds[2].stream_finalization_check |
+| 新增行为用例 T-001…T-108（离线部分）+ R01–R12 + N01–N08 + C01–C06 | 235d6de34f4e | node:test + tsx，loopback mock，临时目录 | 0 | passed（`pnpm test` 542/542） | tests/*.test.ts；verification.json behavior_tests |
 
-基线（fd94490）上 `pnpm test` 363/363 通过，无基线失败；本次没有删除或跳过任何既有测试。被改写的既有断言：round-1 `R10` 的下载失败退出码随 HTTP 分类保留由 11 改为 5（仍要求唯一 outcome 与 task 上下文）；round-1 的真实时钟 poll 断言按 R2-F07 改为确定性时钟。
+基线（fd94490）上 `pnpm test` 363/363 通过，无基线失败；本次没有删除或跳过任何既有测试。唯一改写的既有断言：poll 真实定时器 smoke 的判定时钟（见 §0），预期不放宽。
 
 ## 6. 真实环境验证
 
 | 环境/能力 | 身份/资源（脱敏） | 实际结果 | 未完成原因 | 补验方式 |
 | --- | --- | --- | --- | --- |
-| API Key 与 OAuth profile 回归 | 无 | not_run | 本会话无测试账户/Key | 用测试 Key：`meshy doctor --check-api`、`meshy balance --output-schema v1`、`meshy auth status`；OAuth：`meshy auth login` 后 `meshy text-to-3d list --output-schema v1`；核对 D-043：真实 token 端点是否返回 `user_id`，登录后 profile 是否带 `login_id`，重新登录后 `--operation-id` 重放是否按预期冲突 |
+| API Key 与 OAuth profile 回归 | 无 | not_run | 本会话无测试账户/Key | 用测试 Key：`meshy doctor --check-api`、`meshy balance --output-schema v1`、`meshy auth status`；OAuth：`meshy auth login` 后 `meshy text-to-3d list --output-schema v1`；核对 D-043：真实 token 端点是否返回 `user_id`，登录后 profile 是否带 `login_id` |
 | UV / Creative Lab | 无 | not_run | 计费/账号 gate，未获预算授权 | `meshy uv-unwrap create --input-task-id <已有 SUCCEEDED 任务> --async --output-schema v1` → `wait`；`meshy creative-lab figure prototype create --image-url <png> --async` → `wait` → `build create --input-task-id`；记录 task id、请求次数、消耗额度 |
 | Enterprise showcases（计费查询） | 无 | not_run | 每次请求计费且需 Enterprise | `meshy showcases list --page-size 1 --output-schema v1`（一次）；核对 `showcase_type=animated` 别名是否被服务端接受（D-007） |
-| 公开动画目录（免费、无鉴权） | 无需身份 | passed（1 次 GET，157 条，8 条匹配 "wave"，在 cf8905d 重跑） | — | verification.json live_verification T-110 partial |
+| 公开动画目录（免费、无鉴权） | 无需身份 | passed（1 次 GET，157 条，8 条匹配 "wave"，在 235d6de 重跑） | — | verification.json live_verification T-110 partial |
 | macOS arm64 | 本机 | passed（tarball 安装 + 29 项 smoke） | — | verification.json package_smoke |
 | Windows x64 | 无 | not_run | 无主机 | 安装 tarball，运行 `meshy doctor --check-slicers`、`meshy slicer detect`、`meshy mesh prepare-print`；检测规则已用 fixture 覆盖（T-088/T-089） |
 | Linux x64 | 无 | not_run | 无主机 | 同上；CI（ubuntu, Node 24/26）会在推送后覆盖安装 smoke |
 | 真实 slicer open | 无 | not_run | 本机未安装任何注册切片器 | 安装 OrcaSlicer 后 `meshy slicer open --slicer OrcaSlicer --file <obj>`，仅验证启动 |
-| 真实 Meshy 多材质 OBJ 的引用重链接（D-039） | 无 | not_run | 需要真实 refine 任务的 OBJ+MTL+多组贴图 | `meshy download --resource text-to-3d --task-id <id> --model-format obj --output-dir <dir>`，检查 `material_links.status` 与 `texture_maps[].method`（真实 MTL 是否引用 URL 末段文件名） |
+| 真实 Meshy 多材质 OBJ 的引用重链接（D-039/D-047） | 无 | not_run | 需要真实 refine 任务的 OBJ+MTL+多组贴图 | `meshy download --resource text-to-3d --task-id <id> --model-format obj --output-dir <dir>`，检查 `material_links.status` 与 `texture_maps[].method/note`（真实 MTL 是否引用 URL 末段文件名） |
 
 ## 7. 打包证据
 
 - 候选版本：`0.3.0`（package.json，**未发布**；版本号可由 reviewer 调整）
-- tarball 路径：`/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r3/meshy-cli-0.3.0.tgz`（`npm pack --json --pack-destination`；复现见 §9）
-- SHA256：`3077563a16fb9ad00b3be5c01d69724ba3122fe1c60d7abb69cc47e201835f2a`
+- tarball 路径：`/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r5/meshy-cli-0.3.0.tgz`（`npm pack --json --pack-destination`；复现见 §9）
+- SHA256：`f29e8a168af1c66fe58c9ee53a4b392beca41350bccf55bf58c22eebf5e5f930`
 - npm pack 文件清单：398 个文件；必需项 dist/index.js、skills/meshy-cli/SKILL.md、skills/meshy-cli/animation-library.json、README.md、LICENSE、.env.example、package.json 均在；无 .env / credentials / tests / docs / src / node_modules
 - 临时安装 prefix：`npm install -g --prefix <tmp> <tarball>` → `<tmp>/bin/meshy` 与 `<tmp>/bin/meshy-cli` 均指向 `dist/index.js`
 - 两个 bin、sharp、本地无 Key/无 Python 验证：29 项 smoke 全部符合预期（含 `MESHY_API_KEY=""` 下 balance 的 stdout 为 JSON、exit 3；无 Key 的本地命令 exit 0；dist 中不含 python 引用）
@@ -899,31 +860,34 @@ N08 · 资产传输中收到 SIGINT（exit 130，`file_created=false`）：
 
 ## 8. 需要 Codex 复审的事项
 
-1. **写入根覆盖面（R2-F01）**：`saveReportOnly`/`downloadAssets`/`downloadArtifacts` 的检查是否都在任何 mkdir/临时文件之前；`indexRootFor` 的“越界则跳过索引”是否可接受（reviewer 允许拒绝或跳过，本轮选择跳过并显式 `index_dirty`）；`project show/list` 仍为只读未限制。
-2. **材质映射规则（R2-F02）**：源文件名/stem 匹配的大小写与扩展名策略；`only_texture` 规则仅在“唯一贴图且唯一引用”时生效；是否需要把 `material_links.status=incomplete` 提升为非零退出（当前所有文件都已落盘，命令 exit 0 + warning）。
-3. **stream 收尾（R2-F03）**：`bookkeepingError` 与流本身失败并存时的取舍（流失败为 outcome，记账失败为 warning）。
-4. **manifest 合并（R2-F04）**：`withTaskContext` 中 `err.result.downloads` 覆盖默认 `not_requested` 的顺序；legacy 错误 payload 从 `{name:"Error"}` 变为带 `code/status/result` 的 CliError payload 是否可接受（迁移说明 §3.2）。
-5. **信号传递（R2-F05）**：`fetchToTemp` 对 body 中途 abort 的临时文件清理；`index.ts` 重包装保留 `result/recovery/hint` 但仍改写 `code=interrupted`。
-6. **OAuth 身份（R2-F06）**：`login_id` 的生成点（`finishLogin`）是否覆盖所有登录路径（loopback/device/manual 均经 `finishLogin`）；refresh 保留；unverified 只拒绝重放而不阻止新操作的取舍；D-043 对存量 profile 的迁移说明。
-7. **确定性测试（R2-F07）**：fake clock 的 early-wake 建模（-0.5 ms）是否足以代表真实定时器；真实时钟 smoke 只断言“截止后不启动 GET”。
-8. 上两轮 §8 的其余事项仍然有效且本轮未改动相关代码（路由等价、transport 边界、锁顺序、slicer OS 行为、not_run 项）。
+1. **sidecar 发布（R3-F01）**：`writeMeta` 现在 `resolveWithinRoot`（拒绝符号链接叶子）+ `writeJsonFile` 独占发布；预检仍保留为早退。`saveReportOnly` 目录模式同路径；单文件模式的报告 JSON 已在写入前紧邻校验。legacy sidecar 文件权限从默认改为显式 0o644。
+2. **legacy 任务上下文（R3-F02）**：`toErrorPayload` 为 CliError 附加顶层 `task_id`/`operation_id`（仅在 result 中存在时）；`hint` 回退为恢复命令 → stderr 出现任务 id；`make` legacy 的 `submission.operation_id` 取自最后一步 executed 记录。
+3. **材质身份（R3-F03）**：来源名优先于落盘名；生成名引用而来源为其它文件 → ambiguous + `note`；通道规则在多个不同引用竞争同一唯一贴图时判 ambiguous（两个材质各引用一张不同图但只下载到一张同通道贴图时保持原样并报警，不把唯一贴图分给其中一个）；无来源证据的单测回退保留。
+4. **收尾失败处理（R3-F04）**：`finalisationFailure` 从磁盘重取摘要并以摘要变化推断 `relinked`；`failed_step` 三值；`downloadAssets` 的 relink 同样包裹；digest 步骤本身失败（读文件失败）也走同一路径。
+5. **relink 中断（R3-F05）**：`rewriteLines` 在每个 chunk 后检查 signal，发布前再检查并删除临时文件；OBJ 要么原样要么完整重写；C03 用轮询观察 `.model.obj.tmp-*` 触发 SIGINT（约 12 MB OBJ），并有 relinkMaterials 已中止 / 2 ms 后中止的进程内单测。
+6. **别名路径（R3-F06）**：`download --project` 的 `relative(realpath(project), realpath(file))`；`attachToProject` 的 `extra.files` 目前无调用方传入路径，故未改。
+7. **测试稳定性**：poll smoke 以循环的 `now()` 读数判定“截止前决策”（`starts.every(t < deadline)`），不再用 endpoint 内新取的时钟；确定性 fake-clock 用例不变；12/12 重复通过。
+8. 前三轮 §8 的其余事项仍然有效且本轮未改动相关代码（路由等价、transport 边界、锁顺序、slicer OS 行为、not_run 项）。
 
 ## 9. 最短复现步骤
 
 ```sh
 git clone https://github.com/meshy-dev/meshy-cli.git && cd meshy-cli
-git fetch <this-branch-remote> feat/skill-parity-s1 && git checkout cf8905dd285bf16896df053aac253dbf8c672979   # 或使用本地仓库 /Users/ark/Dev/meshy-cli
+git fetch <this-branch-remote> feat/skill-parity-s1 && git checkout 235d6de34f4e78210cdf418a7273542fbd4ce906   # 或使用本地仓库 /Users/ark/Dev/meshy-cli
 node --version        # v24.x
 corepack enable && pnpm --version   # 11.24.0
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm test             # 先 tsc 生成 dist，再运行 node:test（约 41 s；loopback mock，无外网、无凭据）
-node --import tsx --test tests/codex-review-round2.test.ts tests/codex-review-round1.test.ts tests/poll.test.ts   # 两轮回归 + 确定性 deadline
-for i in 1 2 3 4 5 6 7 8; do node --import tsx --test tests/poll.test.ts >/dev/null || echo "run $i failed"; done
+node --import tsx --test tests/codex-review-round3.test.ts tests/codex-review-round2.test.ts tests/codex-review-round1.test.ts tests/poll.test.ts
+for i in $(seq 1 12); do node --import tsx --test tests/poll.test.ts >/dev/null || echo "run $i failed"; done
 pnpm build
-mkdir -p /tmp/probes && cp /path/to/reviews/cli-s1-730132b/round2-probes.mjs /path/to/reviews/cli-s1-730132b/round1-probes.mjs /tmp/probes/
+mkdir -p /tmp/probes && cp /path/to/reviews/cli-s1-cf8905d/round3-probes.mjs /path/to/reviews/cli-s1-cf8905d/round2-probes.mjs /path/to/reviews/cli-s1-cf8905d/round1-probes.mjs /path/to/reviews/cli-s1-cf8905d/stream-finalization-check.mjs /path/to/reviews/cli-s1-cf8905d/verify-original-regressions.py /tmp/probes/
+node /tmp/probes/round3-probes.mjs "$PWD"   # 期望 exit 1 且 6 个 reproduced=false
 node /tmp/probes/round2-probes.mjs "$PWD"   # 期望 exit 1 且 8 个 reproduced=false
 node /tmp/probes/round1-probes.mjs "$PWD"   # 期望 exit 1 且 12 个 reproduced=false
+python3 /tmp/probes/verify-original-regressions.py   # 期望 passed 20 / total 20
+node /tmp/probes/stream-finalization-check.mjs "$PWD"
 git diff --check fd94490
 npm pack --json --pack-destination /tmp/meshy-pack && shasum -a 256 /tmp/meshy-pack/meshy-cli-0.3.0.tgz
 npm install -g --prefix /tmp/meshy-prefix /tmp/meshy-pack/meshy-cli-0.3.0.tgz
@@ -932,10 +896,10 @@ export MESHY_CONFIG_DIR=$(mktemp -d)
 MESHY_API_KEY= /tmp/meshy-prefix/bin/meshy balance --output-schema v1 ; echo "exit=$?"   # 3, stdout 为 v1 envelope
 ```
 
-不依赖作者机器上的凭据、Python 或全局包；`tests/helpers/cli.ts` 为每次子进程创建隔离的 `MESHY_CONFIG_DIR` 与 cwd，并显式指向 loopback mock。复现脚本请从副本运行（它们在自身目录写结果文件）；脚本 exit 0 表示缺陷全部复现，exit 1 表示并非全部复现——正向验收以仓库内测试为准。
+不依赖作者机器上的凭据、Python 或全局包；`tests/helpers/cli.ts` 为每次子进程创建隔离的 `MESHY_CONFIG_DIR` 与 cwd，并显式指向 loopback mock。复现脚本请从副本运行（它们在自身目录写结果文件）；脚本 exit 0 表示缺陷全部复现，exit 1 表示并非全部复现——正向验收以仓库内测试与 reviewer 的正向核对脚本为准。
 
 ## 10. 交给 Codex 的复审提示词
 
-请复审 Meshy CLI S1 第 2 轮 review（reviews/cli-s1-730132b，R2-F01–R2-F07）的修复，并确认第 1 轮（reviews/cli-s1-6273d9a，F01–F10）修复未回退。仓库、base/head SHA 见本文件；代码 HEAD `cf8905dd285bf16896df053aac253dbf8c672979`（本文件所在 docs commit 不改代码），规范仍是 2026-09-07 v1 实施包。先核实 diff `730132bd99a471ed41d6bbf6b200219f13f569ba..cf8905dd285bf16896df053aac253dbf8c672979` 与 verification.json/capability-matrix.json 绑定同一 HEAD，再逐项核对 §0 表：修复是否完整覆盖 finding 的触发条件与 acceptance、是否引入回归、正向回归测试是否真正断言了 expected（退出码、JSON 形状、task_id/submission、请求次数、落盘内容与 manifest、ndjson 唯一 outcome 与序号、被拒目标连目录都不创建），并重跑两个复现脚本副本、`pnpm test`、`git diff --check`。
+请复审 Meshy CLI S1 第 3 轮 review（reviews/cli-s1-cf8905d，R3-F01–R3-F06）的修复，并确认前两轮（reviews/cli-s1-6273d9a F01–F10、reviews/cli-s1-730132b R2-F01–R2-F07）修复未回退。仓库、base/head SHA 见本文件；代码 HEAD `235d6de34f4e78210cdf418a7273542fbd4ce906`（= 修复 `30536d8` + 测试稳定性提交；本文件所在 docs commit 不改代码），规范仍是 2026-09-07 v1 实施包。先核实 diff `566f3bdbcdd85d1139e48e3a87d4c6f5e844e43a..235d6de34f4e78210cdf418a7273542fbd4ce906` 与 verification.json/capability-matrix.json 绑定同一 HEAD，再逐项核对 §0 表：修复是否完整覆盖 finding 的触发条件与 acceptance（预检后目标变化、legacy 任务身份、下载完成后的失败与中断、材质来源身份、项目路径别名）、是否引入回归、正向回归测试是否真正断言了 expected（退出码、JSON 形状、task_id/submission/operation_id、请求次数、落盘内容与 manifest hash、ndjson 唯一 outcome 与序号、被拒目标连目录都不创建、外部文件字节不变），并重跑三个复现脚本副本、`verify-original-regressions.py`、`pnpm test`、`git diff --check`。
 
 请优先检查 §8 列出的 8 项风险，以及任何新的可复现 bug、重复付费风险、凭据/路径问题、丢失资产/项目记录、OBJ 错误和伪造完成状态。不要做未授权付费调用、发布或 Skill/MCP 迁移。每项 finding 给出优先级、文件/行号、触发条件、影响与修复建议；区分代码缺陷、测试缺口与尚未完成的外部验证。最后分别判断 G1-code 是否可接受、G1-release 是否满足以及是否允许进入 S2。没有发现也要说明验证范围和剩余限制。

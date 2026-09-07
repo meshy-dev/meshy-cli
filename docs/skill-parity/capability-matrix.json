@@ -2,7 +2,7 @@
   "schema_version": 1,
   "title": "Meshy CLI S1 capability matrix — implementation tracking",
   "date": "2026-09-07",
-  "status": "review round 2 (Codex, reviewed 730132b): changes_requested → all 7 findings fixed in cf8905d (round 1: 10/10 fixed in 0388fe8, re-verified); G1-code re-review pending; G1-release not_run",
+  "status": "review round 3 (Codex, reviewed 566f3bd/cf8905d): changes_requested → all 6 findings fixed in 30536d8 (+ test stabilisation 235d6de); rounds 1–2 (17 findings) re-verified; G1-code re-review pending; G1-release not_run",
   "baseline": {
     "cli_sha": "fd94490916376e691efcea51324ac4326b459e1f",
     "skills_sha": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610"
@@ -20,7 +20,7 @@
       "target": "meshy <resource> create --async",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 findings fixed (re-verified on cf8905d); re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-040",
         "T-043",
@@ -29,7 +29,8 @@
       ],
       "evidence": [
         "src/internal/task-command.ts submitOnce: journal → single POST → journal; tests/task-lifecycle.test.ts T-040/T-043/T-044",
-        "tests/codex-review-round1.test.ts R05/F01, R06/F01"
+        "tests/codex-review-round1.test.ts R05/F01, R06/F01",
+        "tests/codex-review-round3.test.ts C06 (legacy sync create keeps the accepted task)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -41,6 +42,16 @@
         "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
         "tests": [
           "tests/codex-review-round1.test.ts R05/F01, R06/F01"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy sync create keeps the accepted task)"
         ]
       }
     },
@@ -55,7 +66,7 @@
       "target": "meshy <resource> get --include-raw --save-json",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-006",
         "T-008",
@@ -64,7 +75,8 @@
       "evidence": [
         "task-view.ts + task-command get: any status exit 0, --include-raw, --save-json; tests T-006/T-008/T-009/T-010",
         "tests/codex-review-round1.test.ts R06/F01 (wait), R09/F03 (get -o)",
-        "tests/codex-review-round2.test.ts N01 (report-only get -o), N06 (partial manifest), N08 (SIGINT)"
+        "tests/codex-review-round2.test.ts N01 (report-only get -o), N06 (partial manifest), N08 (SIGINT)",
+        "tests/codex-review-round3.test.ts C01+C02 (get -o sidecar race / finalisation manifest), C03 (relink interrupt), C06 (legacy get)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -90,6 +102,19 @@
         "tests": [
           "tests/codex-review-round2.test.ts N01 (report-only get -o), N06 (partial manifest), N08 (SIGINT)"
         ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F01",
+          "R3-F02",
+          "R3-F04",
+          "R3-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C01+C02 (get -o sidecar race / finalisation manifest), C03 (relink interrupt), C06 (legacy get)"
+        ]
       }
     },
     {
@@ -103,7 +128,7 @@
       "target": "meshy <resource> wait",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-007",
         "T-047",
@@ -114,7 +139,8 @@
         "tests/codex-review-round1.test.ts R03/F07 ×2, R06/F01",
         "tests/poll.test.ts deadline tests",
         "tests/codex-review-round2.test.ts N01/N06/N08 (wait -o)",
-        "tests/poll.test.ts deterministic deadline tests"
+        "tests/poll.test.ts deterministic deadline tests",
+        "tests/codex-review-round3.test.ts C06 (legacy wait -o)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -143,6 +169,16 @@
           "tests/codex-review-round2.test.ts N01/N06/N08 (wait -o)",
           "tests/poll.test.ts deterministic deadline tests"
         ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy wait -o)"
+        ]
       }
     },
     {
@@ -156,7 +192,7 @@
       "target": "meshy <resource> stream",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-049",
         "T-050",
@@ -168,7 +204,8 @@
         "meshyd api_stream_handlers.go: event message (task), event error {message,status_code}, keep-alive re-emits message every 10 s",
         "stream.ts SSE parser + streamTask; task-command stream (ndjson events + outcome, json envelope); tests/sse.test.ts, T-053",
         "tests/codex-review-round1.test.ts R10/F10",
-        "tests/codex-review-round2.test.ts N01 (stream -o), N05 (single outcome on post-stream failures)"
+        "tests/codex-review-round2.test.ts N01 (stream -o), N05 (single outcome on post-stream failures)",
+        "tests/codex-review-round3.test.ts C06 (legacy stream path shares emitLegacyOutcome wrapping)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -193,6 +230,16 @@
         "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
         "tests": [
           "tests/codex-review-round2.test.ts N01 (stream -o), N05 (single outcome on post-stream failures)"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy stream path shares emitLegacyOutcome wrapping)"
         ]
       }
     },
@@ -233,7 +280,7 @@
       "target": "existing commands with explicit supported payload",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 findings fixed (re-verified on cf8905d); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-028",
         "T-033",
@@ -267,7 +314,7 @@
       "target": "typed media flags and final payload normalization",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 findings fixed (re-verified on cf8905d); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-029",
         "T-030",
@@ -352,7 +399,7 @@
       "target": "meshy creative-lab lamp prototype|build <action>",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 findings fixed (re-verified on cf8905d); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-022",
         "T-023",
@@ -391,7 +438,7 @@
       "target": "meshy creative-lab keychain prototype|build <action>",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 findings fixed (re-verified on cf8905d); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-022",
         "T-023",
@@ -428,7 +475,7 @@
       "target": "meshy creative-lab fridge-magnet prototype|build <action>",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 findings fixed (re-verified on cf8905d); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-022",
         "T-023",
@@ -514,7 +561,7 @@
       "target": "download asset registry with role and dependencies",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-060",
         "T-062",
@@ -523,7 +570,8 @@
       "evidence": [
         "src/internal/artifacts.ts enumerateAssets: model formats (lamp parts STL/ZIP, keychain/fridge OBJ as ZIP bundle), images, textures, primary/multi-view/alpha thumbnails, rig + basic_animations, motion, report; unknown URLs listed; tests/artifacts.test.ts T-060/T-062/T-071",
         "tests/codex-review-round1.test.ts R07/F09",
-        "tests/codex-review-round2.test.ts N04 (source-name mapping, ambiguity)"
+        "tests/codex-review-round2.test.ts N04 (source-name mapping, ambiguity)",
+        "tests/codex-review-round3.test.ts C05 (source identity vs generated names)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -546,6 +594,16 @@
         "tests": [
           "tests/codex-review-round2.test.ts N04 (source-name mapping, ambiguity)"
         ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C05 (source identity vs generated names)"
+        ]
       }
     },
     {
@@ -559,7 +617,7 @@
       "target": "meshy download --asset/--kind/--model-format",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-061",
         "T-063"
@@ -567,7 +625,8 @@
       "evidence": [
         "src/cmd/download.ts selectors --asset/--model-format/--kind/--all/--list; tests/download-command.test.ts T-061, tests/artifacts.test.ts T-063",
         "tests/codex-review-round1.test.ts R07/F09 (--geometry-only keeps the reference, warns)",
-        "tests/codex-review-round2.test.ts N04"
+        "tests/codex-review-round2.test.ts N04",
+        "tests/codex-review-round3.test.ts C05"
       ],
       "intentional_differences": [
         "download requires an explicit selector when a task exposes several assets (legacy defaulted to glb); legacy -o keeps downloading everything"
@@ -592,6 +651,16 @@
         "tests": [
           "tests/codex-review-round2.test.ts N04"
         ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C05"
+        ]
       }
     },
     {
@@ -605,7 +674,7 @@
       "target": "safe download with actual final-path manifest",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-064",
         "T-065",
@@ -618,7 +687,8 @@
       "evidence": [
         "src/internal/download.ts fetchToTemp (no credential, redirect re-validation, private-network refusal, size cap, sha256), exclusive publish + realpath containment, partial manifests; tests T-064..T-070",
         "tests/codex-review-round1.test.ts R07/F09, R09/F03",
-        "tests/codex-review-round2.test.ts N03 (no mkdir before refusal), N04, N06, N08"
+        "tests/codex-review-round2.test.ts N03 (no mkdir before refusal), N04, N06, N08",
+        "tests/codex-review-round3.test.ts C01+C02, C03, C05"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -645,6 +715,19 @@
         "tests": [
           "tests/codex-review-round2.test.ts N03 (no mkdir before refusal), N04, N06, N08"
         ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F01",
+          "R3-F03",
+          "R3-F04",
+          "R3-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C01+C02, C03, C05"
+        ]
       }
     },
     {
@@ -658,7 +741,7 @@
       "target": "--save-json and project task snapshots",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-010",
         "T-063"
@@ -702,7 +785,7 @@
       "target": "meshy project init",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 findings fixed (re-verified on cf8905d); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-072",
         "T-077"
@@ -735,7 +818,7 @@
       "target": "meshy project record/show",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-073",
         "T-074",
@@ -744,7 +827,8 @@
       "evidence": [
         "project-store recordTask (task_id+stage merge, legacy v1 migration with backup, unknown fields kept) + project record/show; tests T-073/T-074/T-075",
         "tests/codex-review-round1.test.ts R08/F03",
-        "tests/codex-review-round2.test.ts N02 (implicit history root confined; metadata recorded)"
+        "tests/codex-review-round2.test.ts N02 (implicit history root confined; metadata recorded)",
+        "tests/codex-review-round3.test.ts C04 (aliased project records files)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -767,6 +851,16 @@
         "tests": [
           "tests/codex-review-round2.test.ts N02 (implicit history root confined; metadata recorded)"
         ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F06"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C04 (aliased project records files)"
+        ]
       }
     },
     {
@@ -780,7 +874,7 @@
       "target": "meshy project list/rebuild-index",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-073",
         "T-075",
@@ -852,7 +946,7 @@
       "target": "meshy mesh prepare-print",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 findings fixed (re-verified on cf8905d); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-083",
         "T-084",
@@ -962,7 +1056,7 @@
       "target": "--env-file without automatic dotenv/shell scanning",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 findings fixed (re-verified on cf8905d); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-100",
         "T-101"
@@ -997,7 +1091,7 @@
       "target": "preserve existing auth commands and token protocol",
       "baseline_status": "existing_needs_regression",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-104",
         "T-105"
@@ -1043,7 +1137,7 @@
       "target": "--output-schema v1; legacy compatibility",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-001",
         "T-002",
@@ -1054,7 +1148,8 @@
       ],
       "evidence": [
         "result.ts envelope, errors.ts codes/exits, Commander errors → exit 2; tests result.test.ts, cli-contract T-002..T-005",
-        "tests/codex-review-round2.test.ts N05 (ndjson outcome/sequence), N08 (exit 130 keeps result)"
+        "tests/codex-review-round2.test.ts N05 (ndjson outcome/sequence), N08 (exit 130 keeps result)",
+        "tests/codex-review-round3.test.ts C06 (legacy error payload additive task_id/operation_id), C03 (exit 130 after relink interrupt)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -1067,6 +1162,17 @@
         "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
         "tests": [
           "tests/codex-review-round2.test.ts N05 (ndjson outcome/sequence), N08 (exit 130 keeps result)"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02",
+          "R3-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy error payload additive task_id/operation_id), C03 (exit 130 after relink interrupt)"
         ]
       }
     },
@@ -1081,7 +1187,7 @@
       "target": "make --async / --stop-after-first",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "rounds 1–3 findings fixed; re-review pending",
       "test_ids": [
         "T-041",
         "T-042"
@@ -1089,7 +1195,8 @@
       "evidence": [
         "src/cmd/make.ts --async single POST, --stop-after-first, mutual exclusion; tests T-041/T-042",
         "tests/codex-review-round1.test.ts R11/F02, F01 make polling, R09/F03 make -o",
-        "tests/codex-review-round2.test.ts N06 (make -o partial manifest)"
+        "tests/codex-review-round2.test.ts N06 (make -o partial manifest)",
+        "tests/codex-review-round3.test.ts C06 (legacy make -o 503; v1 make SIGINT)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -1115,6 +1222,17 @@
         "tests": [
           "tests/codex-review-round2.test.ts N06 (make -o partial manifest)"
         ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02",
+          "R3-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy make -o 503; v1 make SIGINT)"
+        ]
       }
     },
     {
@@ -1128,7 +1246,7 @@
       "target": "operation journal; never claim server idempotency",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "round 1 + round 2 findings fixed; re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on 235d6de); re-review pending",
       "test_ids": [
         "T-043",
         "T-044",
@@ -1279,8 +1397,8 @@
     "branch": "feat/skill-parity-s1",
     "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
     "package_version_at_start": "0.2.0",
-    "updated_at": "2026-09-07T10:25:20.965Z",
-    "code_head": "cf8905dd285bf16896df053aac253dbf8c672979"
+    "updated_at": "2026-09-07T15:29:23.126Z",
+    "code_head": "235d6de34f4e78210cdf418a7273542fbd4ce906"
   },
   "review_rounds": [
     {
@@ -1323,6 +1441,25 @@
       "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
       "regression_tests": "tests/codex-review-round2.test.ts (N01–N08 as positive assertions) + tests/poll.test.ts (deterministic clock) + tests/auth-headless.test.ts (login_id)",
       "probe_rerun": "reviews/cli-s1-730132b/round2-probes.mjs on cf8905d: 0/8 defects reproduce; round1-probes.mjs: 0/12"
+    },
+    {
+      "round": 3,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-cf8905d",
+      "reviewed_head": "566f3bdbcdd85d1139e48e3a87d4c6f5e844e43a",
+      "verdict": "changes_requested",
+      "findings": [
+        "R3-F01",
+        "R3-F02",
+        "R3-F03",
+        "R3-F04",
+        "R3-F05",
+        "R3-F06"
+      ],
+      "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+      "code_head": "235d6de34f4e78210cdf418a7273542fbd4ce906",
+      "regression_tests": "tests/codex-review-round3.test.ts (C01–C06 as positive assertions, relink abort unit tests, make interrupt)",
+      "probe_rerun": "reviews/cli-s1-cf8905d/round3-probes.mjs on 235d6de: 0/6 defects reproduce; round2 0/8; round1 0/12; reviewer's verify-original-regressions.py 20/20"
     }
   ]
 }
