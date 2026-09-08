@@ -1,0 +1,2181 @@
+{
+  "schema_version": 1,
+  "title": "Meshy CLI S1 capability matrix — implementation tracking",
+  "date": "2026-09-08",
+  "status": "G1-code accepted (Codex round 7 on e567646, round 8 on 1d9f109 — live fixes L01/L02 closed, 0 findings); live verification on the owner's real account done 2026-09-08 — every mandatory capability exercised live except Windows install (not_run, skipped by the owner's decision) and enterprise showcases content (account-gated 403 recorded); release authorised 2026-09-08, publish via release.yml after the PR merge → G1-release recorded once the publish is verified",
+  "baseline": {
+    "cli_sha": "fd94490916376e691efcea51324ac4326b459e1f",
+    "skills_sha": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610"
+  },
+  "completion_rule": "All mandatory capabilities need implementation and evidence for G1-code. G1-release additionally requires review, applicable live/OS checks and a released pinned version. Not-run is not pass.",
+  "capabilities": [
+    {
+      "id": "CAP-001",
+      "title": "任务创建与异步单次提交",
+      "area": "create",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "legacy scripts/src/meshy_task.py:create_task/_cmd_create",
+      "target": "meshy <resource> create --async",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
+      "test_ids": [
+        "T-040",
+        "T-043",
+        "T-044",
+        "T-045"
+      ],
+      "evidence": [
+        "src/internal/task-command.ts submitOnce: journal → single POST → journal; tests/task-lifecycle.test.ts T-040/T-043/T-044",
+        "tests/codex-review-round1.test.ts R05/F01, R06/F01",
+        "tests/codex-review-round3.test.ts C06 (legacy sync create keeps the accepted task)",
+        "tests/codex-review-round5.test.ts E03 (create --async / sync create × missing/damaged metadata → record_project with --operation-id/--workspace; escaped project → boundary, no command)",
+        "tests/codex-review-round6.test.ts (create --async / sync create × workspace swapped / alias re-pointed → boundary refusal, single POST, journal kept)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F01"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R05/F01, R06/F01"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy sync create keeps the accepted task)"
+        ]
+      },
+      "review_round_5": {
+        "findings": [
+          "R5-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "tests": [
+          "tests/codex-review-round5.test.ts E03 (create --async / sync create × missing/damaged metadata → record_project with --operation-id/--workspace; escaped project → boundary, no command)"
+        ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (create --async / sync create × workspace swapped / alias re-pointed → boundary refusal, single POST, journal kept)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-02",
+          "T110-06",
+          "T110-13",
+          "T111-09",
+          "T111-13"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-002",
+      "title": "完整任务查询与字段",
+      "area": "get",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "meshy_task.py:_cmd_get",
+      "target": "meshy <resource> get --include-raw --save-json",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
+      "test_ids": [
+        "T-006",
+        "T-008",
+        "T-010"
+      ],
+      "evidence": [
+        "task-view.ts + task-command get: any status exit 0, --include-raw, --save-json; tests T-006/T-008/T-009/T-010",
+        "tests/codex-review-round1.test.ts R06/F01 (wait), R09/F03 (get -o)",
+        "tests/codex-review-round2.test.ts N01 (report-only get -o), N06 (partial manifest), N08 (SIGINT)",
+        "tests/codex-review-round3.test.ts C01+C02 (get -o sidecar race / finalisation manifest), C03 (relink interrupt), C06 (legacy get)",
+        "tests/codex-review-round5.test.ts E03 (get)",
+        "tests/codex-review-round6.test.ts (get; stable-alias control records normally)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F01",
+          "F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R06/F01 (wait), R09/F03 (get -o)"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F01",
+          "R2-F04",
+          "R2-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N01 (report-only get -o), N06 (partial manifest), N08 (SIGINT)"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F01",
+          "R3-F02",
+          "R3-F04",
+          "R3-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C01+C02 (get -o sidecar race / finalisation manifest), C03 (relink interrupt), C06 (legacy get)"
+        ]
+      },
+      "review_round_5": {
+        "findings": [
+          "R5-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "tests": [
+          "tests/codex-review-round5.test.ts E03 (get)"
+        ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (get; stable-alias control records normally)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-04",
+          "T110-12",
+          "T104-08"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-003",
+      "title": "有界等待与恢复",
+      "area": "wait",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "meshy_task.py:poll_task/_cmd_poll",
+      "target": "meshy <resource> wait",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
+      "test_ids": [
+        "T-007",
+        "T-047",
+        "T-048"
+      ],
+      "evidence": [
+        "poll.ts monotonic deadline, cancellable sleep, --timeout 0 single query; tests T-007/T-047/T-048",
+        "tests/codex-review-round1.test.ts R03/F07 ×2, R06/F01",
+        "tests/poll.test.ts deadline tests",
+        "tests/codex-review-round2.test.ts N01/N06/N08 (wait -o)",
+        "tests/poll.test.ts deterministic deadline tests",
+        "tests/codex-review-round3.test.ts C06 (legacy wait -o)",
+        "tests/codex-review-round5.test.ts E03 (wait)",
+        "tests/codex-review-round6.test.ts (wait)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F01",
+          "F07"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R03/F07 ×2, R06/F01",
+          "tests/poll.test.ts deadline tests"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F01",
+          "R2-F04",
+          "R2-F05",
+          "R2-F07"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N01/N06/N08 (wait -o)",
+          "tests/poll.test.ts deterministic deadline tests"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy wait -o)"
+        ]
+      },
+      "review_round_5": {
+        "findings": [
+          "R5-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "tests": [
+          "tests/codex-review-round5.test.ts E03 (wait)"
+        ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (wait)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-04",
+          "T110-08",
+          "T111-03",
+          "T111-04",
+          "T111-05",
+          "T111-11",
+          "T111-12"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-004",
+      "title": "SSE 状态流",
+      "area": "stream",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "skills/*/reference.md:SSE examples",
+      "target": "meshy <resource> stream",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
+      "test_ids": [
+        "T-049",
+        "T-050",
+        "T-051",
+        "T-052",
+        "T-053"
+      ],
+      "evidence": [
+        "meshyd api_stream_handlers.go: event message (task), event error {message,status_code}, keep-alive re-emits message every 10 s",
+        "stream.ts SSE parser + streamTask; task-command stream (ndjson events + outcome, json envelope); tests/sse.test.ts, T-053",
+        "tests/codex-review-round1.test.ts R10/F10",
+        "tests/codex-review-round2.test.ts N01 (stream -o), N05 (single outcome on post-stream failures)",
+        "tests/codex-review-round3.test.ts C06 (legacy stream path shares emitLegacyOutcome wrapping)",
+        "tests/codex-review-round5.test.ts E03 (stream)",
+        "tests/codex-review-round6.test.ts (stream)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F10"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R10/F10"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F01",
+          "R2-F03",
+          "R2-F04",
+          "R2-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N01 (stream -o), N05 (single outcome on post-stream failures)"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy stream path shares emitLegacyOutcome wrapping)"
+        ]
+      },
+      "review_round_5": {
+        "findings": [
+          "R5-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "tests": [
+          "tests/codex-review-round5.test.ts E03 (stream)"
+        ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (stream)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-03",
+          "T110-07",
+          "T111-12"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-005",
+      "title": "余额查询、列表与删除",
+      "area": "list/delete",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "meshy_task.py:balance; Skill REST list/delete examples",
+      "target": "meshy balance; meshy <resource> list|delete",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-001",
+        "T-011",
+        "T-020",
+        "T-103"
+      ],
+      "evidence": [
+        "balance/list/delete v1 + legacy; rigging list enabled per registry; tests cli-contract T-001, T-011"
+      ],
+      "intentional_differences": [
+        "rigging list enabled (0.2.0 marked it unsupported; official docs and server routes provide it)"
+      ],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T104-01",
+          "T110-14",
+          "T110-15"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-006",
+      "title": "旧工作流模型参数和默认值对齐",
+      "area": "payload",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "skills/*/references/pipelines.md",
+      "target": "existing commands with explicit supported payload",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-028",
+        "T-033",
+        "T-034"
+      ],
+      "evidence": [
+        "payload merge defaults < --data < flags with explicit false/0 preserved; tests T-028; surface.test.ts unchanged",
+        "tests/codex-review-round1.test.ts R04/F08"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F08"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R04/F08"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-06",
+          "T111-04",
+          "T111-05",
+          "T111-08"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-007",
+      "title": "本地媒体/URL/data URI",
+      "area": "media",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "pipelines.md:base64 Python snippets",
+      "target": "typed media flags and final payload normalization",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-029",
+        "T-030",
+        "T-031"
+      ],
+      "evidence": [
+        "file-input.ts normalizeMediaPayload on merged payload: URL preflight (no auth), data URI, local file; tests T-029/T-030",
+        "tests/codex-review-round1.test.ts R02/F06",
+        "tests/operation-store.test.ts F06"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F06"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R02/F06",
+          "tests/operation-store.test.ts F06"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-11",
+          "T110-13",
+          "T104-07"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-008",
+      "title": "UV Unwrap",
+      "area": "uv-unwrap",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:UV Unwrap API",
+      "target": "meshy uv-unwrap create/get/list/wait/stream/delete",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-021",
+        "T-020"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/uv-unwrap (input_task_id|model_url, GLB only, 40k faces, Statsig-gated 404)",
+        "meshyd server.go: /openapi/v1/uv-unwrap registers POST, GET list, GET :id, GET :id/stream, DELETE :id",
+        "src/cmd/uv-unwrap.ts: exclusive source, GLB-only, 404 reported as not_found; tests T-021"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-03"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-009",
+      "title": "Creative Lab Figure",
+      "area": "creative-lab.figure",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Creative Lab API",
+      "target": "meshy creative-lab figure prototype|build <action>",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-022",
+        "T-023",
+        "T-024",
+        "T-025"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/creative-lab-figure (prototype image_urls; build glb/obj/mtl + texture base_color; webapp prototypes 404)",
+        "src/cmd/creative-lab.ts figure prototype/build; tests T-022..T-025"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-21"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-010",
+      "title": "Creative Lab Lamp",
+      "area": "creative-lab.lamp",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Creative Lab API",
+      "target": "meshy creative-lab lamp prototype|build <action>",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-022",
+        "T-023",
+        "T-024",
+        "T-025"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/creative-lab-lamp (image_subject; prototype model_urls.glb; build options/output stl|zip; lamp_stl/base_stl/bundle_zip)",
+        "meshyd pkg/model/task_creative_lab_lamp.go artifact keys and enums",
+        "src/cmd/creative-lab.ts lamp: image_subject, text rejected, options/output stl|zip, include_result_json rule; tests T-022..T-025",
+        "tests/codex-review-round1.test.ts R04/F08 (lamp)"
+      ],
+      "intentional_differences": [
+        "deprecated lamp `text` prototype input is rejected before submission; official lamp page documents image_url"
+      ],
+      "external_verification": "passed_after_live_fixes",
+      "review_round_1": {
+        "findings": [
+          "F08"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R04/F08 (lamp)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed_after_live_fixes",
+        "evidence": [
+          "T111-14",
+          "T111-15",
+          "T111-17",
+          "T111-20"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-011",
+      "title": "Creative Lab Keychain",
+      "area": "creative-lab.keychain",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Creative Lab API",
+      "target": "meshy creative-lab keychain prototype|build <action>",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-022",
+        "T-023",
+        "T-024",
+        "T-025"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/creative-lab-keychain (relief options; output glb|obj|zip; obj is a ZIP bundle)",
+        "meshyd pkg/model/task_creative_lab_keychain.go",
+        "src/cmd/creative-lab.ts keychain relief options, output glb|obj|zip; tests T-022..T-025",
+        "tests/codex-review-round1.test.ts R04/F08 (keychain)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "passed_after_live_fixes",
+      "review_round_1": {
+        "findings": [
+          "F08"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R04/F08 (keychain)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed_after_live_fixes",
+        "evidence": [
+          "T111-16",
+          "T111-19",
+          "T111-20"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-012",
+      "title": "Creative Lab Fridge Magnet",
+      "area": "creative-lab.fridge-magnet",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Creative Lab API",
+      "target": "meshy creative-lab fridge-magnet prototype|build <action>",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-022",
+        "T-023",
+        "T-024",
+        "T-025"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/creative-lab-fridge-magnet (own defaults: rounded-rect, 60 mm, 3.3 mm relief, 2.0 mm base)",
+        "meshyd pkg/model/task_creative_lab_fridge_magnet.go",
+        "src/cmd/creative-lab.ts fridge-magnet relief options; tests T-022..T-025",
+        "tests/codex-review-round1.test.ts R04/F08 (relief options shared with keychain)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F08"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R04/F08 (relief options shared with keychain)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-22"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-013",
+      "title": "动画目录",
+      "area": "animation-catalog",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "pipelines.md:/web/public/animations/resources",
+      "target": "meshy animation-catalog list",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-026"
+      ],
+      "evidence": [
+        "Skill pipelines.md: GET /web/public/animations/resources?category=…; response {result:{total,list}}",
+        "meshyd api.go AnimationResource + ListAnimationsResourcesRequest (q, category, subCategory)",
+        "src/cmd/animation-catalog.ts: public transport, no credential, local search; tests T-026"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-014",
+      "title": "Enterprise showcases",
+      "area": "showcases",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "reference.md:Enterprise API",
+      "target": "meshy showcases list",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-027",
+        "T-111"
+      ],
+      "evidence": [
+        "docs.meshy.ai/en/api/enterprise-api (1 credit per request; page_size 1-10; sort_by; format; showcase_type)",
+        "meshyd api.go ListShowcasesForOpenAPIRequest: showcase_type oneof all animate static (docs say animated)",
+        "src/cmd/showcases.ts: single billable GET, alias warning, no retry; tests T-027"
+      ],
+      "intentional_differences": [
+        "showcase_type accepts docs spelling \"animated\" and sends the server enum \"animate\" with a warning (decisions D-007)"
+      ],
+      "external_verification": "live_account_gated_403",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "account_gated_403_recorded",
+        "evidence": [
+          "T111-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-015",
+      "title": "完整资产枚举",
+      "area": "artifacts",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "pipelines.md:rig/basic_animations/thumbnail",
+      "target": "download asset registry with role and dependencies",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-060",
+        "T-062",
+        "T-071"
+      ],
+      "evidence": [
+        "src/internal/artifacts.ts enumerateAssets: model formats (lamp parts STL/ZIP, keychain/fridge OBJ as ZIP bundle), images, textures, primary/multi-view/alpha thumbnails, rig + basic_animations, motion, report; unknown URLs listed; tests/artifacts.test.ts T-060/T-062/T-071",
+        "tests/codex-review-round1.test.ts R07/F09",
+        "tests/codex-review-round2.test.ts N04 (source-name mapping, ambiguity)",
+        "tests/codex-review-round3.test.ts C05 (source identity vs generated names)",
+        "tests/codex-review-round4.test.ts D01 (both orders) + arbitration unit cases",
+        "tests/codex-review-round5.test.ts E02 + 8x2 arbitration matrix"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F09"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R07/F09"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N04 (source-name mapping, ambiguity)"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C05 (source identity vs generated names)"
+        ]
+      },
+      "review_round_4": {
+        "findings": [
+          "R4-F01"
+        ],
+        "status": "fixed",
+        "fixed_in": "93e55bcc717ceb9a368ee43aeeeac69a3fb52197",
+        "tests": [
+          "tests/codex-review-round4.test.ts D01 (both orders) + arbitration unit cases"
+        ]
+      },
+      "review_round_5": {
+        "findings": [
+          "R5-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "tests": [
+          "tests/codex-review-round5.test.ts E02 + 8x2 arbitration matrix"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-05",
+          "T111-18",
+          "T111-19"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-016",
+      "title": "选择性下载与缩略图",
+      "area": "selection",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:_cmd_download/_cmd_thumbnail",
+      "target": "meshy download --asset/--kind/--model-format",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
+      "test_ids": [
+        "T-061",
+        "T-063"
+      ],
+      "evidence": [
+        "src/cmd/download.ts selectors --asset/--model-format/--kind/--all/--list; tests/download-command.test.ts T-061, tests/artifacts.test.ts T-063",
+        "tests/codex-review-round1.test.ts R07/F09 (--geometry-only keeps the reference, warns)",
+        "tests/codex-review-round2.test.ts N04",
+        "tests/codex-review-round3.test.ts C05",
+        "tests/codex-review-round4.test.ts D01 (both orders) + arbitration unit cases",
+        "tests/codex-review-round5.test.ts E02 + 8x2 arbitration matrix",
+        "tests/codex-review-round6.test.ts (download × task-json/API × leaf/parent symlink → exit 11, manifest kept, project.failed, outside tree byte-identical)"
+      ],
+      "intentional_differences": [
+        "download requires an explicit selector when a task exposes several assets (legacy defaulted to glb); legacy -o keeps downloading everything"
+      ],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F09"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R07/F09 (--geometry-only keeps the reference, warns)"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N04"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C05"
+        ]
+      },
+      "review_round_4": {
+        "findings": [
+          "R4-F01"
+        ],
+        "status": "fixed",
+        "fixed_in": "93e55bcc717ceb9a368ee43aeeeac69a3fb52197",
+        "tests": [
+          "tests/codex-review-round4.test.ts D01 (both orders) + arbitration unit cases"
+        ]
+      },
+      "review_round_5": {
+        "findings": [
+          "R5-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "tests": [
+          "tests/codex-review-round5.test.ts E02 + 8x2 arbitration matrix"
+        ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F01"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (download × task-json/API × leaf/parent symlink → exit 11, manifest kept, project.failed, outside tree byte-identical)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-09",
+          "T110-10",
+          "T111-18"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-017",
+      "title": "下载最终路径与中断恢复",
+      "area": "download",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:download; CLI existing download.ts",
+      "target": "safe download with actual final-path manifest",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
+      "test_ids": [
+        "T-064",
+        "T-065",
+        "T-066",
+        "T-067",
+        "T-068",
+        "T-069",
+        "T-070"
+      ],
+      "evidence": [
+        "src/internal/download.ts fetchToTemp (no credential, redirect re-validation, private-network refusal, size cap, sha256), exclusive publish + realpath containment, partial manifests; tests T-064..T-070",
+        "tests/codex-review-round1.test.ts R07/F09, R09/F03",
+        "tests/codex-review-round2.test.ts N03 (no mkdir before refusal), N04, N06, N08",
+        "tests/codex-review-round3.test.ts C01+C02, C03, C05",
+        "tests/codex-review-round4.test.ts D01, D02 (symlink/damaged/unwritable + recovery replay), preflight",
+        "tests/codex-review-round5.test.ts E01 (verbatim replay keeps --workspace), E02",
+        "tests/codex-review-round6.test.ts (frozen boundary for downloads and project records); round5 E03 exact request sequences (R6-T01)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F03",
+          "F09"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R07/F09, R09/F03"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F01",
+          "R2-F02",
+          "R2-F04",
+          "R2-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N03 (no mkdir before refusal), N04, N06, N08"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F01",
+          "R3-F03",
+          "R3-F04",
+          "R3-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C01+C02, C03, C05"
+        ]
+      },
+      "review_round_4": {
+        "findings": [
+          "R4-F01",
+          "R4-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "93e55bcc717ceb9a368ee43aeeeac69a3fb52197",
+        "tests": [
+          "tests/codex-review-round4.test.ts D01, D02 (symlink/damaged/unwritable + recovery replay), preflight"
+        ]
+      },
+      "review_round_5": {
+        "findings": [
+          "R5-F01",
+          "R5-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "tests": [
+          "tests/codex-review-round5.test.ts E01 (verbatim replay keeps --workspace), E02"
+        ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F01",
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (frozen boundary for downloads and project records); round5 E03 exact request sequences (R6-T01)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-08",
+          "T110-09",
+          "T111-20"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-018",
+      "title": "完整 JSON 保存",
+      "area": "save-json",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:_cmd_get/_cmd_poll",
+      "target": "--save-json and project task snapshots",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-010",
+        "T-063"
+      ],
+      "evidence": [
+        "--save-json on task verbs/list/balance/api/catalog/showcases (raw JSON, never the envelope); project task_<id>.json snapshots; tests T-010, T-063, project-store tests",
+        "tests/codex-review-round1.test.ts R05/F01",
+        "tests/codex-review-round2.test.ts N05 (save-json conflict after the stream → outcome)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F01"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R05/F01"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N05 (save-json conflict after the stream → outcome)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-02",
+          "T104-08",
+          "LOCAL-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-019",
+      "title": "项目初始化",
+      "area": "project.init",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:get_project_dir",
+      "target": "meshy project init",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-072",
+        "T-077"
+      ],
+      "evidence": [
+        "src/internal/project-store.ts initProject + src/cmd/project.ts init; tests/project-store.test.ts T-072/T-077",
+        "tests/codex-review-round1.test.ts R08/F03"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R08/F03"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-020",
+      "title": "任务历史记录",
+      "area": "project.record",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:record_task",
+      "target": "meshy project record/show",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
+      "test_ids": [
+        "T-073",
+        "T-074",
+        "T-075"
+      ],
+      "evidence": [
+        "project-store recordTask (task_id+stage merge, legacy v1 migration with backup, unknown fields kept) + project record/show; tests T-073/T-074/T-075",
+        "tests/codex-review-round1.test.ts R08/F03",
+        "tests/codex-review-round2.test.ts N02 (implicit history root confined; metadata recorded)",
+        "tests/codex-review-round3.test.ts C04 (aliased project records files)",
+        "tests/codex-review-round4.test.ts D02 + preflight; project.action=failed with record_project recovery",
+        "tests/codex-review-round5.test.ts E01, E03, boundary case; codex-review-round4 D02 verbatim replay",
+        "tests/codex-review-round6.test.ts (project record refused across the boundary at every entry; recovery null; no index_dirty disguise)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R08/F03"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F01"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N02 (implicit history root confined; metadata recorded)"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F06"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C04 (aliased project records files)"
+        ]
+      },
+      "review_round_4": {
+        "findings": [
+          "R4-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "93e55bcc717ceb9a368ee43aeeeac69a3fb52197",
+        "tests": [
+          "tests/codex-review-round4.test.ts D02 + preflight; project.action=failed with record_project recovery"
+        ]
+      },
+      "review_round_5": {
+        "findings": [
+          "R5-F01",
+          "R5-F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "tests": [
+          "tests/codex-review-round5.test.ts E01, E03, boundary case; codex-review-round4 D02 verbatim replay"
+        ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F01",
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (project record refused across the boundary at every entry; recovery null; no index_dirty disguise)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-04",
+          "LOCAL-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-021",
+      "title": "项目索引与恢复",
+      "area": "project.index",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C04",
+      "source_hint": "meshy_task.py:record_task history.json",
+      "target": "meshy project list/rebuild-index",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-073",
+        "T-075",
+        "T-076",
+        "T-077"
+      ],
+      "evidence": [
+        "project list (index vs folders, index_dirty) and rebuild-index (backup, symlink/escape skipped); tests T-073/T-075/T-076/T-077",
+        "tests/codex-review-round1.test.ts R08/F03 (rebuild-index)",
+        "tests/codex-review-round2.test.ts N02 (index skipped with index.updated=false + reason)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R08/F03 (rebuild-index)"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F01"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N02 (index skipped with index.updated=false + reason)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "LOCAL-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-022",
+      "title": "面数检查",
+      "area": "inspect.faces",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C05",
+      "source_hint": "meshy_task.py:_cmd_check_faces",
+      "target": "meshy inspect faces",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-080",
+        "T-081",
+        "T-082"
+      ],
+      "evidence": [
+        "meshyd httpapi/dto.go: public task DTO has no face_count → unknown semantics required",
+        "src/internal/inspect.ts judgeFaceCount/judgeTask + src/cmd/inspect.ts (--max-faces required; unknown exit 13; fail exit 12; remesh only described); tests/inspect.test.ts T-080..T-082"
+      ],
+      "intentional_differences": [
+        "missing face_count is unknown (exit 13), never 0 (legacy check-faces passed unmeasured models); --max-faces has no default"
+      ],
+      "external_verification": "passed_check_unknown_on_real_tasks",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed_check_unknown_on_real_tasks",
+        "evidence": [
+          "LOCAL-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-023",
+      "title": "OBJ 打印变换",
+      "area": "mesh.prepare-print",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C06",
+      "source_hint": "fix_obj.py:fix_obj_for_printing",
+      "target": "meshy mesh prepare-print",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-083",
+        "T-084",
+        "T-085",
+        "T-086",
+        "T-087"
+      ],
+      "evidence": [
+        "src/internal/obj-transform.ts two-pass streaming transform + src/cmd/mesh.ts prepare-print; fixture oracle box-height-80.expected.json; tests/obj-transform.test.ts T-083..T-087",
+        "tests/codex-review-round1.test.ts R12/F04",
+        "tests/obj-transform.test.ts T-086 (planned paths reported)"
+      ],
+      "intentional_differences": [
+        "default output is <stem>.print.obj, in-place only with --in-place; NaN/Infinity/degenerate input is a validation error instead of silent scale 1.0 output"
+      ],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F04"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R12/F04",
+          "tests/obj-transform.test.ts T-086 (planned paths reported)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T112-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-024",
+      "title": "七种切片器检测",
+      "area": "slicer.detect",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C06",
+      "source_hint": "slicers.py:detect_slicers/SLICER_MAP",
+      "target": "meshy slicer detect",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-088",
+        "T-091"
+      ],
+      "evidence": [
+        "src/internal/slicers.ts detectSlicers (darwin/win32/linux rules, seven registered, multicolor flag) + src/cmd/slicer.ts detect; tests/slicers.test.ts T-088"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T112-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-025",
+      "title": "切片器启动",
+      "area": "slicer.open",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C06",
+      "source_hint": "slicers.py:open_in_slicer",
+      "target": "meshy slicer open",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-089",
+        "T-090",
+        "T-091",
+        "T-112"
+      ],
+      "evidence": [
+        "src/internal/slicers.ts openInSlicer (detected path only, shell:false, single argv, no default-app fallback) + slicer open; tests T-089..T-091"
+      ],
+      "intentional_differences": [
+        "no default-application fallback (legacy used os.startfile / xdg-open); Windows launches the detected absolute exe, not a PATH lookup"
+      ],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T112-01",
+          "T112-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-026",
+      "title": "环境诊断",
+      "area": "doctor",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C07",
+      "source_hint": "meshy_task.py:_cmd_check_env",
+      "target": "meshy doctor",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-102",
+        "T-103"
+      ],
+      "evidence": [
+        "src/internal/doctor.ts runDoctorDetailed + src/cmd/doctor.ts (local default; --check-api one GET /balance; --check-slicers); tests/doctor.test.ts T-102/T-103"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "smoke doctor checks (macOS + Linux)"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-027",
+      "title": "env-file 与凭据优先级",
+      "area": "config",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C07",
+      "source_hint": "meshy_task.py:load_api_key",
+      "target": "--env-file without automatic dotenv/shell scanning",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-100",
+        "T-101"
+      ],
+      "evidence": [
+        "config.ts + env-file.ts (--api-key-file); tests env-file.test.ts, T-100",
+        "tests/codex-review-round1.test.ts R01/F05 (API key digest)"
+      ],
+      "intentional_differences": [
+        "flag is --api-key-file, not --env-file: Node.js intercepts --env-file anywhere in argv (decisions D-025)"
+      ],
+      "external_verification": "passed_stored_profiles",
+      "review_round_1": {
+        "findings": [
+          "F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R01/F05 (API key digest)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed_stored_profiles",
+        "evidence": [
+          "T104-01",
+          "T104-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-028",
+      "title": "现有 Key/OAuth 登录兼容",
+      "area": "auth",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C07",
+      "source_hint": "CLI auth/config/credentials/runtime",
+      "target": "preserve existing auth commands and token protocol",
+      "baseline_status": "existing_needs_regression",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-104",
+        "T-105"
+      ],
+      "evidence": [
+        "auth commands untouched; runtime refresh path unchanged; tests/auth-headless.test.ts, oauth.test.ts, device*.test.ts, credentials.test.ts, runtime.test.ts still pass (regression)",
+        "tests/codex-review-round1.test.ts R01/F05 (OAuth subject, token rotation)",
+        "tests/codex-review-round2.test.ts N07 (login_id binding, refresh keeps it, unverified refused)",
+        "tests/auth-headless.test.ts (device login mints login_id)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R01/F05 (OAuth subject, token rotation)"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F06"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N07 (login_id binding, refresh keeps it, unverified refused)",
+          "tests/auth-headless.test.ts (device login mints login_id)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T104-01",
+          "T104-03",
+          "T104-04",
+          "T104-08"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-029",
+      "title": "稳定 JSON 与退出码",
+      "area": "output",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "CLI task-command/output/errors",
+      "target": "--output-schema v1; legacy compatibility",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004",
+        "T-005",
+        "T-011"
+      ],
+      "evidence": [
+        "result.ts envelope, errors.ts codes/exits, Commander errors → exit 2; tests result.test.ts, cli-contract T-002..T-005",
+        "tests/codex-review-round2.test.ts N05 (ndjson outcome/sequence), N08 (exit 130 keeps result)",
+        "tests/codex-review-round3.test.ts C06 (legacy error payload additive task_id/operation_id), C03 (exit 130 after relink interrupt)"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_2": {
+        "findings": [
+          "R2-F03",
+          "R2-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N05 (ndjson outcome/sequence), N08 (exit 130 keeps result)"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02",
+          "R3-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy error payload additive task_id/operation_id), C03 (exit 130 after relink interrupt)"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-01",
+          "T110-11",
+          "T110-15",
+          "T104-08"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-030",
+      "title": "make async 语义",
+      "area": "make",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "CLI cmd/make.ts:runChain",
+      "target": "make --async / --stop-after-first",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-041",
+        "T-042"
+      ],
+      "evidence": [
+        "src/cmd/make.ts --async single POST, --stop-after-first, mutual exclusion; tests T-041/T-042",
+        "tests/codex-review-round1.test.ts R11/F02, F01 make polling, R09/F03 make -o",
+        "tests/codex-review-round2.test.ts N06 (make -o partial manifest)",
+        "tests/codex-review-round3.test.ts C06 (legacy make -o 503; v1 make SIGINT)",
+        "tests/codex-review-round4.test.ts R4-T01 make identity (legacy/v1 × 503/SIGINT) reconciled with the journal"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F01",
+          "F02",
+          "F03"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R11/F02, F01 make polling, R09/F03 make -o"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F04",
+          "R2-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N06 (make -o partial manifest)"
+        ]
+      },
+      "review_round_3": {
+        "findings": [
+          "R3-F02",
+          "R3-F05"
+        ],
+        "status": "fixed",
+        "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+        "tests": [
+          "tests/codex-review-round3.test.ts C06 (legacy make -o 503; v1 make SIGINT)"
+        ]
+      },
+      "review_round_4": {
+        "findings": [
+          "R4-T01"
+        ],
+        "status": "test_gap_closed",
+        "fixed_in": "93e55bcc717ceb9a368ee43aeeeac69a3fb52197",
+        "tests": [
+          "tests/codex-review-round4.test.ts R4-T01 make identity (legacy/v1 × 503/SIGINT) reconciled with the journal"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-13"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-031",
+      "title": "本地 operation 恢复记录",
+      "area": "operations",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C03",
+      "source_hint": "old workflows persist task ids; new recovery requirement",
+      "target": "operation journal; never claim server idempotency",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
+      "test_ids": [
+        "T-043",
+        "T-044",
+        "T-045",
+        "T-046",
+        "T-048"
+      ],
+      "evidence": [
+        "operation-store.ts journal with lock, replay and conflict; tests operation-store.test.ts, T-046",
+        "tests/codex-review-round1.test.ts R01/F05, R02/F06, concurrent same-id creates",
+        "tests/operation-store.test.ts (barrier race, F05, F06)",
+        "tests/codex-review-round2.test.ts N07, credentialBinding unit test"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "review_round_1": {
+        "findings": [
+          "F05",
+          "F06"
+        ],
+        "status": "fixed",
+        "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+        "tests": [
+          "tests/codex-review-round1.test.ts R01/F05, R02/F06, concurrent same-id creates",
+          "tests/operation-store.test.ts (barrier race, F05, F06)"
+        ]
+      },
+      "review_round_2": {
+        "findings": [
+          "R2-F06"
+        ],
+        "status": "fixed",
+        "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+        "tests": [
+          "tests/codex-review-round2.test.ts N07, credentialBinding unit test"
+        ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T104-05",
+          "T104-06",
+          "T104-07"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-032",
+      "title": "认证 transport 与公共 fetch 隔离",
+      "area": "transport",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C02",
+      "source_hint": "CLI client/index.ts and file-input/download",
+      "target": "explicit origin and no auth on public/assets",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-031",
+        "T-032",
+        "T-105",
+        "T-106"
+      ],
+      "evidence": [
+        "transport.ts path validation, redirect refusal, public transport; config.ts origin policy; tests transport.test.ts"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T104-08",
+          "T111-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-033",
+      "title": "无 Key/无网络本地运行",
+      "area": "local-runtime",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C07",
+      "source_hint": "CLI runtime.ts/index.ts plus local Skill helpers",
+      "target": "local runtime; update-check control",
+      "baseline_status": "missing",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-012",
+        "T-072",
+        "T-102"
+      ],
+      "evidence": [
+        "runtime.ts buildLocalRuntime; index.ts update-check policy; tests T-102, T-012"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T112-01",
+          "LOCAL-01",
+          "LOCAL-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    },
+    {
+      "id": "CAP-034",
+      "title": "打包与无 Python 安装",
+      "area": "packaging",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C08",
+      "source_hint": "CLI package.json/bin and Skill install metadata",
+      "target": "candidate tarball; both bins; Node24; no Python",
+      "baseline_status": "existing_needs_regression",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-107",
+        "T-108",
+        "T-109"
+      ],
+      "evidence": [
+        "npm pack → meshy-cli-0.3.0.tgz sha256 8e4e4d86faf18d5b5539264fdac5377059d033e07e4defc902e872f470e66367; installed into a temp prefix; both bins run; no Python; see verification.json package_smoke"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_partial_windows_not_run",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "partial_windows_not_run",
+        "evidence": [
+          "T-109 linux arm64/x64 29/29",
+          "macOS 29/29"
+        ],
+        "record": "docs/skill-parity/live-verification.json",
+        "note": "Windows x64 not_run: skipped for this release by the owner's decision (2026-09-08); macOS arm64 and Linux arm64/x64 passed"
+      }
+    },
+    {
+      "id": "CAP-035",
+      "title": "帮助与能力发现",
+      "area": "discovery",
+      "mandatory": true,
+      "phase": "S1",
+      "task": "C08",
+      "source_hint": "CLI root/resources; CLI bundled skill",
+      "target": "registry-driven help and capability/version metadata",
+      "baseline_status": "partial",
+      "implementation_status": "implemented",
+      "review_status": "not_run",
+      "test_ids": [
+        "T-020",
+        "T-108"
+      ],
+      "evidence": [
+        "resources index generated from resource-registry.ts (kind task|query|local, verbs, endpoints); root/verb help updated; skills/meshy-cli/SKILL.md rewritten; tests/resource-registry.test.ts, smoke resources_v1"
+      ],
+      "intentional_differences": [],
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "smoke help/resources checks"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
+    }
+  ],
+  "knowledge_only": [
+    {
+      "id": "KN-001",
+      "title": "Webhook 网页配置和领域流程知识",
+      "reason": "No executable webhook management API in the frozen Skill baseline; keep documentation, do not implement a daemon."
+    }
+  ],
+  "deferred_new_scope": [
+    {
+      "id": "DF-001",
+      "title": "基线 Skill 未使用的新 Creative Lab 产品、Usage API、托管 Agent/MCP/A2A",
+      "reason": "Do not expand current parity scope based solely on newer server/docs discovery."
+    }
+  ],
+  "implementation": {
+    "repo": "https://github.com/meshy-dev/meshy-cli",
+    "branch": "feat/skill-parity-s1",
+    "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
+    "package_version_at_start": "0.2.0",
+    "updated_at": "2026-09-08T08:34:23.922875Z",
+    "code_head": "1d9f10976b5f754502c81591c64c712e492188d1"
+  },
+  "review_rounds": [
+    {
+      "round": 1,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-6273d9a",
+      "reviewed_head": "6273d9aa6ef396cf1cc26838e2c0d09ab176f595",
+      "verdict": "changes_requested",
+      "findings": [
+        "F01",
+        "F02",
+        "F03",
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F09",
+        "F10"
+      ],
+      "fixed_in": "0388fe804b456a931f871d2f227e2acf22359d77",
+      "regression_tests": "tests/codex-review-round1.test.ts (R01–R12 as positive assertions) + tests/operation-store.test.ts + tests/poll.test.ts",
+      "probe_rerun": "reviews/cli-s1-6273d9a/reproduce.mjs on 0388fe8: 0/12 defects reproduce"
+    },
+    {
+      "round": 2,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-730132b",
+      "reviewed_head": "730132bd99a471ed41d6bbf6b200219f13f569ba",
+      "verdict": "changes_requested",
+      "findings": [
+        "R2-F01",
+        "R2-F02",
+        "R2-F03",
+        "R2-F04",
+        "R2-F05",
+        "R2-F06",
+        "R2-F07"
+      ],
+      "fixed_in": "cf8905dd285bf16896df053aac253dbf8c672979",
+      "regression_tests": "tests/codex-review-round2.test.ts (N01–N08 as positive assertions) + tests/poll.test.ts (deterministic clock) + tests/auth-headless.test.ts (login_id)",
+      "probe_rerun": "reviews/cli-s1-730132b/round2-probes.mjs on cf8905d: 0/8 defects reproduce; round1-probes.mjs: 0/12"
+    },
+    {
+      "round": 3,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-cf8905d",
+      "reviewed_head": "566f3bdbcdd85d1139e48e3a87d4c6f5e844e43a",
+      "verdict": "changes_requested",
+      "findings": [
+        "R3-F01",
+        "R3-F02",
+        "R3-F03",
+        "R3-F04",
+        "R3-F05",
+        "R3-F06"
+      ],
+      "fixed_in": "30536d8daa92dc9e8d39d99cbdf24d0d20799438",
+      "code_head": "235d6de34f4e78210cdf418a7273542fbd4ce906",
+      "regression_tests": "tests/codex-review-round3.test.ts (C01–C06 as positive assertions, relink abort unit tests, make interrupt)",
+      "probe_rerun": "reviews/cli-s1-cf8905d/round3-probes.mjs on 235d6de: 0/6 defects reproduce; round2 0/8; round1 0/12; reviewer's verify-original-regressions.py 20/20"
+    },
+    {
+      "round": 4,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-235d6de",
+      "reviewed_head": "9e43a77ced4f84e1ab03c96ddc9a61ce349d44d4",
+      "verdict": "changes_requested",
+      "findings": [
+        "R4-F01",
+        "R4-F02",
+        "R4-T01 (test gap)"
+      ],
+      "fixed_in": "93e55bcc717ceb9a368ee43aeeeac69a3fb52197",
+      "code_head": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "regression_tests": "tests/codex-review-round4.test.ts (D01 both orders + arbitration cases, D02 three failure modes + recovery replay, preflight, R4-T01 make identity); C06 keeps create/wait/get; R03 asserts D-044 invariants",
+      "probe_rerun": "reviews/cli-s1-235d6de/round4-probes.mjs copy on 68690f9: D01/D02 no longer reproduce, D03 positive (signal_sent=true, exit 130); round3 0/6 (fs.watch C03 trigger missed, not counted), round2 0/8, round1 0/12; verify-original-regressions.py 20/20; round4-context-checks 5/5; stream check passed"
+    },
+    {
+      "round": 5,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-68690f9",
+      "reviewed_head": "e7c0bbc4c39b26e77d48ab0979328ae8fa4a5b59",
+      "verdict": "changes_requested",
+      "findings": [
+        "R5-F01",
+        "R5-F02",
+        "R5-F03"
+      ],
+      "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+      "code_head": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+      "regression_tests": "tests/codex-review-round5.test.ts (E01 verbatim replay with --workspace, E02 both orders + 8x2 matrix, E03 20-entry matrix + verbatim replay, escaped-project boundary); round4 D02 replay verbatim; R4-T01 SIGINT manifest exact",
+      "probe_rerun": "reviews/cli-s1-68690f9 copies on 7b7c24c: round5 E01/E02x2/E03 no longer reproduce; material matrix 16/16; project entries 20/20 record_recovery; round4 0/3 (D03 positive), round3 0/6, round2 0/8, round1 0/12; verify-original-regressions 20/20; verify-round3-4 8/8; context 5/5; stream passed"
+    },
+    {
+      "round": 6,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-7b7c24c",
+      "reviewed_head": "166492ba9691f093b302c1c114e782bceee14a1d",
+      "verdict": "changes_requested",
+      "findings": [
+        "R6-F01",
+        "R6-F02",
+        "R6-T01 (test gap)"
+      ],
+      "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+      "code_head": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+      "regression_tests": "tests/codex-review-round6.test.ts (R6-F01 4 download scenarios + control; R6-F02 20-entry mutable-workspace matrix + stable-alias control); codex-review-round5 E03 exact sequences and E02 line-bound candidates (R6-T01)",
+      "probe_rerun": "reviews/cli-s1-7b7c24c copies on e567646: round6 0/4 reproduce (all exit 11, outside bytes unchanged); round5 0/4; round4 0/3 (D03 positive); round3 0/6; round2 0/8; round1 0/12; verify-original 20/20; verify-round3-4 8/8; verify-round5-positive 24/24; material matrix 16/16; round6 material 10/10; project entries 20/20; context 5/5; stream passed"
+    },
+    {
+      "round": 7,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-e567646",
+      "reviewed_head": "4da216d3568fbd997bf85f8047ce3932672a25de",
+      "reviewed_code_head": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+      "verdict": "accepted",
+      "findings": [],
+      "note": "R6-F01/R6-F02/R6-T01 closed; 32 findings from rounds 1-6 not regressed; G1-code accepted"
+    },
+    {
+      "round": 8,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-1d9f109",
+      "reviewed_head": "c70b06cc3509b6e36b18a51783b368d816c964b4",
+      "reviewed_code_head": "1d9f10976b5f754502c81591c64c712e492188d1",
+      "verdict": "accepted",
+      "findings": [],
+      "note": "live fixes L01/L02 closed; 32 prior findings not regressed on 1d9f109; 255 prior evidence files unchanged; OBS-1..7 judged non-blocking P3 observations; G1-code continues accepted"
+    }
+  ],
+  "live_verification_run": {
+    "date": "2026-09-08",
+    "code_head_under_test": {
+      "before_live_fixes": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+      "live_fixes": "1d9f10976b5f754502c81591c64c712e492188d1",
+      "final": "1d9f10976b5f754502c81591c64c712e492188d1"
+    },
+    "credits": {
+      "start": 2806,
+      "end": 2479,
+      "after_oauth_refresh_check": 2515,
+      "source": "meshy balance --output-schema v1 before the first live step (auth status shown by the owner) and after the last one (live/balance-final.json)",
+      "consumed": 327
+    },
+    "record": "docs/skill-parity/live-verification.json",
+    "fixes": [
+      {
+        "id": "L01",
+        "decision": "D-059",
+        "commit": "1d9f10976b5f754502c81591c64c712e492188d1",
+        "test": "tests/live-verification.test.ts",
+        "summary": "Creative Lab in-progress bodies carry finished_at: null; schema now reads null timestamps/counts as 0; verified live afterwards"
+      },
+      {
+        "id": "L02",
+        "decision": "D-060",
+        "commit": "1d9f10976b5f754502c81591c64c712e492188d1",
+        "test": "tests/live-verification.test.ts",
+        "summary": "legacy -o names Creative Lab parts/bundles via the shared modelAsset mapping (lamp.stl, base.stl, model.obj.zip); verified live afterwards"
+      }
+    ],
+    "observations_not_fixed": [
+      {
+        "id": "OBS-1",
+        "severity": "P3",
+        "text": "403 'enterprise only' from showcases maps to error.code server / exit 1; a dedicated permission code (or auth) may be clearer"
+      },
+      {
+        "id": "OBS-2",
+        "severity": "P3",
+        "text": "downloaded asset files are published mode 0600 while rewritten MTL and JSON sidecars are 0644"
+      },
+      {
+        "id": "OBS-3",
+        "severity": "P3",
+        "text": "task verbs' -o downloads are not recorded as files in the project entry (recorded only by meshy download --project); attachToProject.extra.files has no caller"
+      },
+      {
+        "id": "OBS-4",
+        "severity": "P3",
+        "text": "download --list on a FAILED task reports downloads.state not_ready with ok:true (a terminal failure reads as 'not yet')"
+      },
+      {
+        "id": "OBS-5",
+        "severity": "P3",
+        "text": "auth status/list/use ignore --output-schema v1 (legacy shape only)"
+      },
+      {
+        "id": "OBS-6",
+        "severity": "P3",
+        "text": "real task JSON carries no face_count, so inspect faces from a task JSON always ends in check_unknown (13) — by design, but worth stating in docs"
+      },
+      {
+        "id": "OBS-7",
+        "severity": "P3",
+        "text": "text-to-motion requires --duration client-side (2–10 s, 0.5 steps); confirm against the API default"
+      }
+    ],
+    "reviewer_script_reruns_on_this_head": {
+      "round1": 0,
+      "round2": 0,
+      "round3": 0,
+      "round4": 0,
+      "round5": 0,
+      "round6": 0,
+      "verify_original": "20/20",
+      "verify_round3_4": "8/8",
+      "verify_round5": "24/24",
+      "verify_round6": "5/5",
+      "material_matrix": "16/16",
+      "round6_material": "10/10",
+      "project_entries": "20/20",
+      "context": "5/5",
+      "stream": true
+    }
+  },
+  "release": {
+    "authorised_by_owner_on": "2026-09-08",
+    "integration": "feat/skill-parity-s1 → main via pull request (owner's decision); merge commit, as for the previous releases",
+    "mechanism": ".github/workflows/release.yml (workflow_dispatch, run on main after the merge) publishes meshy-cli and the scoped alias @meshy-ai/cli at package.json version 0.3.0 with the repository's NPM_TOKEN; no local npm publish",
+    "windows_x64": "not_run — the owner decided on 2026-09-08 to skip it for this release (no host)",
+    "status": "pending — recorded with the published version, tag and registry digest in a docs commit after the publish is verified"
+  }
+}

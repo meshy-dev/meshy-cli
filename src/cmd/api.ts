@@ -1,14 +1,18 @@
 /**
- * Raw API passthrough: `meshy-cli api [--v1|--v2] <method> <path> [--data <json>] [--params <json>]`
+ * Raw API passthrough: `meshy-cli api [--v1|--v2|--creative-lab] <method> <path> [--data <json>] [--params <json>]`
  *
  * Prints the JSON body when the response is JSON, or raw text otherwise.
- * Non-2xx responses exit with code 1 and print an error summary on stderr.
+ * Non-2xx responses exit non-zero with an error payload. Write verbs are
+ * never retried: the passthrough is a controlled escape hatch, not a client.
  */
 
-import { Command } from "commander";
-import { emit } from "../internal/output.js";
+import { Command, Option } from "commander";
+import { emitResult, openCommand, rejectOutputFlagForV1, saveRawJson } from "../internal/command-helpers.js";
+import { UsageError } from "../internal/errors.js";
 import { parseJsonFlag } from "../internal/payload.js";
-import { buildRuntime, readGlobalFlags } from "../internal/runtime.js";
+import { buildRuntime } from "../internal/runtime.js";
+
+const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
 export const apiCommand = new Command("api")
   .description("Raw HTTP passthrough to the Meshy API (JSON only)")
@@ -16,12 +20,20 @@ export const apiCommand = new Command("api")
   .argument("<path>", "API path (e.g. /text-to-3d or /balance)")
   .option("--v2", "use the v2 base URL (default: v1)")
   .option("--v1", "force v1 (default)")
+  .addOption(new Option("--creative-lab", "use the Creative Lab base URL (paths like /figure/v1/prototype)"))
   .option("--data <json>", "request body JSON (or @file.json)")
   .option("--params <json>", "query params JSON object")
+  .option("--save-json <file>", "v1: also save the raw response body to this file (never overwrites)")
   .action(async (method: string, path: string, opts: Record<string, unknown>, thisCmd: Command) => {
-    const runtime = await buildRuntime(readGlobalFlags(thisCmd));
-    const apiVersion = opts.v2 ? "v2" : "v1";
+    const opened = openCommand(thisCmd, "api", "legacy");
+    rejectOutputFlagForV1(opened, opts.saveJson as string | undefined);
     const verb = method.toUpperCase();
+    if (!METHODS.has(verb)) throw new UsageError(`unsupported HTTP method '${method}'. Expected: GET | POST | PUT | PATCH | DELETE`);
+    if ((opts.v2 ? 1 : 0) + (opts.v1 ? 1 : 0) + (opts.creativeLab ? 1 : 0) > 1) {
+      throw new UsageError("--v1, --v2 and --creative-lab are mutually exclusive");
+    }
+    const apiVersion = opts.v2 ? "v2" : opts.creativeLab ? "creative-lab" : "v1";
+    const runtime = await buildRuntime(opened.flags);
 
     let finalPath = path.startsWith("/") ? path : `/${path}`;
     const params = parseJsonFlag(opts.params as string | undefined, "--params");
@@ -48,5 +60,12 @@ export const apiCommand = new Command("api")
     } catch {
       /* leave as text */
     }
-    emit(parsed, { format: runtime.flags.format, file: runtime.flags.output });
+    const saveJson = opts.saveJson as string | undefined;
+    const saved = saveJson ? saveRawJson(saveJson, parsed, { workspace: opened.flags.workspaceRoot }) : null;
+    await emitResult(
+      opened,
+      parsed,
+      { http_status: resp.status, method: verb, path: finalPath, api: apiVersion, body: parsed, saved_json: saved },
+      { legacyFile: opened.flags.output },
+    );
   });

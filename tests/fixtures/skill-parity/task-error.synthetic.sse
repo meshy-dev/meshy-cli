@@ -1,0 +1,5 @@
+: synthetic HTTP 200 stream whose application result is an error
+
+event: error
+data: {"message":"Synthetic task not found","status_code":404}
+

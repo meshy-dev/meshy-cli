@@ -1,0 +1,1263 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-08T06:09:04.615660Z",
+  "code_head_under_test": {
+    "before_live_fixes": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+    "live_fixes": "1d9f10976b5f754502c81591c64c712e492188d1",
+    "final": "1d9f10976b5f754502c81591c64c712e492188d1"
+  },
+  "environment": {
+    "host": "macOS 26.6.2 (Darwin 25.6.0) arm64",
+    "node": "v24.20.0",
+    "install": "npm install -g ~/Downloads/meshy-cli-0.3.0.tgz (real global install; reinstalled after each live fix)",
+    "config": "~/.config/meshy/credentials.json (default location; profiles: default = API key, oauth = OAuth)",
+    "workspace": "<home>/meshy-live (real user directory)"
+  },
+  "scope": "real account, real API, billable tasks authorised by the account owner without a cap; credentials entered by the owner in their own terminal and never handled by the agent; no publish",
+  "credits": {
+    "start": 2806,
+    "end": 2479,
+    "after_oauth_refresh_check": 2515,
+    "source": "meshy balance --output-schema v1 before the first live step (auth status shown by the owner) and after the last one (live/balance-final.json)",
+    "consumed": 327
+  },
+  "steps": [
+    {
+      "id": "T104-01",
+      "credential": "oauth",
+      "title": "auth status (OAuth active) — masked credential, verified balance",
+      "file": "live/t104/status-oauth.json",
+      "authenticated": true,
+      "profile": "oauth",
+      "profiles": [
+        "default",
+        "oauth"
+      ],
+      "active_profile": "oauth",
+      "verified": true,
+      "balance.balance": 2806
+    },
+    {
+      "id": "T104-02",
+      "credential": "oauth",
+      "title": "auth list — two profiles (api_key default, oauth)",
+      "file": "live/t104/list.json",
+      "active_profile": "oauth",
+      "profiles": [
+        {
+          "name": "default",
+          "kind": "api_key",
+          "active": false
+        },
+        {
+          "name": "oauth",
+          "kind": "oauth",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "T104-03",
+      "credential": "oauth",
+      "title": "credentials.json shape: oauth profile has access/refresh tokens and login_id, no user_id (the real token endpoint did not return one)",
+      "file": "inspected with jq keys only",
+      "oauth_profile_keys": [
+        "access_token",
+        "created_at",
+        "expires_at",
+        "kind",
+        "login_id",
+        "refresh_token"
+      ],
+      "has_user_id": false,
+      "has_login_id": true,
+      "api_key_profile_keys": [
+        "api_key",
+        "created_at",
+        "kind"
+      ]
+    },
+    {
+      "id": "T104-04",
+      "credential": "oauth",
+      "title": "silent refresh observed: expires_at advanced, login_id kept, tokens rotated; refreshed token works",
+      "file": "live/t104/oauth-refresh-observed.json",
+      "original_expires_at_iso": "2026-09-08T05:52:10.945000+00:00",
+      "expires_at_now_iso": "2026-09-08T06:51:13.984000+00:00",
+      "refreshed": true,
+      "login_id_present": true,
+      "login_id_sha": "ee55f2134c19",
+      "created_at_unchanged": true,
+      "observed_at": "2026-09-08T05:52:56.108115+00:00",
+      "balance_after": 2515
+    },
+    {
+      "id": "T104-05",
+      "credential": "api_key",
+      "title": "journal replay with the same key: operation_replayed, no new task, balance unchanged",
+      "file": "live/t110/09-replay-same-key.json",
+      "ok": true,
+      "result.task_id": "01a07f5e-81c7-7111-86f2-f6d2f80b2093",
+      "result.submission.operation_id": "2a9a9e91-da6f-4d14-a560-d1b16608fba2",
+      "warnings": [
+        "operation_replayed"
+      ]
+    },
+    {
+      "id": "T104-06",
+      "credential": "oauth",
+      "title": "same operation id under the OAuth profile → operation_conflict (credential), exit 2, nothing submitted",
+      "file": "live/t110/10-replay-other-credential.json",
+      "ok": false,
+      "error.code": "operation_conflict",
+      "result.conflict": [
+        "credential"
+      ]
+    },
+    {
+      "id": "T104-07",
+      "credential": "api_key",
+      "title": "same operation id with a different image → operation_conflict (payload); same bytes under another file name → replayed",
+      "file": "live/t110/19-image-replay-other-image.json",
+      "ok": false,
+      "error.code": "operation_conflict",
+      "result.conflict": [
+        "payload"
+      ],
+      "same_bytes_replay": [
+        {
+          "code": "operation_replayed",
+          "message": "operation d9342f08-41b0-4338-a862-a659bdc64269 was already accepted as task 01a07f66-9cc1-7408-ad91-eec669ea0bf5 on 2026-09-08T05:03:46.613Z; no new request was sent"
+        }
+      ]
+    },
+    {
+      "id": "T104-08",
+      "credential": "oauth",
+      "title": "OAuth bearer on v2 get and v1 asset download — same bytes as the API-key download",
+      "file": "live/t104/download-oauth.json",
+      "ok": true,
+      "files": [
+        {
+          "key": "model.glb",
+          "bytes": 83900100,
+          "status": "written",
+          "sha256_12": "51d4b36507bc"
+        }
+      ],
+      "get_ok": true,
+      "legacy_get_keys": [
+        "created_at",
+        "finished_at",
+        "id",
+        "model_urls",
+        "progress",
+        "resource",
+        "status",
+        "texture_urls",
+        "thumbnail_url",
+        "type"
+      ]
+    },
+    {
+      "id": "T110-01",
+      "credential": "api_key",
+      "title": "project init (real workspace ~/meshy-live)",
+      "file": "live/t110/01-project-init.json",
+      "ok": true,
+      "result.project_dir": "<home>/meshy-live/meshy_output/20260908_125453_live-teapot_d344",
+      "result.index.updated": true
+    },
+    {
+      "id": "T110-02",
+      "credential": "api_key",
+      "title": "text-to-3d create --mode preview --async --project --save-json",
+      "file": "live/t110/04-preview-create.json",
+      "ok": true,
+      "result.task_id": "01a07f5e-81c7-7111-86f2-f6d2f80b2093",
+      "result.submission.state": "accepted",
+      "result.project.action": "added",
+      "result.saved_json.bytes": 55,
+      "credits": 20
+    },
+    {
+      "id": "T110-03",
+      "credential": "api_key",
+      "title": "stream (ndjson) on the finished preview: task + outcome, sequence contiguous",
+      "file": "live/t110/05-preview-stream.ndjson",
+      "events": 2,
+      "last": {
+        "events": 1,
+        "ended": "terminal",
+        "elapsed_seconds": 0.78
+      }
+    },
+    {
+      "id": "T110-04",
+      "credential": "api_key",
+      "title": "wait -o preview into the project (model.glb + thumbnail, meta.json, snapshot merged)",
+      "file": "live/t110/07-preview-wait-download.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.wait": {
+        "timed_out": false,
+        "elapsed_seconds": 0.85,
+        "polls": 1
+      },
+      "result.downloads.state": "completed",
+      "result.downloads.metadata_path": "<home>/meshy-live/preview/meta.json",
+      "result.project.action": "merged",
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 34393124,
+          "status": "written",
+          "sha256_12": "38a2e495b5d2"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 59226,
+          "status": "written",
+          "sha256_12": "6d0e766f6a49"
+        }
+      ]
+    },
+    {
+      "id": "T110-05",
+      "credential": "api_key",
+      "title": "download --list on the preview",
+      "file": "live/t110/08-download-list.json",
+      "ok": true,
+      "assets": [
+        [
+          "model.glb",
+          "glb"
+        ],
+        [
+          "thumbnail.primary",
+          "png"
+        ]
+      ]
+    },
+    {
+      "id": "T110-06",
+      "credential": "api_key",
+      "title": "text-to-3d create --mode refine (glb,obj,fbx) --async",
+      "file": "live/t110/11-refine-create.json",
+      "ok": true,
+      "result.task_id": "01a07f61-6956-7630-a9a5-e0dcfd344683",
+      "result.submission.operation_id": "5e1b7a4d-d41a-4fdf-800a-7863a91cdb0d",
+      "result.project.action": "added",
+      "credits": 10
+    },
+    {
+      "id": "T110-07",
+      "credential": "api_key",
+      "title": "stream (ndjson) during the refine: 30 progress events + 1 outcome, contiguous sequence",
+      "file": "live/t110/12-refine-stream.ndjson",
+      "events": 31,
+      "last": {
+        "events": 30,
+        "ended": "terminal",
+        "elapsed_seconds": 213.25
+      }
+    },
+    {
+      "id": "T110-08",
+      "credential": "api_key",
+      "title": "wait -o refine: 9 files incl. OBJ+MTL+4 textures; real MTL map_Kd texture_0.png → texture_0_base_color.png by source_name; material_links complete",
+      "file": "live/t110/13-refine-wait-download.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 10,
+      "result.downloads.state": "completed",
+      "result.downloads.material_links.status": "complete",
+      "result.downloads.material_links.texture_maps": [
+        {
+          "line": 12,
+          "material": "Material.005",
+          "reference": "texture_0.png",
+          "resolved_to": "texture_0_base_color.png",
+          "method": "source_name"
+        }
+      ],
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 83900100,
+          "status": "written",
+          "sha256_12": "51d4b36507bc"
+        },
+        {
+          "key": "model_fbx",
+          "bytes": 99468604,
+          "status": "written",
+          "sha256_12": "915454648561"
+        },
+        {
+          "key": "model_obj",
+          "bytes": 195271847,
+          "status": "written",
+          "sha256_12": "d1e6f5bb707e"
+        },
+        {
+          "key": "model_mtl",
+          "bytes": 239,
+          "status": "written",
+          "sha256_12": "c9c73e2a3ec9"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 61083,
+          "status": "written",
+          "sha256_12": "e80a33787756"
+        },
+        {
+          "key": "texture_0_base_color",
+          "bytes": 19421816,
+          "status": "written",
+          "sha256_12": "5e0411a618eb"
+        },
+        {
+          "key": "texture_0_metallic",
+          "bytes": 19397,
+          "status": "written",
+          "sha256_12": "4fd4696a84f8"
+        },
+        {
+          "key": "texture_0_normal",
+          "bytes": 11884487,
+          "status": "written",
+          "sha256_12": "964426c0fc2e"
+        },
+        {
+          "key": "texture_0_roughness",
+          "bytes": 967530,
+          "status": "written",
+          "sha256_12": "60836dd75819"
+        }
+      ]
+    },
+    {
+      "id": "T110-09",
+      "credential": "api_key",
+      "title": "download --model-format obj (selective, dependencies) — material_links complete",
+      "file": "live/t110/17-download-obj.json",
+      "ok": true,
+      "result.selection": {
+        "selected": [
+          "model.obj"
+        ],
+        "dependencies": [
+          "model.mtl",
+          "texture.0.base_color",
+          "texture.0.metallic",
+          "texture.0.roughness",
+          "texture.0.normal"
+        ]
+      },
+      "result.downloads.state": "completed",
+      "result.downloads.material_links.status": "complete",
+      "files": [
+        {
+          "key": "model.obj",
+          "bytes": 195271847,
+          "status": "written",
+          "sha256_12": "d1e6f5bb707e"
+        },
+        {
+          "key": "model.mtl",
+          "bytes": 239,
+          "status": "written",
+          "sha256_12": "c9c73e2a3ec9"
+        },
+        {
+          "key": "texture.0.base_color",
+          "bytes": 19421816,
+          "status": "written",
+          "sha256_12": "5e0411a618eb"
+        },
+        {
+          "key": "texture.0.metallic",
+          "bytes": 19397,
+          "status": "written",
+          "sha256_12": "4fd4696a84f8"
+        },
+        {
+          "key": "texture.0.roughness",
+          "bytes": 967530,
+          "status": "written",
+          "sha256_12": "60836dd75819"
+        },
+        {
+          "key": "texture.0.normal",
+          "bytes": 11884487,
+          "status": "written",
+          "sha256_12": "964426c0fc2e"
+        }
+      ]
+    },
+    {
+      "id": "T110-10",
+      "credential": "api_key",
+      "title": "download --asset thumbnail.primary --output file",
+      "file": "live/t110/18-download-thumb.json",
+      "ok": true,
+      "files": [
+        {
+          "key": "thumbnail.primary",
+          "bytes": 61083,
+          "status": "written",
+          "sha256_12": "e80a33787756"
+        }
+      ]
+    },
+    {
+      "id": "T110-11",
+      "credential": "api_key",
+      "title": "image-to-3d create from a local synthetic PNG (data URI) — server-side FAILED, 0 credits, task_failed relayed, FAILED recorded in the project",
+      "file": "live/t110/16-image-wait-download.json",
+      "ok": false,
+      "error.code": "task_failed",
+      "result.task.status": "FAILED",
+      "result.task.consumed_credits": 0,
+      "result.task.task_error": {
+        "type": "server_error",
+        "message": "Failed to generate preview images. Please retry."
+      },
+      "result.project.action": "merged",
+      "credits": 0
+    },
+    {
+      "id": "T110-12",
+      "credential": "api_key",
+      "title": "download --list / get on the FAILED task (not_ready + task_not_ready warning; task_error relayed)",
+      "file": "live/t110/21-failed-download-list.json",
+      "ok": true,
+      "result.downloads.state": "not_ready",
+      "warnings": [
+        "task_not_ready"
+      ],
+      "get_task_error": {
+        "type": "server_error",
+        "message": "Failed to generate preview images. Please retry."
+      }
+    },
+    {
+      "id": "T110-13",
+      "credential": "api_key",
+      "title": "image-to-3d retry with the real refine thumbnail: SUCCEEDED, OBJ/MTL relinked",
+      "file": "live/t110/23-image-create-retry.json",
+      "result.task_id": "01a07f6d-d56b-711b-8ebc-3fe0c1dd8541",
+      "wait": {},
+      "status": "SUCCEEDED",
+      "consumed": 30,
+      "material_links": "complete",
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 80427848,
+          "status": "written",
+          "sha256_12": "31e43eba14c2"
+        },
+        {
+          "key": "model_obj",
+          "bytes": 195493200,
+          "status": "written",
+          "sha256_12": "aa13ba15d5e3"
+        },
+        {
+          "key": "model_mtl",
+          "bytes": 235,
+          "status": "written",
+          "sha256_12": "552ae8602502"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 47266,
+          "status": "written",
+          "sha256_12": "2c4a3a83bd4c"
+        },
+        {
+          "key": "texture_0_base_color",
+          "bytes": 17044752,
+          "status": "written",
+          "sha256_12": "7af338cc630c"
+        },
+        {
+          "key": "texture_0_metallic",
+          "bytes": 19055,
+          "status": "written",
+          "sha256_12": "6caf8476a1aa"
+        },
+        {
+          "key": "texture_0_normal",
+          "bytes": 8612949,
+          "status": "written",
+          "sha256_12": "3ef26cf887cf"
+        },
+        {
+          "key": "texture_0_roughness",
+          "bytes": 788016,
+          "status": "written",
+          "sha256_12": "67fc11c6adf9"
+        }
+      ],
+      "credits": 30
+    },
+    {
+      "id": "T110-14",
+      "credential": "api_key",
+      "title": "text-to-3d list --page-size 3",
+      "file": "live/t110/14-list.json",
+      "ok": true,
+      "result.count": 2
+    },
+    {
+      "id": "T110-15",
+      "credential": "oauth",
+      "title": "image-to-3d delete (the FAILED task) then get → not_found 404 exit 5",
+      "file": "live/t110/24-delete-failed.json",
+      "ok": true,
+      "result.deleted": true,
+      "get_after": {
+        "code": "not_found",
+        "http_status": 404
+      }
+    },
+    {
+      "id": "T111-01",
+      "credential": "api_key",
+      "title": "showcases list → 403 enterprise-only (account-gated): error.code server, http 403, exit 1",
+      "file": "live/t111/01-showcases-list.json",
+      "ok": false,
+      "error.code": "server",
+      "error.http_status": 403
+    },
+    {
+      "id": "T111-02",
+      "credential": "api_key",
+      "title": "animation-catalog list (public, free)",
+      "file": "live/t111/02-animation-catalog.json",
+      "ok": true,
+      "result.count": 8,
+      "result.total": 157
+    },
+    {
+      "id": "T111-03",
+      "credential": "api_key",
+      "title": "uv-unwrap on the 1.9M-face refine → API 400 (44k limit) mapped to validation exit 4; on the remeshed model SUCCEEDED",
+      "file": "live/t111/wait-uv-unwrap.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 5,
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 212528,
+          "status": "written",
+          "sha256_12": "37651e05e3fa"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 60098,
+          "status": "written",
+          "sha256_12": "73eafd0c48f2"
+        }
+      ],
+      "credits": 5
+    },
+    {
+      "id": "T111-04",
+      "credential": "api_key",
+      "title": "remesh (8000 faces, glb,obj) SUCCEEDED; OBJ set relinked",
+      "file": "live/t111/wait-remesh.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 5,
+      "result.downloads.material_links.status": "complete",
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 24213896,
+          "status": "written",
+          "sha256_12": "bb2bdc29e55f"
+        },
+        {
+          "key": "model_obj",
+          "bytes": 757517,
+          "status": "written",
+          "sha256_12": "767bf14f8c46"
+        },
+        {
+          "key": "model_mtl",
+          "bytes": 235,
+          "status": "written",
+          "sha256_12": "552ae8602502"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 61545,
+          "status": "written",
+          "sha256_12": "bd911dba6dfe"
+        },
+        {
+          "key": "texture_0_base_color",
+          "bytes": 18108173,
+          "status": "written",
+          "sha256_12": "7ed2e4f3b659"
+        },
+        {
+          "key": "texture_0_metallic",
+          "bytes": 900041,
+          "status": "written",
+          "sha256_12": "b7b51aa43b77"
+        },
+        {
+          "key": "texture_0_normal",
+          "bytes": 8656095,
+          "status": "written",
+          "sha256_12": "681e3f286a1f"
+        },
+        {
+          "key": "texture_0_roughness",
+          "bytes": 2289526,
+          "status": "written",
+          "sha256_12": "ab7395fccc69"
+        },
+        {
+          "key": "texture_0_metallic_roughness",
+          "bytes": 5830658,
+          "status": "written",
+          "sha256_12": "262cc61894df"
+        }
+      ],
+      "credits": 5
+    },
+    {
+      "id": "T111-05",
+      "credential": "api_key",
+      "title": "retexture (text style prompt, PBR) SUCCEEDED",
+      "file": "live/t111/wait-retexture.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 10,
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 83810660,
+          "status": "written",
+          "sha256_12": "d7d18c8cb3de"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 93635,
+          "status": "written",
+          "sha256_12": "d8804aba5986"
+        },
+        {
+          "key": "texture_0_base_color",
+          "bytes": 19358023,
+          "status": "written",
+          "sha256_12": "0a467f028d73"
+        },
+        {
+          "key": "texture_0_metallic",
+          "bytes": 237086,
+          "status": "written",
+          "sha256_12": "ef3aaeab62f0"
+        },
+        {
+          "key": "texture_0_normal",
+          "bytes": 11468546,
+          "status": "written",
+          "sha256_12": "376b83e5b532"
+        },
+        {
+          "key": "texture_0_roughness",
+          "bytes": 1027166,
+          "status": "written",
+          "sha256_12": "b474c3dfa34d"
+        }
+      ],
+      "credits": 10
+    },
+    {
+      "id": "T111-06",
+      "credential": "api_key",
+      "title": "analyze-printability SUCCEEDED (0 credits): report-only, meta.json written, status warning (degenerate faces)",
+      "file": "live/t111/wait-printability.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 0,
+      "result.task.printability.status": "warning",
+      "result.task.printability.metrics": {
+        "is_watertight": true,
+        "volume": 0.7804952440067714,
+        "non_manifold_edges": 0,
+        "degenerate_faces": 64868,
+        "holes": 0
+      },
+      "result.downloads.metadata_path": "<home>/meshy-live/printability/meta.json",
+      "credits": 0
+    },
+    {
+      "id": "T111-07",
+      "credential": "api_key",
+      "title": "rigging on the teapot → API 400 (face limit) then 422 (pose estimation failed) → validation exit 4",
+      "file": "live/t111/sub-rigging.json",
+      "error.code": null,
+      "error.message": null,
+      "note": "the teapot is not a humanoid; see T111-11 for the successful rig"
+    },
+    {
+      "id": "T111-08",
+      "credential": "api_key",
+      "title": "text-to-motion: CLI requires --duration (2–10 s); with --duration 4 SUCCEEDED, motion.fbx",
+      "file": "live/t111/wait-motion.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 10,
+      "files": [
+        {
+          "key": "motion_url",
+          "bytes": 16825904,
+          "status": "written",
+          "sha256_12": "f34b68ced2fe"
+        }
+      ],
+      "credits": 10
+    },
+    {
+      "id": "T111-09",
+      "credential": "api_key",
+      "title": "humanoid text-to-3d preview for the rig chain",
+      "file": "live/t111/sub-humanoid.json",
+      "result.task_id": "01a07f72-0239-759f-850b-54081f7e12a0",
+      "result.submission.operation_id": "587d078c-7823-4a71-a795-e03a7a00259b",
+      "credits": 20
+    },
+    {
+      "id": "T111-10",
+      "credential": "oauth",
+      "title": "remesh the humanoid to 30k faces (rigging refused 1.95M faces with 400)",
+      "file": "live/t111/wait-humanoid-remesh.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 5,
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 1300572,
+          "status": "written",
+          "sha256_12": "21400643996f"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 108534,
+          "status": "written",
+          "sha256_12": "95fb5c2d7771"
+        },
+        {
+          "key": "texture_0_normal",
+          "bytes": 4570614,
+          "status": "written",
+          "sha256_12": "3217a4b1b18f"
+        }
+      ],
+      "credits": 5
+    },
+    {
+      "id": "T111-11",
+      "credential": "oauth",
+      "title": "rigging SUCCEEDED: rigged glb/fbx + walking/running clips (8 files)",
+      "file": "live/t111/wait-rigging.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 5,
+      "files": [
+        {
+          "key": "rigged_character_fbx_url",
+          "bytes": 2033532,
+          "status": "written",
+          "sha256_12": "1ef48318a45d"
+        },
+        {
+          "key": "rigged_character_glb_url",
+          "bytes": 2020516,
+          "status": "written",
+          "sha256_12": "59f350b4c8ec"
+        },
+        {
+          "key": "basic_animations_walking_glb_url",
+          "bytes": 2033292,
+          "status": "written",
+          "sha256_12": "235da1bf00dd"
+        },
+        {
+          "key": "basic_animations_walking_fbx_url",
+          "bytes": 2058316,
+          "status": "written",
+          "sha256_12": "f20d67b431b6"
+        },
+        {
+          "key": "basic_animations_walking_armature_glb_url",
+          "bytes": 65392,
+          "status": "written",
+          "sha256_12": "20e066e440b3"
+        },
+        {
+          "key": "basic_animations_running_glb_url",
+          "bytes": 2028688,
+          "status": "written",
+          "sha256_12": "9cd1dcc464a3"
+        },
+        {
+          "key": "basic_animations_running_fbx_url",
+          "bytes": 2049660,
+          "status": "written",
+          "sha256_12": "04f1027412a8"
+        },
+        {
+          "key": "basic_animations_running_armature_glb_url",
+          "bytes": 60788,
+          "status": "written",
+          "sha256_12": "3dc15c9cbe60"
+        }
+      ],
+      "credits": 5
+    },
+    {
+      "id": "T111-12",
+      "credential": "oauth",
+      "title": "animate create --action-id 28 (Big Wave Hello) on the rig: stream 10 events + outcome; wait -o glb+fbx",
+      "file": "live/t111/wait-animation.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 3,
+      "files": [
+        {
+          "key": "animation_glb_url",
+          "bytes": 2085424,
+          "status": "written",
+          "sha256_12": "71cacbd652db"
+        },
+        {
+          "key": "animation_fbx_url",
+          "bytes": 2133068,
+          "status": "written",
+          "sha256_12": "6516e604028a"
+        }
+      ],
+      "stream_events": 11,
+      "credits": 3
+    },
+    {
+      "id": "T111-13",
+      "credential": "oauth",
+      "title": "make 'a low-poly cactus…' -o: preview → refine, two journal records, downloads",
+      "file": "live/make/make.json",
+      "ok": true,
+      "result.route": "text",
+      "result.executed": [
+        {
+          "step": 1,
+          "resource": "text-to-3d",
+          "action": "preview",
+          "task_id": "01a07f75-c6f0-7219-8a2e-65577ed29838",
+          "status": "SUCCEEDED",
+          "operation_id": "4ce4ad82-a125-49e1-a198-868b0b41bad4"
+        },
+        {
+          "step": 2,
+          "resource": "text-to-3d",
+          "action": "refine",
+          "task_id": "01a07f76-c8a8-7731-bdbd-464304055493",
+          "status": "SUCCEEDED",
+          "operation_id": "a8227912-f16b-48b5-a155-1b3a429445e4"
+        }
+      ],
+      "result.submission": {
+        "state": "accepted",
+        "operation_id": "a8227912-f16b-48b5-a155-1b3a429445e4",
+        "task_id": "01a07f76-c8a8-7731-bdbd-464304055493"
+      },
+      "result.task.status": "SUCCEEDED",
+      "result.downloads.state": "completed",
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 91624388,
+          "status": "written",
+          "sha256_12": "8de9537dfff7"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 116190,
+          "status": "written",
+          "sha256_12": "7b1e09871729"
+        },
+        {
+          "key": "texture_0_base_color",
+          "bytes": 22237173,
+          "status": "written",
+          "sha256_12": "4fffa8996db1"
+        },
+        {
+          "key": "texture_0_metallic",
+          "bytes": 52871,
+          "status": "written",
+          "sha256_12": "dbe5bb6c6ecc"
+        },
+        {
+          "key": "texture_0_normal",
+          "bytes": 15698341,
+          "status": "written",
+          "sha256_12": "68716ce5b0b5"
+        },
+        {
+          "key": "texture_0_roughness",
+          "bytes": 1287400,
+          "status": "written",
+          "sha256_12": "fbe3aaeab1fa"
+        }
+      ],
+      "credits": 30
+    },
+    {
+      "id": "T111-14",
+      "credential": "oauth",
+      "title": "creative-lab lamp prototype create; get/wait on the IN_PROGRESS task FAILED with 'unexpected task shape' (finished_at: null) → live finding L01",
+      "file": "live/creative/lamp-proto-wait.json",
+      "ok": false,
+      "error.code": "server",
+      "error.http_status": 200,
+      "message_head": "unexpected task shape from GET /lamp/v1/prototype/01a07f79-e9f7-7347-89c7-c46fb7a11d06: [\n  {\n    \"expected\": \"number\",\n",
+      "credits": 30
+    },
+    {
+      "id": "T111-15",
+      "credential": "oauth",
+      "title": "after the L01 fix (reinstalled CLI): lamp prototype get/wait SUCCEEDED (lampshade glb + concept image)",
+      "file": "live/creative/lamp-proto-wait3.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.wait.polls": 1,
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 4483108,
+          "status": "written",
+          "sha256_12": "62b8179c70b4"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 69479,
+          "status": "written",
+          "sha256_12": "2fe40b2143fa"
+        },
+        {
+          "key": "image_0",
+          "bytes": 678713,
+          "status": "written",
+          "sha256_12": "121c950c3694"
+        }
+      ]
+    },
+    {
+      "id": "T111-16",
+      "credential": "oauth",
+      "title": "keychain prototype create + immediate wait polled through 3 IN_PROGRESS states to SUCCEEDED (L01 verified live)",
+      "file": "live/creative/keychain-proto-wait.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 6,
+      "result.wait.polls": 4,
+      "files": [
+        {
+          "key": "image_0",
+          "bytes": 477978,
+          "status": "written",
+          "sha256_12": "e4eab2f32244"
+        }
+      ],
+      "credits": 6
+    },
+    {
+      "id": "T111-17",
+      "credential": "oauth",
+      "title": "lamp build SUCCEEDED — legacy -o named the parts model.lamp_stl/model.base_stl → live finding L02",
+      "file": "live/creative/lamp-build-wait.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 6,
+      "files": [
+        {
+          "key": "model_base_stl",
+          "bytes": 360284,
+          "status": "written",
+          "sha256_12": "5cbf2af2866c"
+        },
+        {
+          "key": "model_lamp_stl",
+          "bytes": 15162184,
+          "status": "written",
+          "sha256_12": "94f5809a85df"
+        }
+      ],
+      "credits": 6
+    },
+    {
+      "id": "T111-18",
+      "credential": "oauth",
+      "title": "meshy download --list/--all on the lamp build names lamp.stl / base.stl (selective path was right)",
+      "file": "live/creative/lamp-build-selective.json",
+      "ok": true,
+      "files": [
+        {
+          "key": "model.base_stl",
+          "relative_path": "lamp-build-selective/base.stl",
+          "format": "stl"
+        },
+        {
+          "key": "model.lamp_stl",
+          "relative_path": "lamp-build-selective/lamp.stl",
+          "format": "stl"
+        }
+      ]
+    },
+    {
+      "id": "T111-19",
+      "credential": "oauth",
+      "title": "keychain builds: default (glb) and --model-format obj (ZIP bundle); legacy -o saved the bundle as model.obj → L02; selective path: model.obj.zip",
+      "file": "live/creative/keychain-build-obj-wait.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 30,
+      "legacy_files": [
+        {
+          "key": "model_obj",
+          "bytes": 46871892,
+          "status": "written",
+          "sha256_12": "bf665456914a"
+        }
+      ],
+      "selective": [
+        {
+          "key": "model.obj",
+          "relative_path": "keychain-build-selective/model.obj.zip",
+          "format": "zip",
+          "container_format": "zip"
+        }
+      ],
+      "credits": 60
+    },
+    {
+      "id": "T111-20",
+      "credential": "oauth",
+      "title": "after the L02 fix (reinstalled CLI): -o on the same builds → lamp.stl/base.stl (byte-identical) and model.obj.zip",
+      "file": "live/creative/lamp-build-fixed.json",
+      "ok": true,
+      "lamp_files": [
+        [
+          "model_base_stl",
+          "base.stl"
+        ],
+        [
+          "model_lamp_stl",
+          "lamp.stl"
+        ]
+      ],
+      "keychain_files": [
+        [
+          "model_obj",
+          "model.obj.zip"
+        ]
+      ]
+    },
+    {
+      "id": "T111-21",
+      "credential": "oauth",
+      "title": "figure prototype SUCCEEDED; first figure build FAILED server-side (0 credits, task_failed relayed); retry SUCCEEDED with OBJ/MTL relinked",
+      "file": "live/creative/figure-build-wait2.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 30,
+      "result.downloads.material_links.status": "complete",
+      "first_attempt": {
+        "status": "FAILED",
+        "consumed_credits": 0,
+        "task_error": {
+          "type": "server_error",
+          "message": "Failed to generate preview images. Please retry."
+        }
+      },
+      "files": [
+        {
+          "key": "model_glb",
+          "bytes": 78663044,
+          "status": "written",
+          "sha256_12": "24c8443380ed"
+        },
+        {
+          "key": "model_obj",
+          "bytes": 199049675,
+          "status": "written",
+          "sha256_12": "653af29a67bd"
+        },
+        {
+          "key": "model_mtl",
+          "bytes": 235,
+          "status": "written",
+          "sha256_12": "552ae8602502"
+        },
+        {
+          "key": "thumbnail",
+          "bytes": 55346,
+          "status": "written",
+          "sha256_12": "24e69b643114"
+        },
+        {
+          "key": "texture_0_base_color",
+          "bytes": 18874922,
+          "status": "written",
+          "sha256_12": "09bd7ed10caa"
+        }
+      ],
+      "credits": 36
+    },
+    {
+      "id": "T111-22",
+      "credential": "oauth",
+      "title": "fridge-magnet prototype + build (exposed product) SUCCEEDED with the fixed CLI: bundle named by the shared mapping",
+      "file": "live/creative/magnet-build-wait.json",
+      "ok": true,
+      "result.task.status": "SUCCEEDED",
+      "result.task.consumed_credits": 30,
+      "prototype": {
+        "status": "SUCCEEDED",
+        "consumed_credits": 6
+      },
+      "files": [
+        [
+          "model_glb",
+          "model.glb",
+          17185876
+        ]
+      ],
+      "credits": 36
+    },
+    {
+      "id": "T112-01",
+      "credential": "none",
+      "title": "slicer detect finds Bambu Studio 02.08.02.61; slicer open on a prepared print OBJ launches it (macOS open -a, pid observed)",
+      "file": "live/t112/open.json",
+      "ok": true,
+      "result.launch_requested": true,
+      "result.slicer.name": "Bambu Studio",
+      "result.slicer.path": "/Applications/BambuStudio.app",
+      "result.launcher": {
+        "command": "open",
+        "exit_code": 0
+      }
+    },
+    {
+      "id": "T112-02",
+      "credential": "none",
+      "title": "mesh prepare-print on the real remeshed OBJ (60 mm) → print OBJ + copied MTL/texture; slicer open again on that file",
+      "file": "live/t112/prepare-real.json",
+      "ok": true,
+      "result.output": "<home>/meshy-live/print/teapot.print.obj",
+      "open": {
+        "launch_requested": true,
+        "pid": 17811
+      }
+    },
+    {
+      "id": "LOCAL-01",
+      "credential": "none",
+      "title": "project show/list on the real project: 11+ task entries with snapshots and operation ids; history index clean",
+      "file": "live/local/project-show.json",
+      "ok": true,
+      "tasks": 11,
+      "index_dirty": false
+    },
+    {
+      "id": "LOCAL-02",
+      "credential": "none",
+      "title": "inspect faces on real task snapshots → check_unknown (13): the API task JSON carries no face_count",
+      "file": "live/local/inspect-remesh.json",
+      "ok": false,
+      "error.code": "check_unknown",
+      "result.verdict": "unknown",
+      "result.reason": "face_count missing"
+    }
+  ],
+  "t109_linux": [
+    {
+      "platform": "linux/arm64",
+      "os": "Debian GNU/Linux 12 (bookworm)",
+      "node": "v24.20.0",
+      "npm": "11.19.0",
+      "tarball_sha256": "bd3d39e71cfd41f7b19a5fe0b4e71805ed1634e8e5e3afb88ca5aa3242f7cb98",
+      "passed": 29,
+      "total": 29,
+      "sharp": "0.35.4 (libvips 8.18.6)",
+      "container": "OrbStack docker, node:24-bookworm, native"
+    },
+    {
+      "platform": "linux/x64",
+      "os": "Debian GNU/Linux 12 (bookworm)",
+      "node": "v24.20.0",
+      "npm": "11.19.0",
+      "tarball_sha256": "bd3d39e71cfd41f7b19a5fe0b4e71805ed1634e8e5e3afb88ca5aa3242f7cb98",
+      "passed": 29,
+      "total": 29,
+      "sharp": "0.35.4 (libvips 8.18.6)",
+      "container": "OrbStack docker, node:24-bookworm, linux/amd64 emulated"
+    }
+  ],
+  "not_run": [
+    "T-109 Windows x64 (no host)",
+    "MESHY_API_KEY env / --api-key-file variants against the real API (offline tests only; the stored API-key profile was used live)",
+    "showcases content (account is not enterprise: 403 recorded)",
+    "auth logout/revoke on the owner's real profiles (left to the owner)"
+  ],
+  "observations_not_fixed": [
+    {
+      "id": "OBS-1",
+      "severity": "P3",
+      "text": "403 'enterprise only' from showcases maps to error.code server / exit 1; a dedicated permission code (or auth) may be clearer"
+    },
+    {
+      "id": "OBS-2",
+      "severity": "P3",
+      "text": "downloaded asset files are published mode 0600 while rewritten MTL and JSON sidecars are 0644"
+    },
+    {
+      "id": "OBS-3",
+      "severity": "P3",
+      "text": "task verbs' -o downloads are not recorded as files in the project entry (recorded only by meshy download --project); attachToProject.extra.files has no caller"
+    },
+    {
+      "id": "OBS-4",
+      "severity": "P3",
+      "text": "download --list on a FAILED task reports downloads.state not_ready with ok:true (a terminal failure reads as 'not yet')"
+    },
+    {
+      "id": "OBS-5",
+      "severity": "P3",
+      "text": "auth status/list/use ignore --output-schema v1 (legacy shape only)"
+    },
+    {
+      "id": "OBS-6",
+      "severity": "P3",
+      "text": "real task JSON carries no face_count, so inspect faces from a task JSON always ends in check_unknown (13) — by design, but worth stating in docs"
+    },
+    {
+      "id": "OBS-7",
+      "severity": "P3",
+      "text": "text-to-motion requires --duration client-side (2–10 s, 0.5 steps); confirm against the API default"
+    }
+  ]
+}

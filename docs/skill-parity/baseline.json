@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-07T06:22:37Z",
+  "implementation_package": {
+    "version": "2026-09-07 / v1",
+    "source": "meshy-cli-implementation (IMPLEMENTATION_PLAN.md, COMMAND_CONTRACTS.md, TEST_PLAN.md, capability-matrix.json)"
+  },
+  "repositories": {
+    "cli": {
+      "url": "https://github.com/meshy-dev/meshy-cli",
+      "plan_baseline_sha": "fd94490916376e691efcea51324ac4326b459e1f",
+      "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
+      "remote_main_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
+      "delta_from_plan_baseline": "none",
+      "package_version_at_start": "0.2.0",
+      "work_branch": "feat/skill-parity-s1",
+      "workspace": "fresh clone; no pre-existing uncommitted changes",
+      "repo_instructions": "no AGENTS.md / CLAUDE.md present at baseline"
+    },
+    "skills": {
+      "url": "https://github.com/meshy-dev/meshy-3d-agent",
+      "plan_baseline_sha": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610",
+      "remote_head_at_start": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610",
+      "delta_from_plan_baseline": "none",
+      "claude_manifest_version": "0.4.1",
+      "usage": "read-only capability baseline; not modified"
+    },
+    "meshyd_read_only_crosscheck": {
+      "commit": "69b7ff5dd29f7a75a3220987985037ecb5c13c2e",
+      "files_consulted": [
+        "pkg/server/server.go (public route registration: every task API group registers POST '', GET '', GET /:id, GET /:id/stream, DELETE /:id; openapi /v1/showcases; /web/public/animations/resources)",
+        "pkg/server/api_stream_handlers.go (SSE: event 'message' carries task DTO; event 'error' carries {message,status_code}; keep-alive re-emits 'message' every 10s; stream closes after terminal status)",
+        "pkg/server/internal/httpapi/response.go (APIStreamErrorResponse = {message, status_code})",
+        "pkg/server/internal/httpapi/dto.go (task DTO: model_urls object keys glb/fbx/gltf/usdz/obj/mtl/vox/blend/stl/3mf/pre_remeshed_glb; thumbnail_urls is an object keyed by view; alpha_thumbnail_url; consumed_credits optional; no face_count field)",
+        "pkg/server/creativelab/openapi_routes.go + api_creative_lab_{figure,lamp,keychain,fridge_magnet}_handlers.go (request structs)",
+        "pkg/model/task_creative_lab_{lamp,keychain,fridge_magnet}.go (options/output enums, artifact keys)",
+        "pkg/server/api.go (ListShowcasesForOpenAPIRequest: format oneof glb fbx usdz obj; showcase_type oneof all animate static; GetShowcaseForOpenAPIResult fields; ListAnimationsResourcesRequest: q/category/subCategory; AnimationResource fields)"
+      ],
+      "notes": [
+        "internal source copies are not included in this repository",
+        "production deployment state, account gates and billing were not tested"
+      ]
+    }
+  },
+  "official_sources_checked": [
+    "https://docs.meshy.ai/en/api/uv-unwrap",
+    "https://docs.meshy.ai/en/api/creative-lab-figure",
+    "https://docs.meshy.ai/en/api/creative-lab-lamp",
+    "https://docs.meshy.ai/en/api/creative-lab-keychain",
+    "https://docs.meshy.ai/en/api/creative-lab-fridge-magnet",
+    "https://docs.meshy.ai/en/api/enterprise-api",
+    "https://docs.meshy.ai/en/api/rigging"
+  ],
+  "environment": {
+    "os": "macOS 26.6 (Darwin 25.6.0) arm64",
+    "node": "v24.20.0 (installed via fnm; repo .node-version = 24; engines >=24)",
+    "pnpm": "11.24.0 (corepack, package.json#packageManager)",
+    "python": "not required by the CLI; not used by any test"
+  },
+  "baseline_checks_before_changes": [
+    { "command": "pnpm install --frozen-lockfile", "exit_code": 0, "duration_s": 10, "notes": "prepare script built dist/" },
+    { "command": "pnpm typecheck", "exit_code": 0, "duration_s": 0 },
+    { "command": "pnpm test", "exit_code": 0, "duration_s": 41, "tests": 363, "pass": 363, "fail": 0, "skipped": 0 },
+    { "command": "pnpm build", "exit_code": 0, "duration_s": 1 }
+  ],
+  "legacy_script_copies": {
+    "scripts/src/meshy_task.py": "5c5dc16337580ccd97cee49c657d5395fb20ab9f1b66c8b7c41e364c545e7b2d",
+    "skills/*/scripts/meshy_task.py (3 identical copies)": "ba436fb36b2412db2f199f39804a0b788dd8c2d39aefd9e7153da2c671158c4d",
+    "skills/meshy-3d-printing/scripts/fix_obj.py": "2fa2ac5a7c26856f2818e23791ef5b82501411a94c82e7448e1253abc330be1c",
+    "skills/meshy-openclaw/scripts/fix_obj.py": "50e9fc00a83bc85067955fef2c61d94a8163e0002012961fbae9bad1e0cf1b35",
+    "skills/meshy-3d-printing/scripts/slicers.py": "343934ac49b43183bce364be86a801e03ecf40e4b722156e0da8d322cd18388d",
+    "skills/meshy-openclaw/scripts/slicers.py": "fe28032870de5a7de134278e8a9a39d3a7997e9bcc1ff2db9abc2a1c4f261683",
+    "note": "the distributed copies differ from scripts/src only by the generated header comment; no extra executable capability was found in any copy"
+  },
+  "fixtures": {
+    "tests/fixtures/skill-parity/box-y-up.obj": "beb379900c2c9a204db4a2cbeadd536292f30ac70ce849adc0762c9a88b5949b",
+    "tests/fixtures/skill-parity/box.mtl": "a11dcb465d7f74b03c4c007a5fbcba08233a392d4d526a82e2b513412aa2a556",
+    "tests/fixtures/skill-parity/box-height-80.expected.json": "f887f40c18d068145bbc1ffb03fc5c42f73f056ecf30b622a65a01edd7f2ed5d",
+    "tests/fixtures/skill-parity/task-rigging.synthetic.json": "8dca5b6abed0ae161d2cb0140d68d4c38341cfa48841ecdabd001427b77d039e",
+    "tests/fixtures/skill-parity/task-error.synthetic.sse": "b9542722988c854626a3007a0d7ec771a308a54945331f97788036f687c95300",
+    "origin": "synthetic fixtures copied from the implementation package; none are live API records"
+  },
+  "environment_limits": [
+    "no Meshy API credential is configured in this session; live API checks are not_run",
+    "only macOS arm64 is available; Windows/Linux slicer detection is covered by platform fixtures only",
+    "no slicer application is verified on this host",
+    "Enterprise showcases, UV Unwrap and Creative Lab live calls are billable/gated and are not_run"
+  ]
+}

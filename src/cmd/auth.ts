@@ -16,6 +16,7 @@
  */
 
 import * as readline from "node:readline";
+import { randomUUID } from "node:crypto";
 import { Command } from "commander";
 import { MeshyClient, MeshyApiError } from "../client/index.js";
 import { loadConfig } from "../internal/config.js";
@@ -116,12 +117,16 @@ async function finishLogin(
   },
 ): Promise<void> {
   const file = resolveFile(flags);
+  // Every login gets its own identifier: the operation journal binds a
+  // submission to the account (user_id) when the token endpoint reports one,
+  // and to this login otherwise — never to a token that rotates on refresh.
   const profileData = {
     kind: "oauth" as const,
     access_token: tok.access_token,
     refresh_token: tok.refresh_token,
     expires_at: Date.now() + tok.expires_in * 1000,
     ...(tok.user_id ? { user_id: tok.user_id } : {}),
+    login_id: randomUUID(),
   };
   const credState = saveProfile(file, opts.profile, profileData);
 

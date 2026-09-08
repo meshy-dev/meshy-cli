@@ -14,22 +14,42 @@
  * someone else's credits on its own opinion. The resource commands remain the
  * way to compose anything else.
  *
- * When a later step fails, the error carries the finished step's task id and
- * the command that resumes from it, so a retry never re-runs — or re-bills —
- * work that already succeeded.
+ * Submission goes through the same journal → single POST → journal primitive
+ * as the resource commands (`submitCreate`), so there is one state machine for
+ * accepted / rejected / unknown and a local journal failure after acceptance is
+ * local_io with the known task id — never "unknown".
+ *
+ * Three ways to stop early, none of them a re-run:
+ *   --async             submit step 1 and return immediately (no polling);
+ *                       `pending_steps` lists what was not executed.
+ *   --stop-after-first  run step 1 to completion, then return the resume plan.
+ *   a failed later step keeps the finished step's task id and the command that
+ *                       resumes from it, so a retry never re-bills done work.
  */
 
 import { Command, Option } from "commander";
-import { HintedError, UsageError } from "../internal/errors.js";
+import { abortSignal, wasInterrupted } from "../internal/context.js";
+import { CliError, HintedError, UsageError } from "../internal/errors.js";
 import { parseInt10 } from "../internal/flags.js";
-import { resolveImageFields } from "../internal/file-input.js";
+import { normalizeMediaPayload } from "../internal/file-input.js";
 import { logger } from "../internal/logger.js";
 import { planMake, type MakePlan, type MakeStep } from "../internal/make-plan.js";
-import { emit } from "../internal/output.js";
-import { pollUntilTerminal } from "../internal/poll.js";
+import { emit, emitEnvelope } from "../internal/output.js";
+import { emitResult, openCommand, type OpenedCommand } from "../internal/command-helpers.js";
+import { downloadArtifacts } from "../internal/download.js";
+import { parseTimeoutSeconds, pollUntilTerminal, type PollResult } from "../internal/poll.js";
 import { PRICING_DOCS } from "../internal/pricing.js";
-import { buildRuntime, readGlobalFlags, type Runtime } from "../internal/runtime.js";
-import { emitTerminalOutcome } from "../internal/task-command.js";
+import { okEnvelope, warning, type Warning } from "../internal/result.js";
+import { buildRuntime, type Runtime } from "../internal/runtime.js";
+import {
+  buildTaskResult,
+  emitTerminalOutcome,
+  preflightOutputPath,
+  submitCreate,
+  taskNextCommands,
+  wrapWithResult,
+} from "../internal/task-command.js";
+import { requireTaskResource } from "../client/resource-registry.js";
 import type { Task } from "../client/types.js";
 import type { TaskEndpoint } from "../client/endpoints/base.js";
 
@@ -42,6 +62,7 @@ interface MakeOptions {
   dryRun?: boolean;
   maxCredits?: number;
   async?: boolean;
+  stopAfterFirst?: boolean;
   timeout?: string;
 }
 
@@ -61,13 +82,23 @@ export const makeCommand = new Command("make")
   .addOption(
     new Option(
       "--async",
-      "start the first step and return its task id instead of running the whole chain",
+      "submit the first step and return its task id immediately (no polling); later steps are reported as pending",
+    ).default(false),
+  )
+  .addOption(
+    new Option(
+      "--stop-after-first",
+      "run the first step to completion, then return the resume plan instead of continuing",
     ).default(false),
   )
   .addOption(new Option("--timeout <seconds>", "max seconds to poll each step").default("600"))
   .action(async (input: string, opts: MakeOptions, thisCmd: Command) => {
+    const opened = openCommand(thisCmd, "make", "legacy");
+    if (opts.async && opts.stopAfterFirst) {
+      throw new UsageError("--async and --stop-after-first are mutually exclusive (--async submits and returns; --stop-after-first waits for step 1)");
+    }
+    const timeoutSeconds = parseTimeoutSeconds(opts.timeout ?? "600");
     const plan = planMake(input);
-    const flags = readGlobalFlags(thisCmd);
 
     // Budget check before anything is created: refusing costs nothing, and a
     // refusal after step one has already billed is not a budget at all.
@@ -79,51 +110,180 @@ export const makeCommand = new Command("make")
     }
 
     if (opts.dryRun) {
-      emit(planPayload(plan), { format: flags.format });
+      await emitResult(opened, planPayload(plan), { ...planPayload(plan), dry_run: true, requests_made: 0 });
       return;
     }
 
-    await runChain(plan, opts, await buildRuntime(flags));
+    await runChain(plan, opts, timeoutSeconds, await buildRuntime(opened.flags), opened);
   });
 
-async function runChain(plan: MakePlan, opts: MakeOptions, runtime: Runtime): Promise<void> {
-  const timeoutSeconds = Number(opts.timeout ?? 600);
+interface ExecutedStep {
+  step: number;
+  resource: string;
+  action: string;
+  task_id: string;
+  status: string | null;
+  operation_id: string;
+}
+
+function pendingSteps(plan: MakePlan, from: number, parentTaskId: string | null, output: string | undefined): Array<Record<string, unknown>> {
+  return plan.steps.slice(from).map((s) => ({
+    step: s.index,
+    resource: s.resource,
+    action: s.action,
+    estimated_credits: s.credits,
+    requires: `step ${s.index - 1} SUCCEEDED`,
+    command:
+      s.resource === "text-to-3d" && s.action === "refine"
+        ? `meshy text-to-3d create --mode refine --preview-task-id ${parentTaskId ?? "<preview-task-id>"}${output ? ` -o ${output}` : ""}`
+        : null,
+  }));
+}
+
+async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: number, runtime: Runtime, opened: OpenedCommand): Promise<void> {
   const payloadFor = await buildPayloads(plan);
+  // -o is checked before the first billable request: an unwritable or
+  // out-of-workspace target must refuse while the run is still free.
+  if (runtime.flags.output) preflightOutputPath(runtime.flags.output, runtime.flags.workspaceRoot);
+  const executed: ExecutedStep[] = [];
+  const warnings: Warning[] = [];
 
   /** Task id of the last step that reached SUCCEEDED — what a resume hangs off. */
   let completedTaskId = "";
 
   for (const step of plan.steps) {
     const endpoint = endpointFor(step, runtime);
+    const descriptor = requireTaskResource(step.resource);
     const payload = payloadFor[step.index - 1]?.(completedTaskId) ?? {};
     logger.debug(`make step ${step.index} payload`, payload);
 
     // The id is announced before polling starts: an interrupted run leaves a
     // task progressing server-side, and the caller needs its id to exist
     // somewhere other than this process's memory.
-    const taskId = await endpoint.create(payload);
-    announceStart(plan, step, taskId);
-
-    const started = Date.now();
-    const { task, timedOut } = await pollUntilTerminal(endpoint, taskId, {
-      timeoutSeconds,
-      intervalMs: runtime.config.pollIntervalMs,
+    const submitted = await submitCreate(runtime, descriptor, endpoint, payload, null, {
+      label: `make: the ${step.label} request`,
+      extraResult: { step: step.index, route: plan.route, executed: [...executed] },
     });
-    const elapsed = (Date.now() - started) / 1000;
+    const { taskId, operationId } = submitted;
+    warnings.push(...submitted.warnings);
+    announceStart(plan, step, taskId);
+    executed.push({ step: step.index, resource: step.resource, action: step.action, task_id: taskId, status: null, operation_id: operationId });
+    const submission = { state: "accepted", operation_id: operationId, task_id: taskId };
+
+    if (opts.async) {
+      // Exactly one POST, zero polls: the caller owns the rest of the plan.
+      const pending = pendingSteps(plan, step.index, null, runtime.flags.output);
+      if (opened.schema === "v1") {
+        await emitEnvelope(
+          okEnvelope("make", {
+            route: plan.route,
+            submitted: { step: step.index, resource: step.resource, action: step.action, task_id: taskId, operation_id: operationId },
+            submission,
+            task: null,
+            executed,
+            pending_steps: pending,
+            estimated_credits: plan.estimatedCredits,
+            next: taskNextCommands(descriptor, taskId),
+          }, warnings),
+          opened.format,
+        );
+        return;
+      }
+      emit(
+        {
+          command: "make",
+          route: plan.route,
+          submitted: step.action,
+          task_id: taskId,
+          status: null,
+          operation_id: operationId,
+          pending_steps: pending,
+          hint: `meshy ${step.resource} wait ${taskId}`,
+        },
+        { format: runtime.flags.format },
+      );
+      return;
+    }
+
+    const started = performance.now();
+    let poll: PollResult;
+    try {
+      poll = await pollUntilTerminal(endpoint, taskId, {
+        timeoutSeconds,
+        intervalMs: runtime.config.pollIntervalMs,
+        requestTimeoutMs: runtime.config.readTimeoutMs,
+        signal: abortSignal(),
+      });
+    } catch (err) {
+      const context = {
+        route: plan.route,
+        executed,
+        task_id: taskId,
+        submission,
+        task: null,
+        pending_steps: pendingSteps(plan, step.index, null, runtime.flags.output),
+        next: taskNextCommands(descriptor, taskId),
+      };
+      if (wasInterrupted() || abortSignal().aborted) {
+        throw new CliError({
+          code: "interrupted",
+          message: `make: interrupted while waiting for ${step.label} (task ${taskId}); the server keeps running it`,
+          recovery: { action: "wait", automatic: false, command: `meshy ${step.resource} wait ${taskId}` },
+          result: context,
+        });
+      }
+      // A polling failure is not "no task": the id and the resume command travel with the error.
+      throw wrapWithResult(err, context);
+    }
+    const { task, raw, timedOut, aborted } = poll;
+    const elapsed = (performance.now() - started) / 1000;
+    executed[executed.length - 1]!.status = task?.status ?? null;
     announceOutcome(task, timedOut, elapsed);
 
-    if (timedOut || task.status !== "SUCCEEDED") {
-      throw stepFailure(plan, step, task, timedOut, completedTaskId, runtime);
+    if (aborted) {
+      throw new CliError({
+        code: "interrupted",
+        message: `make: interrupted while waiting for ${step.label} (task ${taskId}); the server keeps running it`,
+        recovery: { action: "wait", automatic: false, command: `meshy ${step.resource} wait ${taskId}` },
+        result: {
+          route: plan.route,
+          executed,
+          task_id: taskId,
+          submission,
+          task: task ? buildTaskResult({ task, raw, descriptor, includeRaw: false, submission }).task : null,
+          pending_steps: pendingSteps(plan, step.index, null, runtime.flags.output),
+          next: taskNextCommands(descriptor, taskId),
+        },
+      });
+    }
+
+    if (timedOut || !task || task.status !== "SUCCEEDED") {
+      throw stepFailure(plan, step, task, taskId, raw, timedOut, completedTaskId, runtime, executed, opened);
     }
 
     if (step.index === plan.steps.length) {
-      await emitTerminalOutcome(task, false, elapsed, step.resource, runtime);
+      await finalOutcome(opened, runtime, plan, step, task, raw, elapsed, executed, warnings);
       return;
     }
 
     completedTaskId = task.id;
 
-    if (opts.async) {
+    if (opts.stopAfterFirst) {
+      const pending = pendingSteps(plan, step.index, task.id, runtime.flags.output);
+      if (opened.schema === "v1") {
+        await emitEnvelope(
+          okEnvelope("make", {
+            route: plan.route,
+            stopped_after: { step: step.index, resource: step.resource, action: step.action, task_id: task.id, status: task.status },
+            task: buildTaskResult({ task, raw, descriptor, includeRaw: false, submission }).task,
+            executed,
+            pending_steps: pending,
+            resume: resumeCommand(plan, task.id, runtime) ?? null,
+          }, warnings),
+          opened.format,
+        );
+        return;
+      }
       emit(
         {
           command: "make",
@@ -138,6 +298,72 @@ async function runChain(plan: MakePlan, opts: MakeOptions, runtime: Runtime): Pr
       return;
     }
   }
+}
+
+async function finalOutcome(
+  opened: OpenedCommand,
+  runtime: Runtime,
+  plan: MakePlan,
+  step: MakeStep,
+  task: Task,
+  raw: unknown,
+  elapsed: number,
+  executed: ExecutedStep[],
+  warnings: Warning[],
+): Promise<void> {
+  const descriptor = requireTaskResource(step.resource);
+  const submission = { state: "accepted", operation_id: executed[executed.length - 1]?.operation_id ?? null, task_id: task.id };
+  if (opened.schema !== "v1") {
+    // Legacy shape, same rule as the resource commands: a download failure
+    // after the chain succeeded still names the task, its submission and the
+    // command that fetches the assets again.
+    try {
+      await emitTerminalOutcome(task, false, elapsed, step.resource, runtime);
+    } catch (err) {
+      const wrapped = wrapWithResult(err, { route: plan.route, executed, task_id: task.id, submission, next: taskNextCommands(descriptor, task.id) });
+      throw new CliError({
+        code: wrapped.code,
+        message: wrapped.message,
+        exitCode: wrapped.exitCode,
+        httpStatus: wrapped.httpStatus,
+        retryable: wrapped.retryable,
+        recovery: wrapped.recovery ?? { action: "download", automatic: false, command: `meshy download --resource ${step.resource} --task-id ${task.id} --all --output-dir <dir>` },
+        hint: wrapped.hint ?? wrapped.recovery?.command ?? `meshy download --resource ${step.resource} --task-id ${task.id} --all --output-dir <dir>`,
+        details: wrapped.details,
+        warnings: wrapped.warnings,
+        result: wrapped.result,
+        cause: err,
+      });
+    }
+    return;
+  }
+  const base = buildTaskResult({ task, raw, descriptor, includeRaw: false, submission });
+  let downloads = base.downloads as Record<string, unknown>;
+  if (runtime.flags.output) {
+    try {
+      const { files, metadataPath, materialLinks } = await downloadArtifacts(task, runtime.flags.output, step.resource, { root: runtime.flags.workspaceRoot, signal: abortSignal() });
+      if (materialLinks) warnings.push(...materialLinks.warnings);
+      downloads = { state: "completed", files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })), metadata_path: metadataPath, material_links: materialLinks };
+    } catch (err) {
+      // Whatever the downloader already committed stays in the manifest; the
+      // failure keeps its own class (HTTP status, interrupted, local I/O).
+      const partial = err instanceof CliError && err.result && typeof err.result["downloads"] === "object" ? (err.result["downloads"] as Record<string, unknown>) : { state: "failed", files: [], metadata_path: null };
+      const interrupted = (err instanceof CliError && err.code === "interrupted") || wasInterrupted();
+      throw new CliError({
+        code: interrupted ? "interrupted" : err instanceof CliError ? err.code : "local_io",
+        message: `make finished (task ${task.id}) but downloading its assets ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`,
+        httpStatus: err instanceof CliError ? err.httpStatus : null,
+        retryable: err instanceof CliError ? err.retryable : false,
+        recovery: err instanceof CliError && err.recovery ? err.recovery : { action: "download", automatic: false, command: `meshy download --resource ${step.resource} --task-id ${task.id} --all --output-dir <dir>` },
+        hint: err instanceof CliError ? err.hint : undefined,
+        details: err instanceof CliError ? err.details : undefined,
+        warnings: [...warnings, ...(err instanceof CliError ? err.warnings : [])],
+        result: { route: plan.route, executed, task_id: task.id, task: base.task, submission: base.submission, downloads: partial, next: taskNextCommands(descriptor, task.id) },
+        cause: err,
+      });
+    }
+  }
+  await emitEnvelope(okEnvelope("make", { route: plan.route, executed, task: base.task, submission: base.submission, downloads, pending_steps: [] }, warnings), opened.format);
 }
 
 /**
@@ -166,12 +392,11 @@ async function buildPayloads(
 
   // Resolve the image before anything is created: a missing file or an
   // unreachable URL must fail while the run is still free.
-  const resolved: Record<string, unknown> = { imageUrl: plan.input };
-  await resolveImageFields(resolved);
+  const { payload } = await normalizeMediaPayload({ image_url: plan.input }, requireTaskResource("image-to-3d").mediaFields, { signal: abortSignal() });
 
   return [
     () => ({
-      image_url: resolved.imageUrl,
+      image_url: payload.image_url,
       should_texture: true,
       enable_pbr: true,
       texture_resolution: "4k",
@@ -203,27 +428,50 @@ export function resumeCommand(
 function stepFailure(
   plan: MakePlan,
   step: MakeStep,
-  task: Task,
+  task: Task | null,
+  taskId: string,
+  raw: unknown,
   timedOut: boolean,
   completedTaskId: string,
   runtime: Runtime,
-): HintedError {
+  executed: ExecutedStep[],
+  opened: OpenedCommand,
+): Error {
+  const descriptor = requireTaskResource(step.resource);
+  const taskView = task ? buildTaskResult({ task, raw, descriptor, includeRaw: false, submission: { state: "accepted", operation_id: null, task_id: taskId } }).task : null;
+  const resume = resumeCommand(plan, completedTaskId, runtime);
+  const status = task?.status ?? "unknown";
+  if (opened.schema === "v1") {
+    if (timedOut) {
+      return new CliError({
+        code: "timed_out",
+        message: `make: ${step.label} did not finish within the timeout — task ${taskId} is still running`,
+        recovery: { action: "wait", automatic: false, command: `meshy ${step.resource} wait ${taskId}` },
+        result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, null, runtime.flags.output), resume: resume ?? null, next: taskNextCommands(descriptor, taskId) },
+      });
+    }
+    return new CliError({
+      code: "task_failed",
+      message: task?.task_error?.message || `make: ${step.label} ended as ${status} — task ${taskId}`,
+      recovery: resume ? { action: "resume", automatic: false, command: resume } : null,
+      result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, completedTaskId || null, runtime.flags.output), resume: resume ?? null },
+    });
+  }
   if (timedOut) {
     return new HintedError({
-      message: `make: ${step.label} did not finish within the timeout — task ${task.id} is still running`,
+      message: `make: ${step.label} did not finish within the timeout — task ${taskId} is still running`,
       code: "step_timeout",
-      hint: `meshy ${step.resource} wait ${task.id}`,
+      hint: `meshy ${step.resource} wait ${taskId}`,
       exitCode: 8,
     });
   }
   // A resume is only offered when an earlier step actually succeeded; without
   // one, a suggested command would be a guess, and a wrong command is worse
   // than none.
-  const resume = resumeCommand(plan, completedTaskId, runtime);
   return new HintedError({
     message:
-      task.task_error?.message ||
-      `make: ${step.label} ended as ${task.status} — task ${task.id}`,
+      task?.task_error?.message ||
+      `make: ${step.label} ended as ${status} — task ${taskId}`,
     code: "step_failed",
     ...(resume ? { hint: `${resume}   # step ${step.index} failed; step ${step.index - 1} is kept` } : {}),
   });
@@ -253,7 +501,9 @@ function announceStart(plan: MakePlan, step: MakeStep, taskId: string): void {
   process.stderr.write(`[${step.index}/${plan.steps.length}] ${step.label}  ${taskId}\n`);
 }
 
-function announceOutcome(task: Task, timedOut: boolean, elapsed: number): void {
-  const mark = timedOut ? "timed out" : task.status === "SUCCEEDED" ? "ok" : task.status;
+function announceOutcome(task: Task | null, timedOut: boolean, elapsed: number): void {
+  const mark = timedOut ? "timed out" : task ? (task.status === "SUCCEEDED" ? "ok" : task.status) : "no status received";
   process.stderr.write(`      ${mark} in ${elapsed.toFixed(0)}s\n`);
 }
+
+export { warning as _makeWarning };

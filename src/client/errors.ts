@@ -48,7 +48,7 @@ export class MeshyApiError extends Error {
   }
 }
 
-function codeForStatus(status: number): MeshyErrorCode {
+export function codeForStatus(status: number): MeshyErrorCode {
   if (status === 400 || status === 422) return "validation";
   if (status === 401) return "auth";
   if (status === 402) return "credit";

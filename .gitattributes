@@ -1,1 +1,2 @@
-dist/** linguist-generated=true
+# SSE fixtures end with the blank line that terminates their last event; that is protocol, not stray whitespace.
+tests/fixtures/skill-parity/*.sse -whitespace

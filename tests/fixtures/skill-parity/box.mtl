@@ -1,0 +1,3 @@
+# Synthetic, no external textures
+newmtl test_material
+Kd 0.8 0.8 0.8

@@ -1,0 +1,18 @@
+{
+  "id": "fixture-rig-1",
+  "type": "rigging",
+  "status": "SUCCEEDED",
+  "progress": 100,
+  "face_count": 250000,
+  "consumed_credits": 5,
+  "created_at": 0,
+  "finished_at": 1000,
+  "task_error": null,
+  "result": {
+    "rigged_character_glb_url": "https://assets.example.invalid/rigged.glb",
+    "basic_animations": {
+      "walking_glb_url": "https://assets.example.invalid/walk.glb",
+      "running_glb_url": "https://assets.example.invalid/run.glb"
+    }
+  }
+}
