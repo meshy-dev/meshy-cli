@@ -182,7 +182,11 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
   deliberately left as written.
 - `result.project.action: "failed"` (download `--project`, exit 11) → the assets are on
   disk (`result.downloads.files`); repair the project's `metadata.json`, then run
-  `error.recovery.command` (`meshy project record …`) — do not download again.
+  `error.recovery.command` (`meshy project record …`, it already carries the original
+  `--workspace` and `--operation-id`) verbatim — do not download or create again. The same
+  command appears after a task verb's `--project` record failure (legacy: `hint`); when the
+  error says the project is *no longer inside the workspace* there is deliberately no
+  command — move the project back first.
 - Exit 10 → reconcile with `<resource> list`; never submit the same create again blindly.
 - A `FAILED` task → relay `result.task.task_error.message` verbatim; do not guess a cause.
 - Any error may carry `error.recovery.command` — prefer it over improvising.

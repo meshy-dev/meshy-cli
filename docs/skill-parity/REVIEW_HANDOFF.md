@@ -459,7 +459,7 @@ v1（exit 7）：
           "get",
           "list",
           "wait",
-      
+
 … (truncated)
 ```
 

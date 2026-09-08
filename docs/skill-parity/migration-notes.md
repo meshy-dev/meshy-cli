@@ -162,6 +162,15 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 | `download --project` with a metadata.json that is a symlink or not valid JSON, or a blank `--stage` | detected after the transfer | refused before any request ("nothing was downloaded") | R4-F02 |
 | task verbs `--project` record failure | `local_io` without a recovery | same class, plus `recovery.action="record_project"` and the record command as hint | R4-F02 |
 
+### 3.5 Corrections from Codex review round 5 (visible in both schemas)
+
+| Behaviour | before the fix | after | Finding |
+| --- | --- | --- | --- |
+| `record_project` recovery command after `--project P --workspace P` | no `--workspace`; replayed, it refreshed the parent's history.json and locked outside the boundary | carries `--workspace <resolved path>` (shell-quoted); replayed verbatim it records metadata, skips the parent index with `index_dirty`, writes nothing outside; no workspace → nothing appended | R5-F01 |
+| MTL reference used under two keys where one key hits a texture and the other is ambiguous (`map_Kd shared.png` + `map_Bump shared.png`, one base color, two normals) | the hit line rewritten, the other left | neither line rewritten; both `ambiguous` with their own candidates and one cross-key note ("one reference names one file") | R5-F02 |
+| task verbs `--project` when metadata.json disappears (or the project leaves the workspace) after the preflight | `local_io`, `recovery: null`, hint = `wait` | missing/damaged/locked → `record_project` command with `--operation-id` and `--workspace` (hint too); project outside the workspace → explicit boundary message, task and journal named, no command | R5-F03 |
+| `download --project` when metadata.json disappears during the transfer | `not_found` (exit 5) from the record step | `local_io` (exit 11) with the full result and the record_project recovery | R5-F03 |
+
 New global flags: `--output-schema`, `--api-key-file`, `--workspace`, `--no-update-check`,
 `--base-url-creative-lab`. New per-command flags on task verbs: `--save-json`,
 `--include-raw`, `--project`, `--stage`, `--operation-id`, `--stop-after-first` (make),

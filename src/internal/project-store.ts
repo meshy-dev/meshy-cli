@@ -19,7 +19,7 @@
  * The CLI's own download `meta.json` is a third format and never written here.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, copyFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, copyFileSync } from "node:fs";
 import { basename, join, relative, resolve as resolvePath, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { writeJsonFile } from "./atomic-file.js";
@@ -496,11 +496,46 @@ function shellArg(value: string): string {
 }
 
 /**
+ * A project that was initialised when a command started must still be one when
+ * its record is written. metadata.json missing or replaced by something that is
+ * not a regular file is a local condition of the project — reported as
+ * `local_io`, never as an API "not found" — and the caller says how to redo the
+ * record once the project is restored.
+ */
+export function assertProjectMetadataPresent(projectDir: string, flag: string): void {
+  const target = metadataPath(projectDir);
+  let st: ReturnType<typeof lstatSync>;
+  try {
+    st = lstatSync(target);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      throw new CliError({
+        code: "local_io",
+        message: `--project ${flag} has no metadata.json any more (it was an initialised project when this command started)`,
+        cause: err,
+      });
+    }
+    throw err;
+  }
+  if (!st.isFile()) {
+    throw new CliError({
+      code: "local_io",
+      message: `--project ${flag}: metadata.json is not a regular file (${st.isSymbolicLink() ? "a symbolic link" : st.isDirectory() ? "a directory" : "special"}); refusing to write through it`,
+    });
+  }
+}
+
+/**
  * The `meshy project record` invocation that redoes exactly one thing: the
  * metadata entry a command could not write. Assets, task and journal are left
- * alone — the caller runs it once the project directory is repaired.
+ * alone — the caller runs it once the project directory is repaired. The
+ * original write boundary (`--workspace`, resolved to an absolute path) travels
+ * with the command: a recovery never reaches further than the invocation that
+ * failed, so a workspace equal to the project still leaves the parent's
+ * history index alone (`index_dirty`), exactly as the original would have.
  */
-export function projectRecordCommand(projectDir: string, input: RecordInput, opts: { root?: string } = {}): string {
+export function projectRecordCommand(projectDir: string, input: RecordInput, opts: { root?: string; workspace?: string } = {}): string {
   const parts = ["meshy", "project", "record", "--project", shellArg(projectDir), "--task-id", shellArg(input.taskId), "--stage", shellArg(input.stage)];
   if (input.resource) parts.push("--resource", shellArg(input.resource));
   if (input.taskType) parts.push("--task-type", shellArg(input.taskType));
@@ -510,6 +545,7 @@ export function projectRecordCommand(projectDir: string, input: RecordInput, opt
   if (input.taskJson) parts.push("--task-json", shellArg(input.taskJson));
   if (input.operationId) parts.push("--operation-id", shellArg(input.operationId));
   if (opts.root) parts.push("--root", shellArg(opts.root));
+  if (opts.workspace) parts.push("--workspace", shellArg(resolvePath(opts.workspace)));
   return parts.join(" ");
 }
 

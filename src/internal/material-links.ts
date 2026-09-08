@@ -422,47 +422,75 @@ function pairId(key: string, ref: string): string {
 }
 
 /**
- * Second pass: heuristic hits compete on the texture they actually reached.
- * A texture that any *other* distinct reference also reaches — by a hit of
- * either kind, or as an ambiguity it could not decide — is not handed to a
- * heuristic one: nothing shows those references name the same image. A single
- * reference that different keys would send to different textures is not
- * rewritten at all. Identity hits are kept as they are.
+ * Second pass, two steps.
+ *
+ * Step 1 — one reference is one file. Every line that names the same file is
+ * reconciled across its keys: with identity evidence the keys agree by
+ * construction; otherwise each key's channel rule yields a candidate set (a hit
+ * is a set of one, an ambiguity its candidates, a key whose channel has no
+ * texture contributes nothing) and all of them must be the same single texture.
+ * When they are not — one key would make the file the base color while another
+ * could only make it one of two normal maps — no single texture fits every use,
+ * so every line of that reference stays as written and says why.
+ *
+ * Step 2 — one texture is one file too. A heuristic hit is vetoed when any
+ * *other* distinct reference contends for the same texture, by a hit of either
+ * kind or as an ambiguity it could not decide: nothing shows those references
+ * name the same image. Identity hits are never vetoed.
  */
 function arbitrate(pairs: MapPair[]): Map<string, Resolution> {
-  // texture name → the distinct references contending for it and how they got there
+  const decided = new Map<string, Resolution>();
+  // --- step 1: reconcile every reference across its keys
+  const byRef = new Map<string, MapPair[]>();
+  for (const p of pairs) {
+    const group = byRef.get(p.ref) ?? [];
+    group.push(p);
+    byRef.set(p.ref, group);
+  }
+  const candidatesOf = (res: Resolution): string[] | null => (res.kind === "hit" ? [res.name] : res.kind === "ambiguous" ? res.candidates : null);
+  const sameSet = (a: string[], b: string[]): boolean => a.length === b.length && a.every((x) => b.includes(x));
+  for (const [ref, group] of byRef) {
+    const evidence = group.filter((p) => candidatesOf(p.res) !== null);
+    const identity = group.some((p) => p.res.kind === "hit" && p.res.identity);
+    const first = evidence[0] ? candidatesOf(evidence[0].res)! : null;
+    const consistent = identity || evidence.length <= 1 || evidence.every((p) => sameSet(candidatesOf(p.res)!, first!));
+    if (consistent) {
+      for (const p of group) decided.set(pairId(p.key, p.ref), p.res);
+      continue;
+    }
+    const uses = evidence
+      .map((p) => (p.res.kind === "hit" ? `${p.key} would make it ${p.res.name} (${p.res.method})` : `${p.key} could only make it ${(p.res as { candidates: string[] }).candidates.join(" or ")}`))
+      .join(" while ");
+    const note = `'${ref}' is used by ${evidence.map((p) => p.key).join(" and ")} but resolves differently per key: ${uses}; one reference names one file, so none of its lines is rewritten`;
+    for (const p of group) {
+      const own = candidatesOf(p.res);
+      decided.set(pairId(p.key, p.ref), own ? { kind: "ambiguous", method: "ambiguous", candidates: own, note } : p.res);
+    }
+  }
+  // --- step 2: heuristic hits compete on the texture they actually reached
   const contenders = new Map<string, Map<string, LinkMethod>>();
   const contend = (name: string, ref: string, method: LinkMethod, identity: boolean): void => {
-    const byRef = contenders.get(name) ?? new Map<string, LinkMethod>();
-    if (!byRef.has(ref) || identity) byRef.set(ref, method);
-    contenders.set(name, byRef);
+    const byRefName = contenders.get(name) ?? new Map<string, LinkMethod>();
+    if (!byRefName.has(ref) || identity) byRefName.set(ref, method);
+    contenders.set(name, byRefName);
   };
-  for (const { ref, res } of pairs) {
+  for (const { key, ref } of pairs) {
+    const res = decided.get(pairId(key, ref))!;
     if (res.kind === "hit") contend(res.name, ref, res.method, res.identity);
     else if (res.kind === "ambiguous") for (const c of res.candidates) contend(c, ref, "ambiguous", false);
   }
-  const decided = new Map<string, Resolution>();
-  for (const { key, ref, res } of pairs) {
+  for (const { key, ref } of pairs) {
     const id = pairId(key, ref);
-    if (res.kind !== "hit" || res.identity) {
-      decided.set(id, res);
-      continue;
-    }
+    const res = decided.get(id)!;
+    if (res.kind !== "hit" || res.identity) continue;
     const rivals = [...(contenders.get(res.name) ?? new Map<string, LinkMethod>())].filter(([r]) => r !== ref);
-    const elsewhere = pairs.filter((p) => p.ref === ref && p.res.kind === "hit" && p.res.name !== res.name);
-    if (rivals.length === 0 && elsewhere.length === 0) {
-      decided.set(id, res);
-      continue;
-    }
+    if (rivals.length === 0) continue;
     // The note is the same for every member of the group, so the caller's
     // warning can say it once.
-    const note =
-      rivals.length > 0
-        ? `${[[ref, res.method] as [string, LinkMethod], ...rivals]
-            .sort((a, b) => a[0].localeCompare(b[0]))
-            .map(([r, m]) => `'${r}' (${m})`)
-            .join(" and ")} compete for ${res.name}; different references cannot share one texture without evidence that they name the same image`
-        : `'${ref}' would be rewritten to ${res.name} for ${key} but to ${elsewhere.map((p) => `${(p.res as { name: string }).name} for ${p.key}`).join(", ")}; one reference names one file`;
+    const note = `${[[ref, res.method] as [string, LinkMethod], ...rivals]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([r, m]) => `'${r}' (${m})`)
+      .join(" and ")} compete for ${res.name}; different references cannot share one texture without evidence that they name the same image`;
     decided.set(id, { kind: "ambiguous", method: "ambiguous", candidates: [res.name], note });
   }
   return decided;

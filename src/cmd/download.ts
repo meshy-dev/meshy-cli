@@ -24,7 +24,7 @@ import { downloadAssets, type DownloadedFile } from "../internal/download.js";
 import { CliError, UsageError, type Warning } from "../internal/errors.js";
 import { realpathLenient, resolveWithinRoot, safeSegment } from "../internal/paths.js";
 import { warning } from "../internal/result.js";
-import { indexRootFor, projectRecordCommand, readProject, recordTask, stageFromTaskType, type RecordInput } from "../internal/project-store.js";
+import { assertProjectMetadataPresent, indexRootFor, projectRecordCommand, readProject, recordTask, stageFromTaskType, type RecordInput } from "../internal/project-store.js";
 import { buildLocalRuntime, buildRuntime } from "../internal/runtime.js";
 import { extractTaskObject } from "../internal/task-view.js";
 import { relative } from "node:path";
@@ -282,21 +282,26 @@ export const downloadCommand = new Command("download")
         status: typeof task["status"] === "string" ? (task["status"] as string) : null,
         files: [],
       };
+      const workspace = opened.flags.workspace ? resolvePath(opened.flags.workspace) : undefined;
       try {
         // Compare in one real-path frame: the project may be reached through an
         // alias (a symlinked parent, macOS /var → /private/var) while the
         // downloader reports real paths; the recorded name is relative to the real project.
+        // The file list is known before the project is examined, so a recovery
+        // command always names what landed inside the project.
         const projectReal = realpathLenient(projectDir);
         input.files = written
           .map((f) => relative(projectReal, realpathLenient(f.path)).split(/[\\/]/).join("/"))
           .filter((f) => f.length > 0 && !f.startsWith("..") && !f.startsWith("/"));
+        // The project passed the preflight; it must still be one now.
+        assertProjectMetadataPresent(projectDir, opts.project!);
         const indexRoot = indexRootFor(projectDir, undefined, opened.flags.workspace);
         const rec = recordTask(projectDir, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
         if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}`));
         if (input.files.length !== written.length) warnings.push(warning("files_outside_project", "some files were written outside the project directory and were not recorded"));
         project = { project_dir: projectDir, action: rec.action, stage: rec.entry.stage, recorded_files: input.files };
       } catch (err) {
-        throw projectRecordFailure(err, { projectDir, dir, input, written: written.length, outcome, warnings });
+        throw projectRecordFailure(err, { projectDir, workspace, dir, input, written: written.length, outcome, warnings });
       }
     }
     await emitResult(opened, null, { ...outcome, project }, { warnings });
@@ -342,12 +347,12 @@ function preflightProject(projectDir: string, flag: string, stage: string | unde
  */
 function projectRecordFailure(
   err: unknown,
-  ctx: { projectDir: string; dir: string; input: RecordInput; written: number; outcome: Record<string, unknown>; warnings: Warning[] },
+  ctx: { projectDir: string; workspace: string | undefined; dir: string; input: RecordInput; written: number; outcome: Record<string, unknown>; warnings: Warning[] },
 ): CliError {
   const base = err instanceof CliError ? err : null;
   const code = base?.code ?? "local_io";
   const reason = err instanceof Error ? err.message : String(err);
-  const command = projectRecordCommand(ctx.projectDir, ctx.input);
+  const command = projectRecordCommand(ctx.projectDir, ctx.input, { workspace: ctx.workspace });
   const recovery = { action: "record_project", automatic: false, command };
   return new CliError({
     code,

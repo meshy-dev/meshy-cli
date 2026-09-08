@@ -592,3 +592,63 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   record, `executed[0].operation_id` against step 1's record, the refine
   payload's `preview_task_id` against step 1, and the request sequence
   POST GET POST GET GET. C06 keeps the create/wait/get/sidecar/SIGINT scenarios.
+
+## D-054 A recovery command carries the original write boundary
+
+- R5-F01: `projectRecordCommand` emitted `meshy project record …` without the
+  invocation's `--workspace`. Replayed after a repair, the command wrote where
+  the original could not: with a workspace equal to the project, the original
+  records metadata and skips the parent's history index (`index_dirty`), while
+  the recovery refreshed that index and created its lock outside the boundary.
+  The helper now takes the resolved absolute workspace and appends
+  `--workspace <path>` (shell-quoted like every other argument); both callers —
+  `download`'s `projectRecordFailure` and the task verbs' `attachToProject` —
+  pass it. A recovery never reaches further than the command that failed; it is
+  not made to succeed by dropping a constraint. Without an explicit workspace
+  nothing is appended and the parent index is refreshed as before. The tests
+  replay the command verbatim (nothing appended), including a workspace path
+  with a space and a quote character.
+
+## D-055 One reference is one file: keys are reconciled before textures compete
+
+- R5-F02: the same reference under two MTL keys — `map_Kd shared.png`
+  (heuristic hit on the only base color) and `map_Bump shared.png` (ambiguous
+  between two normals) — had only its *hits* compared across keys, so the base
+  color line was rewritten while the normal line stayed, splitting one file into
+  two. `arbitrate` now runs in two steps. Step 1 reconciles every reference
+  across its keys: identity evidence (source name, safe saved name, source stem)
+  is key-independent and wins as before; otherwise each key's channel rule yields
+  a candidate set (a hit is a set of one, an ambiguity its candidates, a key
+  whose channel has no texture contributes nothing) and all sets must be the same
+  single texture — if not, every line of that reference stays as written with
+  `method: "ambiguous"`, its own candidates and one note that spells out what
+  each key would have made of it ("one reference names one file"). Step 2 is the
+  round-4 rule: a heuristic hit is vetoed when any other distinct reference
+  contends for the texture. The reviewer's 8 × 2 matrix (identity + heuristic,
+  ambiguous rival, same reference with two hits / hit + ambiguity / same identity
+  / same fallback, distinct channels, identity with an ambiguous rival) is a
+  repository test; D01, C05, N04 and the round-1 relink cases are unchanged.
+
+## D-056 The task verbs check the project inside the recovery context
+
+- R5-F03: `attachToProject` resolved `--project` (metadata present, inside the
+  workspace) before its try block, so a project whose metadata.json vanished
+  between the preflight and the record step failed with `local_io` and a bare
+  `wait` hint — task id, submission and journal intact, but no way to redo the
+  record — across legacy/v1 × get/wait/stream/create --async/sync create (the
+  damaged-JSON branch already had `record_project`). The recovery context (task
+  id, journal operation, stage, resolved workspace) is now built first, then two
+  distinct checks run inside the phase: a project that no longer resolves inside
+  the workspace (or became a symlink) is a *boundary* failure — the error names
+  the task and operation, says nothing was recorded and how to proceed, but hands
+  out no command that would write across the boundary; everything else
+  (`assertProjectMetadataPresent`: metadata.json missing or not a regular file
+  after the preflight, a damaged file, a lock, a full disk) is *repairable* and
+  gets the one `meshy project record …` command with `--operation-id` and the
+  original `--workspace` (also the `hint`, so the legacy payload carries it).
+  Nothing is re-submitted, no `project init` is suggested for a project that was
+  valid, and `index_dirty` still means only "metadata committed, history index
+  not". `meshy download --project` applies the same metadata assertion before its
+  record step, so a metadata.json that disappears during the transfer is
+  `local_io` with the record_project recovery rather than an API-style
+  `not_found`.

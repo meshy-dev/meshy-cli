@@ -398,8 +398,8 @@ test("D02/R4-F02 download --project: a record failure after the transfer (metada
       assert.deepEqual(e.result.project.recovery, e.error.recovery);
       assert.match(
         e.error.recovery.command,
-        new RegExp(`^meshy project record --project \\S+ --task-id round4-task --stage preview --resource text-to-3d --task-type text-to-3d-preview --status SUCCEEDED${recordedFiles.map((f) => ` --file ${f.replaceAll(".", "\\.")}`).join("")}$`),
-        `${label}: the recovery redoes exactly the metadata entry (files that landed inside the project)`,
+        new RegExp(`^meshy project record --project \\S+ --task-id round4-task --stage preview --resource text-to-3d --task-type text-to-3d-preview --status SUCCEEDED${recordedFiles.map((f) => ` --file ${f.replaceAll(".", "\\.")}`).join("")} --workspace \\S+$`),
+        `${label}: the recovery redoes exactly the metadata entry (files that landed inside the project) under the original workspace`,
       );
       return e;
     };
@@ -428,12 +428,14 @@ test("D02/R4-F02 download --project: a record failure after the transfer (metada
     assert.ok(readFileSync(backup).equals(outsideBefore), "the original metadata is intact");
     assert.deepEqual(tmpFiles(proj1), [], "no temp file left in the project");
     assert.deepEqual(api.requests.map((q) => [q.method, q.path]), [["GET", "/model.glb"]], "one asset GET, nothing else");
-    // Repair the directory and run the recovery command verbatim: it records exactly the downloaded file and makes no request.
+    // Repair the directory and run the recovery command verbatim — nothing appended: the
+    // command itself carries the original --workspace (round 5, R5-F01) and records exactly the downloaded file with no request.
     unlinkSync(meta1);
     renameSync(backup, meta1);
     const words = shellSplit(e1.error.recovery.command);
     assert.equal(words[0], "meshy");
-    const rec = await runCli([...words.slice(1), "--workspace", workspace], { env, cwd: dir });
+    assert.equal(realpathSync(words[words.indexOf("--workspace") + 1]!), realpathSync(workspace), "the recovery command carries the original workspace");
+    const rec = await runCli(words.slice(1), { env, cwd: dir });
     assert.equal(rec.code, 0, `${rec.stderr}\n${rec.stdout}`);
     const meta = JSON.parse(readFileSync(meta1, "utf8")) as { tasks: Array<{ task_id: string; stage: string; files: string[]; status: string | null; resource: string | null }> };
     assert.deepEqual(meta.tasks.map((t) => [t.task_id, t.stage, t.files, t.status, t.resource]), [["round4-task", "preview", ["model.glb"], "SUCCEEDED", "text-to-3d"]]);
@@ -637,7 +639,8 @@ test("R4-T01 make: two chain steps get different task ids; submission.operation_
         if (mode === "503") {
           assert.deepEqual(result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]], label);
         } else {
-          assert.notEqual(result.downloads.state, "completed", label);
+          assert.equal(result.downloads.state, "failed", `${label}: the interrupted transfer wrote nothing, so the manifest says failed (not not_requested)`);
+          assert.deepEqual(result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]], label);
           assert.ok(!existsSync(target), `${label}: no final file after the interrupt`);
         }
       } finally {

@@ -392,8 +392,9 @@ the files that landed inside the project are recorded in its `metadata.json`;
 when that record fails after the transfer (metadata.json replaced by a symlink,
 damaged, or locked) the command exits 11 with the complete `result` — manifest,
 `saved_json`, `project.action: "failed"` — and `error.recovery.command` is the
-one `meshy project record …` invocation that redoes the record; the assets stay
-where they landed. Problems visible before the transfer (no metadata.json, a
+one `meshy project record …` invocation that redoes the record — carrying the
+original `--workspace`, so a recovery never writes further than the command that
+failed; the assets stay where they landed. Problems visible before the transfer (no metadata.json, a
 symlink or invalid JSON in its place, a blank `--stage`) are refused with no
 request made. Asset hosts never
 receive the API credential; an expired signed URL is refreshed once when the

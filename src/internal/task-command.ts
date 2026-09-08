@@ -58,7 +58,7 @@ import {
 } from "./operation-store.js";
 import { originOf } from "./config.js";
 import { resolveWithinRoot } from "./paths.js";
-import { indexRootFor, projectRecordCommand, recordTask, saveTaskSnapshot, stageFromTaskType, type RecordInput } from "./project-store.js";
+import { assertProjectMetadataPresent, indexRootFor, projectRecordCommand, recordTask, saveTaskSnapshot, stageFromTaskType, type RecordInput } from "./project-store.js";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 
@@ -278,7 +278,15 @@ function resolveProjectDir(projectFlag: string, workspace: string | undefined, c
 /**
  * --project: snapshot the task (when a full task is known) and record it.
  * Failures keep the task id in the error result — a bookkeeping problem must
- * never read as "no task was created".
+ * never read as "no task was created". The recovery context (task, journal
+ * operation, stage, workspace) exists before the project is even looked at, so
+ * every failure of this phase — the directory resolving outside the workspace,
+ * a metadata.json that vanished or was damaged after the preflight, a lock, a
+ * full disk — carries it. Two kinds of failure, two answers: a project that no
+ * longer lies inside the write boundary gets no command that would cross it;
+ * anything else gets the one `meshy project record …` invocation (with the
+ * original `--workspace`) that redoes just the record once the project is
+ * restored. Nothing is re-submitted.
  */
 function attachToProject(
   opts: Record<string, unknown>,
@@ -292,7 +300,8 @@ function attachToProject(
 ): ProjectAttachment | null {
   const projectFlag = opts.project as string | undefined;
   if (!projectFlag) return null;
-  const projectDir = resolveProjectDir(projectFlag, opened.flags.workspace);
+  const workspace = opened.flags.workspace ? resolvePath(opened.flags.workspace) : undefined;
+  const projectDir = resolvePath(projectFlag);
   const stage = (opts.stage as string | undefined) ?? (typeof extra.payload?.["mode"] === "string" ? (extra.payload["mode"] as string) : descriptor.creativeLab?.stage ?? stageFromTaskType(task?.type, descriptor.id));
   const input: RecordInput = {
     taskId,
@@ -306,21 +315,33 @@ function attachToProject(
     operationId: extra.operationId ?? null,
     files: extra.files ?? [],
   };
+  // 1. The location. A project that now resolves outside the workspace, or has
+  //    become a symlink, is a boundary problem: the task exists and is journaled,
+  //    but no recovery command may be handed out that writes across that line.
+  if (workspace) {
+    try {
+      resolveWithinRoot(projectDir, workspace, { label: "--project" });
+    } catch (err) {
+      throw projectBoundaryFailure(err, taskId, projectFlag, input);
+    }
+  }
+  // 2. The record itself, including "is this still an initialised project".
   try {
+    assertProjectMetadataPresent(projectDir, projectFlag);
     const snapshot = task && raw ? saveTaskSnapshot(projectDir, taskId, raw) : null;
     input.taskJson = snapshot?.relative ?? null;
-    const indexRoot = indexRootFor(projectDir, undefined, opened.flags.workspace);
+    const indexRoot = indexRootFor(projectDir, undefined, workspace);
     const rec = recordTask(projectDir, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
     if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}; run \`meshy project rebuild-index\``));
     if (rec.migrated_from_legacy) warnings.push(warning("metadata_migrated", "legacy metadata.json migrated to schema_version 2 (backup kept beside it)"));
     return { project_dir: projectDir, snapshot: snapshot?.path ?? null, stage, action: rec.action, index: rec.index };
   } catch (err) {
     // The task exists and the journal is written; only the project entry is
-    // missing. The recovery redoes that one step — nothing is re-submitted.
-    const command = projectRecordCommand(projectDir, input);
+    // missing. The recovery redoes that one step under the original boundary.
+    const command = projectRecordCommand(projectDir, input, { workspace });
     throw new CliError({
       code: err instanceof CliError ? err.code : "local_io",
-      message: `task ${taskId} exists but recording it in ${projectDir} failed: ${err instanceof Error ? err.message : String(err)}`,
+      message: `task ${taskId} exists${input.operationId ? ` (operation ${input.operationId})` : ""} but recording it in ${projectDir} failed: ${err instanceof Error ? err.message : String(err)}; restore the project, then run: ${command}`,
       httpStatus: err instanceof CliError ? err.httpStatus : null,
       retryable: err instanceof CliError ? err.retryable : false,
       recovery: { action: "record_project", automatic: false, command },
@@ -329,6 +350,22 @@ function attachToProject(
       cause: err,
     });
   }
+}
+
+/**
+ * The project directory no longer resolves inside the workspace (or is a
+ * symlink). The task is known and journaled; the caller learns that, and that
+ * nothing was recorded — but no `meshy project record` command is offered,
+ * because the only one that would succeed is one without the boundary.
+ */
+function projectBoundaryFailure(err: unknown, taskId: string, projectFlag: string, input: RecordInput): CliError {
+  const reason = err instanceof Error ? err.message : String(err);
+  return new CliError({
+    code: "local_io",
+    message: `task ${taskId} exists${input.operationId ? ` (operation ${input.operationId})` : ""} but --project ${projectFlag} is no longer a target inside the workspace: ${reason}; nothing was recorded. Restore the project inside the workspace, then record the task with \`meshy project record\` from that workspace`,
+    details: { project: projectFlag, task_id: taskId, operation_id: input.operationId ?? null, stage: input.stage, recorded: false },
+    cause: err,
+  });
 }
 
 /** --save-json inside the task's context: a full disk or a vanished directory never hides the task id. */
