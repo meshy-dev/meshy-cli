@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "review round 4 fixes applied (Codex reviewed 9e43a77/235d6de: changes_requested, 2 P2 code findings + 1 P3 test gap); re-review pending; live checks not_run",
+  "status": "review round 5 fixes applied (Codex reviewed e7c0bbc/68690f9: changes_requested, 3 P2 code findings); re-review pending; live checks not_run",
   "rules": "Every entry binds a command or test id to the code SHA it ran against. not_run is not passed. Entries are replaced when re-run on a newer HEAD.",
   "environment": {
     "os": "macOS 26.6 (Darwin 25.6.0) arm64",
@@ -43,108 +43,108 @@
   "final_runs": [
     {
       "command": "node --version",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
       "duration_s": 0,
       "result": "passed"
     },
     {
       "command": "pnpm --version",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
-      "exit_code": 0,
-      "duration_s": 0,
-      "result": "passed"
-    },
-    {
-      "command": "pnpm install --frozen-lockfile",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
       "duration_s": 1,
       "result": "passed"
     },
     {
+      "command": "pnpm install --frozen-lockfile",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+      "exit_code": 0,
+      "duration_s": 0,
+      "result": "passed"
+    },
+    {
       "command": "pnpm typecheck",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
       "duration_s": 0,
       "result": "passed"
     },
     {
       "command": "pnpm build",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
-      "duration_s": 0,
+      "duration_s": 1,
       "result": "passed"
     },
     {
       "command": "pnpm test",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
-      "duration_s": 41,
+      "duration_s": 42,
       "result": "passed",
-      "tests": 547,
-      "pass": 547,
+      "tests": 552,
+      "pass": 552,
       "fail": 0,
       "skipped": 0
     },
     {
       "command": "bash -c test \"$(node dist/index.js --version)\" = \"$(node -p \"require(\\\"./package.json\\\").version\")\"",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
-      "duration_s": 0,
+      "duration_s": 1,
       "result": "passed"
     },
     {
       "command": "npm pack --json --pack-destination /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
-      "duration_s": 6,
+      "duration_s": 7,
       "result": "passed"
     },
     {
       "command": "npm install -g --prefix /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/meshy-cli-0.3.0.tgz",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
-      "duration_s": 6,
+      "duration_s": 7,
       "result": "passed"
     },
     {
       "command": "git diff --check fd94490",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
       "duration_s": 0,
       "result": "passed"
     },
     {
       "command": "git diff --check",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
       "duration_s": 0,
       "result": "passed"
     },
     {
       "command": "for i in 1..12: node --import tsx --test tests/poll.test.ts",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
-      "duration_s": 15,
+      "duration_s": 14,
       "result": "passed",
       "detail": "12/12 runs"
     },
     {
       "command": "for i in 1..8: node --import tsx --test tests/codex-review-round1.test.ts",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
-      "duration_s": 49,
+      "duration_s": 50,
       "result": "passed",
-      "detail": "8/8 runs; the R03 'expiry during the sleep' check now asserts the D-044 invariants (it failed 1/6 runs on 93e55bc before the test-only commit 68690f9)"
+      "detail": "8/8 runs; R03 asserts the D-044 invariants since 68690f9"
     },
     {
-      "command": "for i in 1..3: node --import tsx --test tests/codex-review-round4.test.ts tests/codex-review-round3.test.ts tests/codex-review-round2.test.ts",
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "command": "for i in 1..3: node --import tsx --test tests/codex-review-round5.test.ts tests/codex-review-round4.test.ts tests/codex-review-round3.test.ts tests/codex-review-round2.test.ts",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "exit_code": 0,
-      "duration_s": 17,
+      "duration_s": 23,
       "result": "passed",
-      "detail": "3/3 runs (SIGINT-during-relink, sidecar race, project-record race, make SIGINT and other timing-sensitive cases)"
+      "detail": "3/3 runs (SIGINT-during-relink, sidecar race, project-record races incl. the 20-entry recovery matrix, make SIGINT and other timing-sensitive cases)"
     }
   ],
   "behavior_tests": {
@@ -153,7 +153,7 @@
       "files": [
         "tests/cli-contract.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-002": {
       "result": "passed",
@@ -161,49 +161,49 @@
         "tests/cli-contract.test.ts",
         "tests/result.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-003": {
       "result": "passed",
       "files": [
         "tests/cli-contract.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-004": {
       "result": "passed",
       "files": [
         "tests/cli-contract.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-005": {
       "result": "passed",
       "files": [
         "tests/cli-contract.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-006": {
       "result": "passed",
       "files": [
         "tests/task-lifecycle.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-007": {
       "result": "passed",
       "files": [
         "tests/task-lifecycle.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-008": {
       "result": "passed",
       "files": [
         "tests/task-view.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-009": {
       "result": "passed",
@@ -212,13 +212,15 @@
         "tests/codex-review-round1.test.ts",
         "tests/codex-review-round2.test.ts",
         "tests/codex-review-round3.test.ts",
-        "tests/codex-review-round4.test.ts"
+        "tests/codex-review-round4.test.ts",
+        "tests/codex-review-round5.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F10: R10 stream -o in ndjson/json/pretty; one outcome on download failure",
       "review_round_2": "R2-F01 N01 report-only get/wait/stream -o confined; R2-F04 N06 partial manifest; R2-F05 N08 SIGINT",
       "review_round_3": "R3-F02 C06: legacy get/wait/create/make -o failures name the task (task_id, operation_id, next, manifest, hint)",
-      "review_round_4": "R4-T01: make's task_id, submission.operation_id, executed[-1].operation_id and the legacy top-level operation_id are the last accepted journal record's (distinct step ids; legacy/v1 × asset 503/SIGINT)"
+      "review_round_4": "R4-T01: make's task_id, submission.operation_id, executed[-1].operation_id and the legacy top-level operation_id are the last accepted journal record's (distinct step ids; legacy/v1 × asset 503/SIGINT)",
+      "review_round_5": "R5-F03 E03: legacy/v1 × get/wait/stream/create --async/sync × metadata missing/damaged → exit 11 with task_id, submission.operation_id = the single accepted journal record, record_project command with --operation-id and --workspace (legacy hint too)"
     },
     "T-010": {
       "result": "passed",
@@ -228,7 +230,7 @@
         "tests/codex-review-round2.test.ts",
         "tests/codex-review-round3.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F01: R05 save-json preflight + post-POST failure keeps the id",
       "review_round_2": "R2-F04 N06: task -o failure keeps HTTP class/status and the files already written",
       "review_round_3": "R3-F01/R3-F04 C01+C02: sidecar planted after the preflight refused; committed model kept in the manifest with failed_step"
@@ -239,28 +241,28 @@
         "tests/cli-contract.test.ts",
         "tests/result.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-012": {
       "result": "passed",
       "files": [
         "tests/cli-contract.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-020": {
       "result": "passed",
       "files": [
         "tests/resource-registry.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-021": {
       "result": "passed",
       "files": [
         "tests/uv-creative-lab.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-022": {
       "result": "passed",
@@ -268,7 +270,7 @@
         "tests/resource-registry.test.ts",
         "tests/uv-creative-lab.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-023": {
       "result": "passed",
@@ -276,14 +278,14 @@
         "tests/resource-registry.test.ts",
         "tests/uv-creative-lab.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-024": {
       "result": "passed",
       "files": [
         "tests/uv-creative-lab.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-025": {
       "result": "passed",
@@ -291,7 +293,7 @@
         "tests/uv-creative-lab.test.ts",
         "tests/codex-review-round1.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F08: R04 three-layer options merge on the real POST body"
     },
     "T-026": {
@@ -299,14 +301,14 @@
       "files": [
         "tests/catalog-showcases.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-027": {
       "result": "passed",
       "files": [
         "tests/catalog-showcases.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-028": {
       "result": "passed",
@@ -314,7 +316,7 @@
         "tests/uv-creative-lab.test.ts",
         "tests/codex-review-round1.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F08: R04"
     },
     "T-029": {
@@ -323,7 +325,7 @@
         "tests/file-input.test.ts",
         "tests/codex-review-round1.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F06: R02 equal-length images conflict, re-wrapped base64 replays, no base64 in journal"
     },
     "T-030": {
@@ -331,28 +333,28 @@
       "files": [
         "tests/file-input.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-031": {
       "result": "passed",
       "files": [
         "tests/transport.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-032": {
       "result": "passed",
       "files": [
         "tests/transport.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-040": {
       "result": "passed",
       "files": [
         "tests/task-lifecycle.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-041": {
       "result": "passed",
@@ -360,7 +362,7 @@
         "tests/uv-creative-lab.test.ts",
         "tests/codex-review-round1.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F02: R11 make journal failure after acceptance is local_io with the id (text + image routes)"
     },
     "T-042": {
@@ -369,7 +371,7 @@
         "tests/uv-creative-lab.test.ts",
         "tests/codex-review-round1.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F02: R11"
     },
     "T-043": {
@@ -378,14 +380,14 @@
         "tests/operation-store.test.ts",
         "tests/task-lifecycle.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-044": {
       "result": "passed",
       "files": [
         "tests/task-lifecycle.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-045": {
       "result": "passed",
@@ -393,12 +395,14 @@
         "tests/task-lifecycle.test.ts",
         "tests/codex-review-round1.test.ts",
         "tests/codex-review-round3.test.ts",
-        "tests/codex-review-round4.test.ts"
+        "tests/codex-review-round4.test.ts",
+        "tests/codex-review-round5.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F01: R06 polling 5xx keeps id/submission/next; make polling failure keeps executed steps",
       "review_round_3": "R3-F02 C06: legacy sync create keeps the accepted task on an asset 503 with exactly one POST",
-      "review_round_4": "R4-T01: two journal records, no re-submission; POST GET POST GET GET; refine.preview_task_id = step 1"
+      "review_round_4": "R4-T01: two journal records, no re-submission; POST GET POST GET GET; refine.preview_task_id = step 1",
+      "review_round_5": "R5-F03 E03: exactly one POST / one journal record per create; the recovery never re-submits; a project that escaped the workspace → boundary message, task + operation named, recovery null"
     },
     "T-046": {
       "result": "passed",
@@ -407,7 +411,7 @@
         "tests/task-lifecycle.test.ts",
         "tests/codex-review-round1.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "barrier-released three-process race; F05/F06 fingerprint unit tests"
     },
     "T-047": {
@@ -417,7 +421,7 @@
         "tests/codex-review-round1.test.ts",
         "tests/poll.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F07: deadline bounds the sleep; --timeout 0 request cap",
       "review_round_2": "R2-F07: deterministic fake-clock deadline tests; real-timer smoke asserts only no GET after the deadline",
       "review_round_4": "R03 'expiry during the sleep' asserts the D-044 invariants (test-only commit 68690f9); 8/8 standalone runs"
@@ -431,7 +435,7 @@
         "tests/codex-review-round3.test.ts",
         "tests/codex-review-round4.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F01: task context on every post-acceptance failure",
       "review_round_2": "R2-F05 N08: SIGINT before headers / mid-body / on the second asset → 130 with manifest, no leftovers",
       "review_round_3": "R3-F05 C03: SIGINT during the OBJ rewrite → 130, digests re-taken, no sidecar, no temp file; make interrupt",
@@ -442,28 +446,28 @@
       "files": [
         "tests/sse.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-050": {
       "result": "passed",
       "files": [
         "tests/sse.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-051": {
       "result": "passed",
       "files": [
         "tests/sse.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-052": {
       "result": "passed",
       "files": [
         "tests/sse.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-053": {
       "result": "passed",
@@ -473,7 +477,7 @@
         "tests/codex-review-round1.test.ts",
         "tests/codex-review-round2.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F10: R10",
       "review_round_2": "R2-F03 N05: save-json/project/download failures after the stream end in one outcome with the next sequence"
     },
@@ -482,7 +486,7 @@
       "files": [
         "tests/artifacts.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-061": {
       "result": "passed",
@@ -490,7 +494,7 @@
         "tests/artifacts.test.ts",
         "tests/download-command.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-062": {
       "result": "passed",
@@ -500,20 +504,22 @@
         "tests/codex-review-round1.test.ts",
         "tests/codex-review-round2.test.ts",
         "tests/codex-review-round3.test.ts",
-        "tests/codex-review-round4.test.ts"
+        "tests/codex-review-round4.test.ts",
+        "tests/codex-review-round5.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F09: R07 rewritten mtllib/map_* references verified on disk; unresolved map reported",
       "review_round_2": "R2-F02 N04: multi-material textures mapped by source name; ambiguity kept + warned (v1 and legacy -o)",
       "review_round_3": "R3-F03 C05: source name beats a colliding generated name (verified by image bytes); generated-name reference with another source is ambiguous",
-      "review_round_4": "R4-F01 D01: two references reaching the sole texture only through channel fallbacks stay as written in both orders (MTL byte-identical, one shared note, digests match disk); arbitration unit cases (identity vs heuristic, ambiguous rival, one reference/two keys, lone and distinct-channel fallbacks)"
+      "review_round_4": "R4-F01 D01: two references reaching the sole texture only through channel fallbacks stay as written in both orders (MTL byte-identical, one shared note, digests match disk); arbitration unit cases (identity vs heuristic, ambiguous rival, one reference/two keys, lone and distinct-channel fallbacks)",
+      "review_round_5": "R5-F02 E02: one reference under two keys (hit + ambiguous) stays as written in both orders; 8x2 arbitration matrix (identity, ambiguous rival, same-ref two hits / hit+ambiguity / same identity / same fallback, distinct channels) as a repository test"
     },
     "T-063": {
       "result": "passed",
       "files": [
         "tests/artifacts.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-064": {
       "result": "passed",
@@ -521,26 +527,28 @@
         "tests/download-command.test.ts",
         "tests/codex-review-round2.test.ts",
         "tests/codex-review-round3.test.ts",
-        "tests/codex-review-round4.test.ts"
+        "tests/codex-review-round4.test.ts",
+        "tests/codex-review-round5.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_2": "R2-F01 N03: refused download creates no directory; zero requests",
       "review_round_3": "R3-F01 C01: sidecar publication re-proves the root and refuses symlink/file/directory targets",
-      "review_round_4": "R4-F02 D02: project record failure after the transfer keeps the full result and a record_project recovery; preflight refuses symlink/damaged metadata.json and blank --stage before any request"
+      "review_round_4": "R4-F02 D02: project record failure after the transfer keeps the full result and a record_project recovery; preflight refuses symlink/damaged metadata.json and blank --stage before any request",
+      "review_round_5": "R5-F01 E01: the record_project command carries the original --workspace (quoted path with a space and a quote); replayed verbatim it records with 0 requests, parent history.json bytes unchanged, index_dirty; no workspace → none appended"
     },
     "T-066": {
       "result": "passed",
       "files": [
         "tests/download-command.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-067": {
       "result": "passed",
       "files": [
         "tests/download-command.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-068": {
       "result": "passed",
@@ -549,27 +557,29 @@
         "tests/codex-review-round1.test.ts",
         "tests/codex-review-round2.test.ts",
         "tests/codex-review-round3.test.ts",
-        "tests/codex-review-round4.test.ts"
+        "tests/codex-review-round4.test.ts",
+        "tests/codex-review-round5.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F03/F04: R08 project roots, R09 task -o, R12 dependency symlink escapes",
       "review_round_2": "R2-F01 N01/N03: outside/symlinked targets refused before mkdir for report tasks and downloads",
       "review_round_3": "R3-F01 C01: outside file bytes unchanged across the sidecar race, single-file and legacy variants",
-      "review_round_4": "R4-F02 D02: outside metadata bytes and the original metadata stay unchanged; planted symlink not replaced; the recovery command records exactly the downloaded file with no request"
+      "review_round_4": "R4-F02 D02: outside metadata bytes and the original metadata stay unchanged; planted symlink not replaced; the recovery command records exactly the downloaded file with no request",
+      "review_round_5": "R5-F01 E01: nothing appears in the parent directory during the replay (no lock, no temp); outside metadata untouched"
     },
     "T-069": {
       "result": "passed",
       "files": [
         "tests/download-command.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-070": {
       "result": "passed",
       "files": [
         "tests/download-command.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-071": {
       "result": "passed",
@@ -577,7 +587,7 @@
         "tests/artifacts.test.ts",
         "tests/download-command.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-072": {
       "result": "passed",
@@ -586,34 +596,36 @@
         "tests/codex-review-round1.test.ts",
         "tests/codex-review-round2.test.ts",
         "tests/codex-review-round3.test.ts",
-        "tests/codex-review-round4.test.ts"
+        "tests/codex-review-round4.test.ts",
+        "tests/codex-review-round5.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F03: R08 project init/record/rebuild-index confined to --workspace",
       "review_round_2": "R2-F01 N02: implicit history root confined; metadata recorded, parent untouched",
       "review_round_3": "R3-F06 C04: aliased project directory records its files; truly outside files still not recorded",
-      "review_round_4": "R4-F02 D02: project.action=failed with error + recovery; damaged metadata.json is left for repair; unwritable project directory (lock cannot be created) is local_io with the result; healthy project still records"
+      "review_round_4": "R4-F02 D02: project.action=failed with error + recovery; damaged metadata.json is left for repair; unwritable project directory (lock cannot be created) is local_io with the result; healthy project still records",
+      "review_round_5": "R5-F01/R5-F03: index_dirty only ever means metadata committed + history untouched; verbatim replay across download and the 20 task-verb entries; a project that left the workspace gets no command"
     },
     "T-073": {
       "result": "passed",
       "files": [
         "tests/project-store.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-074": {
       "result": "passed",
       "files": [
         "tests/project-store.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-075": {
       "result": "passed",
       "files": [
         "tests/project-store.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-076": {
       "result": "passed",
@@ -621,7 +633,7 @@
         "tests/project-store.test.ts",
         "tests/codex-review-round2.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_2": "R2-F01 N02: index skipped with index.updated=false + reason when the root is outside --workspace"
     },
     "T-077": {
@@ -629,49 +641,49 @@
       "files": [
         "tests/project-store.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-080": {
       "result": "passed",
       "files": [
         "tests/inspect.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-081": {
       "result": "passed",
       "files": [
         "tests/inspect.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-082": {
       "result": "passed",
       "files": [
         "tests/inspect.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-083": {
       "result": "passed",
       "files": [
         "tests/obj-transform.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-084": {
       "result": "passed",
       "files": [
         "tests/obj-transform.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-085": {
       "result": "passed",
       "files": [
         "tests/obj-transform.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-086": {
       "result": "passed",
@@ -679,7 +691,7 @@
         "tests/obj-transform.test.ts",
         "tests/codex-review-round1.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F04: R12 symlinked materials/ and texture dir refused; real dirs copied"
     },
     "T-087": {
@@ -687,35 +699,35 @@
       "files": [
         "tests/obj-transform.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-088": {
       "result": "passed",
       "files": [
         "tests/slicers.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-089": {
       "result": "passed",
       "files": [
         "tests/slicers.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-090": {
       "result": "passed",
       "files": [
         "tests/slicers.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-091": {
       "result": "passed",
       "files": [
         "tests/slicers.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-100": {
       "result": "passed",
@@ -725,7 +737,7 @@
         "tests/codex-review-round1.test.ts",
         "tests/codex-review-round2.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F05: R01 API key digest binding",
       "review_round_2": "R2-F06 N07: OAuth without user_id/login_id refused a replay; login_id binds; refresh keeps it"
     },
@@ -734,7 +746,7 @@
       "files": [
         "tests/env-file.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-102": {
       "result": "passed",
@@ -742,14 +754,14 @@
         "tests/cli-contract.test.ts",
         "tests/doctor.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-103": {
       "result": "passed",
       "files": [
         "tests/doctor.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
     },
     "T-105": {
       "result": "passed",
@@ -758,7 +770,7 @@
         "tests/codex-review-round1.test.ts",
         "tests/codex-review-round2.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_1": "F05: R01 OAuth subject binding (token rotation keeps identity)",
       "review_round_2": "R2-F06 N07"
     },
@@ -767,7 +779,7 @@
       "files": [
         "tests/auth-headless.test.ts"
       ],
-      "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "review_round_2": "R2-F06: a device-flow login mints login_id (offline E2E stub)"
     }
   },
@@ -782,13 +794,13 @@
       "id": "T-109",
       "scope": "macOS arm64 / Windows x64 / Linux x64 install and local commands",
       "result": "partial",
-      "detail": "macOS 26.6 arm64, Node v24.20.0: tarball install + 29 smoke checks passed on 68690f9 (see package_smoke). Windows x64 and Linux x64: not_run (no host); slicer detection rules for win32/linux are covered by platform fixtures only"
+      "detail": "macOS 26.6 arm64, Node v24.20.0: tarball install + 29 smoke checks passed on 7b7c24c (see package_smoke). Windows x64 and Linux x64: not_run (no host); slicer detection rules for win32/linux are covered by platform fixtures only"
     },
     {
       "id": "T-110",
       "scope": "real free queries, existing task get, asset download",
       "result": "partial",
-      "detail": "one real unauthenticated GET of the public animation catalog (api.meshy.ai/web/public/animations/resources?category=DailyActions, free) on 68690f9: exit 0; public unauthenticated GET of the animation catalog; result keys: items,count,fetched,total,filters,search_scope,source,authenticated,saved_json; matched=8; total=157. Authenticated get/download: not_run (no credential)"
+      "detail": "one real unauthenticated GET of the public animation catalog (api.meshy.ai/web/public/animations/resources?category=DailyActions, free) on 7b7c24c: exit 0; public unauthenticated GET of the animation catalog; result keys: items,count,fetched,total,filters,search_scope,source,authenticated,saved_json; matched=8; total=157. Authenticated get/download: not_run (no credential)"
     },
     {
       "id": "T-111",
@@ -803,12 +815,12 @@
       "reason": "no slicer application installed on this host (slicer detect returned an empty list)"
     }
   ],
-  "code_head": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
-  "recorded_at": "2026-09-08T02:25:00.312725Z",
-  "behavior_test_note": "Every T-id below is asserted by node:test files that run offline (loopback HTTP mocks, temp dirs). covered_offline_only marks ids whose live/OS/GUI part remains not_run. review_round_1/2/3/4 notes name the Codex finding and probe the file now covers.",
+  "code_head": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+  "recorded_at": "2026-09-08T03:10:09.966960Z",
+  "behavior_test_note": "Every T-id below is asserted by node:test files that run offline (loopback HTTP mocks, temp dirs). covered_offline_only marks ids whose live/OS/GUI part remains not_run. review_round_1/2/3/4/5 notes name the Codex finding and probe the file now covers.",
   "package_smoke": {
     "tarball": "meshy-cli-0.3.0.tgz",
-    "sha256": "37c279550179ab1998278b92d828148858f1f2bf3dcc0247306813720e26f35c",
+    "sha256": "f51d69236d36bec798c9b77004d4457cc69e0e47abe5a5dd31d4209d7a408c4d",
     "file_count": 398,
     "required_present": true,
     "forbidden_absent": true,
@@ -822,7 +834,7 @@
       {
         "id": "version",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy --version",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -831,7 +843,7 @@
       {
         "id": "version_cli",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy-cli --version",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -840,7 +852,7 @@
       {
         "id": "help",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy --help",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -849,7 +861,7 @@
       {
         "id": "help_cli",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy-cli --help",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -858,7 +870,7 @@
       {
         "id": "balance_help",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy balance --help",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -867,7 +879,7 @@
       {
         "id": "balance_nokey_json",
         "command": "env MESHY_API_KEY= /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy balance",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 3,
         "expected_exit": 3,
         "result": "passed",
@@ -876,7 +888,7 @@
       {
         "id": "balance_nokey_v1",
         "command": "env MESHY_API_KEY= /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy balance --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 3,
         "expected_exit": 3,
         "result": "passed",
@@ -885,7 +897,7 @@
       {
         "id": "resources_v1",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy resources --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -894,7 +906,7 @@
       {
         "id": "doctor",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy doctor --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -903,7 +915,7 @@
       {
         "id": "doctor_check_slicers",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy doctor --check-slicers --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -912,7 +924,7 @@
       {
         "id": "doctor_check_api_nokey",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy doctor --check-api --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 3,
         "expected_exit": 3,
         "result": "passed",
@@ -921,7 +933,7 @@
       {
         "id": "slicer_detect",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy slicer detect --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -930,7 +942,7 @@
       {
         "id": "inspect_pass",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy inspect faces --task-json task-rigging.synthetic.json --max-faces 300000 --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -939,7 +951,7 @@
       {
         "id": "inspect_fail",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy inspect faces --task-json task-rigging.synthetic.json --max-faces 249999 --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 12,
         "expected_exit": 12,
         "result": "passed",
@@ -948,7 +960,7 @@
       {
         "id": "inspect_unknown",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy inspect faces --task-json task-unknown-faces.json --max-faces 300000 --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 13,
         "expected_exit": 13,
         "result": "passed",
@@ -957,7 +969,7 @@
       {
         "id": "mesh_prepare",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy mesh prepare-print box-y-up.obj --height-mm 80 --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -966,7 +978,7 @@
       {
         "id": "mesh_refuse_overwrite",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy mesh prepare-print box-y-up.obj --height-mm 80 --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 11,
         "expected_exit": 11,
         "result": "passed",
@@ -975,7 +987,7 @@
       {
         "id": "project_init",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy project init --root ./meshy_output --name smoke demo --task-id fixture-rig-1 --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -983,8 +995,8 @@
       },
       {
         "id": "project_record",
-        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy project record --project /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/work/meshy_output/20260908_102423_smoke-demo_fixture- --task-id fixture-rig-1 --resource rigging --stage rigged --file rigged.glb --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy project record --project /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/work/meshy_output/20260908_110936_smoke-demo_fixture- --task-id fixture-rig-1 --resource rigging --stage rigged --file rigged.glb --output-schema v1",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -992,8 +1004,8 @@
       },
       {
         "id": "project_show",
-        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy project show --project /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/work/meshy_output/20260908_102423_smoke-demo_fixture- --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy project show --project /private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/work/meshy_output/20260908_110936_smoke-demo_fixture- --output-schema v1",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -1002,7 +1014,7 @@
       {
         "id": "project_list",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy project list --root ./meshy_output --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -1011,7 +1023,7 @@
       {
         "id": "download_list",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy download --task-json task-rigging.synthetic.json --list --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -1020,7 +1032,7 @@
       {
         "id": "download_no_selector",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy download --task-json task-rigging.synthetic.json --output-dir ./dl --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 2,
         "expected_exit": 2,
         "result": "passed",
@@ -1029,7 +1041,7 @@
       {
         "id": "make_dry_run",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy make a red sports car --dry-run --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -1038,7 +1050,7 @@
       {
         "id": "usage_unknown_flag",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy balance --bogus --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 2,
         "expected_exit": 2,
         "result": "passed",
@@ -1047,7 +1059,7 @@
       {
         "id": "uv_help",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy uv-unwrap create --help",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -1056,7 +1068,7 @@
       {
         "id": "creative_lab_help",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy creative-lab lamp build create --help",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -1065,7 +1077,7 @@
       {
         "id": "stream_help",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy text-to-3d stream --help",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -1074,7 +1086,7 @@
       {
         "id": "catalog_live",
         "command": "/private/tmp/claude-502/-Users-ark-Dev/005e8b84-02bd-4644-8c71-c3b60ab1d28e/scratchpad/verify-r6/prefix/bin/meshy animation-catalog list --category DailyActions --search wave --output-schema v1",
-        "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
         "exit_code": 0,
         "expected_exit": 0,
         "result": "passed",
@@ -1576,6 +1588,297 @@
         "script": "stream-finalization-check.mjs copy",
         "passed": true,
         "sha": "68690f9273ff20bbf95e6ac586766e30d977b6b4"
+      }
+    },
+    {
+      "round": 5,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-68690f9",
+      "reviewed_head": "e7c0bbc4c39b26e77d48ab0979328ae8fa4a5b59",
+      "reviewed_code_head": "68690f9273ff20bbf95e6ac586766e30d977b6b4",
+      "verdict": "changes_requested (G1-code not_accepted; G1-release and S2 out of scope)",
+      "findings": 3,
+      "priorities": {
+        "P2": 3
+      },
+      "fixed_in": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+      "regression_tests": [
+        "tests/codex-review-round5.test.ts (E01 verbatim replay with --workspace incl. a quoted path; E02 both orders + 8x2 arbitration matrix; E03 20-entry matrix with verbatim replay; escaped-project boundary case)",
+        "tests/codex-review-round4.test.ts (D02 replay now verbatim; R4-T01 SIGINT manifest asserted as failed + [model_glb failed])"
+      ],
+      "reviewer_test_result_before_fix": "pnpm test 547/547; 20/20 round 1+2 positive; 8/8 round 3+4 positive; 5/5 context checks; material matrix 14/16; project entries damaged 10/10 / missing 0/10 recovery; E01/E02x2/E03 reproduced",
+      "probe_rerun": {
+        "script": "reviews/cli-s1-68690f9/round5-probes.mjs (byte-identical copy in a scratch directory; the reviewer's evidence directories are untouched)",
+        "node": "v24.20.0",
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "reproduced_after_fix": 0,
+        "total": 4,
+        "note": "E01: history unchanged + index_dirty on verbatim replay; E02 both orders: MTL unchanged; E03: record_project present. reproduced=false is not the acceptance — positive assertions are in tests/codex-review-round5.test.ts",
+        "cases": [
+          {
+            "id": "E01-recovery-drops-workspace",
+            "reproduced": false,
+            "exit_code": 11
+          },
+          {
+            "id": "E02-mixed-key-hit-and-ambiguity-kd-first",
+            "reproduced": false,
+            "exit_code": 0
+          },
+          {
+            "id": "E02-mixed-key-hit-and-ambiguity-bump-first",
+            "reproduced": false,
+            "exit_code": 0
+          },
+          {
+            "id": "E03-task-project-resolution-outside-recovery-wrapper",
+            "reproduced": false,
+            "exit_code": 11
+          }
+        ]
+      },
+      "material_matrix": {
+        "script": "material-matrix-check.mjs copy",
+        "passed": 16,
+        "total": 16,
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
+      },
+      "project_entry_matrix": {
+        "script": "project-entry-matrix-check.mjs copy",
+        "record_recovery": 20,
+        "total": 20,
+        "exit_codes": [
+          11
+        ],
+        "task_ids_preserved": 20,
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
+      },
+      "older_probe_reruns": {
+        "round4": {
+          "script": "round4-probes.mjs copy",
+          "reproduced": 0,
+          "total": 3,
+          "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+          "cases": [
+            {
+              "id": "D01-channel-fallback-collapses-different-references",
+              "reproduced": false,
+              "exit_code": 0
+            },
+            {
+              "id": "D02-project-finalization-loses-written-manifest",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "D03-stable-relink-interrupt-positive",
+              "reproduced": false,
+              "exit_code": 130,
+              "signal_sent": true
+            }
+          ]
+        },
+        "round3": {
+          "script": "round3-probes.mjs copy",
+          "reproduced": 0,
+          "total": 6,
+          "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+          "note": "original fs.watch C03: signal_sent=True, exit 130 — its trigger fired in this run; the stable D03 probe (signal_sent=True, exit 130), round4-context standalone-relink-interrupt and the repo C03 test are the primary evidence",
+          "cases": [
+            {
+              "id": "C01-sidecar-follows-new-symlink-outside-workspace",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "C02-sidecar-failure-loses-written-manifest",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "C03-sigint-during-relink-still-succeeds",
+              "reproduced": false,
+              "exit_code": 130,
+              "signal_sent": true
+            },
+            {
+              "id": "C04-project-alias-drops-asset-record",
+              "reproduced": false,
+              "exit_code": 0
+            },
+            {
+              "id": "C05-saved-name-match-overrides-source-identity",
+              "reproduced": false,
+              "exit_code": 0
+            },
+            {
+              "id": "C06-legacy-create-download-error-loses-task-id",
+              "reproduced": false,
+              "exit_code": 7
+            }
+          ]
+        },
+        "round2": {
+          "script": "round2-probes.mjs copy",
+          "reproduced": 0,
+          "total": 8,
+          "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+          "cases": [
+            {
+              "id": "N01-report-outside-workspace",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "N02-project-index-outside-workspace",
+              "reproduced": false,
+              "exit_code": 0
+            },
+            {
+              "id": "N03-rejected-download-creates-outside-directory",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "N04-multiple-textures-collapse-to-first",
+              "reproduced": false,
+              "exit_code": 0
+            },
+            {
+              "id": "N05-stream-save-error-has-no-outcome-event",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "N06-task-download-partial-files-lost",
+              "reproduced": false,
+              "exit_code": 7
+            },
+            {
+              "id": "N07-oauth-without-subject-replays-other-token",
+              "reproduced": false,
+              "exit_code": 2
+            },
+            {
+              "id": "N08-task-download-ignores-sigint",
+              "reproduced": false,
+              "exit_code": 130
+            }
+          ]
+        },
+        "round1": {
+          "script": "round1-probes.mjs copy",
+          "reproduced": 0,
+          "total": 12,
+          "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+          "cases": [
+            {
+              "id": "R01-credential-collision",
+              "reproduced": false,
+              "exit_code": 2
+            },
+            {
+              "id": "R02-media-collision",
+              "reproduced": false,
+              "exit_code": 2
+            },
+            {
+              "id": "R03-wait-deadline",
+              "reproduced": false,
+              "exit_code": 8
+            },
+            {
+              "id": "R04-options-shallow-merge",
+              "reproduced": false,
+              "exit_code": 0
+            },
+            {
+              "id": "R05-post-save-lost-id",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "R06-post-poll-lost-id",
+              "reproduced": false,
+              "exit_code": 1
+            },
+            {
+              "id": "R07-obj-broken-material",
+              "reproduced": false,
+              "exit_code": 0
+            },
+            {
+              "id": "R08-project-workspace",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "R09-task-output-workspace",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "R10-stream-output-ignored",
+              "reproduced": false,
+              "exit_code": 0
+            },
+            {
+              "id": "R11-make-journal-lost-id",
+              "reproduced": false,
+              "exit_code": 11
+            },
+            {
+              "id": "R12-obj-dependency-symlink",
+              "reproduced": false,
+              "exit_code": 11
+            }
+          ]
+        }
+      },
+      "reviewer_positive_checkers": {
+        "verify_original_regressions": {
+          "passed": 20,
+          "total": 20,
+          "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
+        },
+        "verify_round3_4_regressions": {
+          "passed": 8,
+          "total": 8,
+          "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
+        }
+      },
+      "context_checks": {
+        "script": "round4-context-checks.mjs copy",
+        "passed": 5,
+        "total": 5,
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
+        "checks": [
+          {
+            "id": "make-legacy-last-operation-identity",
+            "passed": true
+          },
+          {
+            "id": "make-v1-last-operation-identity",
+            "passed": true
+          },
+          {
+            "id": "stream-legacy-sidecar-failure-context",
+            "passed": true
+          },
+          {
+            "id": "stream-v1-sidecar-failure-context",
+            "passed": true
+          },
+          {
+            "id": "standalone-relink-interrupt",
+            "passed": true
+          }
+        ]
+      },
+      "stream_finalization_check": {
+        "script": "stream-finalization-check.mjs copy",
+        "passed": true,
+        "sha": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
       }
     }
   ]
