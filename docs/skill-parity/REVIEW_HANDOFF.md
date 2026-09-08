@@ -1,48 +1,44 @@
 # Meshy CLI S1 Review Handoff
 
-Filled from the 2026-09-07 / v1 implementation package. `not_run` means not verified. 本文件为 **Round 7**（Codex review 第 6 轮修复后的复审交接）。历次 review：第 1 轮 `…/reviews/cli-s1-6273d9a/`，第 2 轮 `…/reviews/cli-s1-730132b/`，第 3 轮 `…/reviews/cli-s1-cf8905d/`，第 4 轮 `…/reviews/cli-s1-235d6de/`，第 5 轮 `…/reviews/cli-s1-68690f9/`，第 6 轮 `…/reviews/cli-s1-7b7c24c/`；六处 reviewer 证据目录均未被改动，所有复现/核对脚本（14 个）逐字节复制到独立证据目录后运行（副本 sha256 与原件一致）。
+Filled from the 2026-09-07 / v1 implementation package. `not_run` means not verified. 本文件为 **Round 8**：第 7 轮 Codex review 已 **accepted**（G1-code，代码 `e567646`，docs `4da216d`，证据 `…/reviews/cli-s1-e567646/`）；本轮是 **真实账号 live verification** 及其发现的 2 个缺陷的修复，交给 Codex 复审这两个修复并核对 live 证据。七处 reviewer 证据目录均未被改动；第 7 轮的 15 个脚本副本在新 HEAD 上重跑。
 
-## 0. 第 6 轮 review 结论与本轮修复
+## 0. Live verification 结论与本轮修复
 
-- 被 review 的 HEAD：`166492ba9691f093b302c1c114e782bceee14a1d`（代码 `7b7c24c`）；结论 **changes_requested**：2 项 P1 代码缺陷（R6-F01、R6-F02）+ 1 项 P3 测试缺口（R6-T01）；reviewer 全量 552/552，前两轮 20/20、R3+R4 正向 8/8、R5 正向 24/24、材质矩阵 16/16 + 补充 10/10、项目入口矩阵 20/20、上下文 5/5；新探针 4/4 复现。
-- 修复 commit：`e567646`（`fix(review): address Codex review round 6 findings R6-F01, R6-F02 and test gap R6-T01`）。本轮没有测试稳定性提交。`23 files changed, 665 insertions(+), 105 deletions(-)`（相对 166492b，含 docs）。
-- 复现脚本重跑（副本，`e567646`）：`round6-probes.mjs` F01 task-json/api、F02 get/create-async **全部 exit 11、外部 metadata/history 字节不变、recovery null**（reproduced=false 不是验收依据，正向断言见 `tests/codex-review-round6.test.ts`）；`round5-probes.mjs` 0/4；`round4-probes.mjs` 0/3（D03 signal_sent=true / exit 130）；`round3-probes.mjs` 0/6（fs.watch C03 signal_sent=true / exit 130，本轮触发成功）；`round2-probes.mjs` 0/8；`round1-probes.mjs` 0/12；`verify-original-regressions.py` **20/20**；`verify-round3-4-regressions.py` **8/8**；`verify-round5-positive.py` **24/24**；`material-matrix-check.mjs` **16/16**；`round6-material-check.mjs` **10/10**；`project-entry-matrix-check.mjs` **20/20**；`round4-context-checks.mjs` **5/5**；`stream-finalization-check.mjs` 通过。
-- 正向回归：`tests/codex-review-round6.test.ts`（3 项：F01 download × task-json/API × 项目叶子/父目录换成外部链接 + 健康对照；F02 legacy/v1 × get/wait/stream/create-async/create-sync × workspace 目录被换/别名被重指向 = 20 组；稳定别名对照）；`tests/codex-review-round5.test.ts` E03 全部 20 组精确 method/path 序列、E02 候选按行与 key 绑定（R6-T01）；前五轮回归全部保留并通过。
-- 全量：`pnpm typecheck` 通过；`pnpm test` **555/555**（0 失败、0 跳过）；`git diff --check` 在 `fd94490..HEAD`、`166492b..HEAD` 与工作树均 exit 0；`poll.test.ts` 连续 12 次 12/12；`codex-review-round1.test.ts` 连续 8 次 8/8；round2–6 套件连续 3 次 3/3。
+- 执行方式：账号所有者在自己的终端完成 `meshy auth login --with-key`（profile `default`，API key）与 `meshy auth login`（profile `oauth`，浏览器 PKCE），凭据落在默认的 `~/.config/meshy/credentials.json`；CLI 通过 `npm install -g ~/Downloads/meshy-cli-0.3.0.tgz` 全局安装（与真实用户一致，每次修复后重新安装）；工作目录 `<home>/meshy-live`；所有者授权计费且不设上限。凭据从未经过 agent；记录中凭据一律脱敏（`auth status` 自带遮蔽；`credentials.json` 只读取键名与哈希）。
+- 结果：**T-104 passed**（两种凭据、真实 token 端点无 `user_id` → login_id 身份、静默 refresh 观测到期后 expires_at 前移且 login_id 不变、journal 复用/凭据冲突/媒体指纹冲突真实复现）；**T-110 passed**；**T-111 passed**（UV / 全部 Creative Lab 产品 / showcases 为 403 enterprise-only 记录）；**T-112 passed**（真实 Bambu Studio 02.08.02.61 两次拉起）；**T-109 partial**（macOS arm64 + Linux arm64/x64 通过，Windows x64 not_run）。
+- credits：开始 2806 → 结束 2479，共消耗 **327**（每步见 §4 表）。
+- 发现并修复 2 个真实缺陷（commit `1d9f109`，`tests/live-verification.test.ts`，修复后重新安装并在真实任务上复验）：
 
-| ID | 优先级 | 问题 | 修复 | 决策 | 回归测试 | 复现脚本重跑 |
-| --- | --- | --- | --- | --- | --- | --- |
-| R6-F02 | P1 | 授权根在每次检查时重新 realpath：请求期间把 workspace（或其别名）换成指向外部树的符号链接，root 与目标一起移动，检查通过，snapshot/metadata/history 写到外部，exit 0 | 授权根改为 `AuthorisedRoot`，在读取全局 flags 时冻结（`freezeRoot`：真实路径 + 目录 dev/inode）；`resolveWithinRoot` 收到冻结根时不再解析根，先证明同一目录仍在原路径（出现符号链接或不同目录 → "changed since the command started"），再证明目标真实路径在冻结的真实根内。冻结根贯穿 `--save-json`、`-o` 下载（downloadArtifacts/downloadAssets/sidecar/report-only）、`make`、`mesh prepare-print`、`project` 命令与任务动词的项目记账；无 workspace 时项目目录本身在首次请求前冻结（`beginProjectContext`），记账通过证明过的真实路径写入。越界为边界失败：exit 11、任务与 accepted journal 保留、单 POST、外部零写入、recovery null、无跨界命令。稳定别名照常通过 | D-057 | F02 矩阵（legacy/v1 × 5 动词 × 目录被换/别名重指向 = 20 组：exit 11、task_id、create 恰 1 POST 且 journal 恰 1 条 accepted、`submission.operation_id`/legacy 顶层 `operation_id` 对账、精确 method/path、外部树与原树整树摘要不变、recovery null、hint 非 record 命令）；稳定别名对照（snapshot 落在真实项目、index 刷新） | F02 get/create-async: exit 11, metadata/history 不变 |
-| R6-F01 | P1 | 独立 `download --project` 记账阶段只 lstat 了 `P/metadata.json`：P 或其父目录在资产 GET 期间换成指向外部项目的符号链接时被跟随，外部 metadata 被改写，exit 0 | 项目阶段在任何项目锁/快照/metadata 写入之前用冻结边界重新定位项目（`resolveWithinRoot(projectDir, projectRoot)`；无 workspace 时项目目录本身在预检后冻结），记账通过真实路径写入；边界失败（`projectBoundaryFailure`）与可修复的 metadata 内容问题分开：exit 11 / local_io、完整下载 outcome（source/selection/manifest 磁盘摘要/saved_json）、`project.action="failed"` + error、`recovery: null`、不生成跨界 record 命令、不伪装成 index_dirty；已下载资产不回滚。metadata 缺失/损坏仍走 D-052/D-056 的 record_project | D-058 | F01（task-json/API × 叶子/父目录：exit 11、完整 v1 形状、downloads.completed 与 bytes/sha、project.failed + recovery null、外部整树摘要不变、原项目 metadata 不变、精确请求 task-json `GET /model.glb` / API `GET task, GET /model.glb`）；健康对照 exit 0 记账、`files_outside_project` | F01 task-json/api: exit 11, 外部 metadata 不变 |
-| R6-T01 | P3 | E03 的 wait/create-sync 8 组没有精确 GET 数量/顺序断言；E02 候选按集合查找 | E03 20 组统一 deepEqual `[method, path]`（get/wait/stream 各 1 GET；create-async 单 POST；create-sync POST GET，路径含 task_id）；E02 按 line 2/3 与原 key 绑定候选集 | — | `tests/codex-review-round5.test.ts`（R6-T01）；新 round-6 矩阵同样精确断言序列 | verify-round5-positive 24/24 |
+| ID | 严重度 | 现象（真实账号） | 修复 | 决策 | 复验 |
+| --- | --- | --- | --- | --- | --- |
+| L01 | P1（Creative Lab 全流程阻断） | Creative Lab 端点在 IN_PROGRESS 时返回 `finished_at: null`（v2 端点返回 0）；schema 只接受 number → `creative-lab … get/wait` 每次轮询都以 "unexpected task shape"（`error.code=server`，HTTP 200，exit 1）失败，`wait` 永远轮询不到完成 | `progress/preceding_tasks/created_at/started_at/finished_at/expires_at` 接受 null 与缺省并归一为 0；v1 视图仍以 `null` 表示未发生 | D-059 | 真实捕获体作为 fixture；keychain prototype 创建后立即 `wait` 经 3 次 IN_PROGRESS 到 SUCCEEDED；lamp prototype get/wait 与 lamp build 完成 |
+| L02 | P2（输出文件名错误） | 任务动词的 `-o`（legacy 布局）把 `model_urls` 键当扩展名：lamp build 落盘为 `model.lamp_stl`/`model.base_stl`；keychain 的 OBJ 实为 ZIP bundle 却存成 `model.obj` | legacy 枚举复用 artifacts.ts 的产品感知 `modelAsset` 映射得到文件名与格式（`lamp.stl`、`base.stl`、`bundle.zip`、`model.obj.zip`），slot key 与 relink 规则不变 | D-060 | 同一任务重新 `-o`：`lamp.stl`/`base.stl`（字节与误名文件一致）、`model.obj.zip`；fridge-magnet build 亦按映射命名 |
+
+- 未修复的观察（P3，供 Codex 判断是否立项）：见 §6。
+- 回归：`pnpm test` **558/558**；typecheck 通过；`git diff --check` 在 `fd94490..HEAD`、`4da216d..HEAD`、工作树均 exit 0；poll ×12 12/12、round1 ×8 8/8、round2–6 ×3 3/3；第 7 轮 15 个 reviewer 脚本副本在 `1d9f109` 上：round1–6 探针 0 复现（C03/D03 signal_sent=true exit 130），verify 20/20、8/8、24/24、5/5，矩阵 16/16、10/10、20/20，context 5/5，stream 通过；tarball smoke 29/29（sha256 `0d22647fd0568a7c6b44aba80ceb32a5de74781b6697d44986745ee78ddf9c8e`）。
 
 ## 1. 代码定位
 
-- 仓库路径 / remote：`/Users/ark/Dev/meshy-cli`（fresh clone） / `https://github.com/meshy-dev/meshy-cli.git`
-- 分支：`feat/skill-parity-s1`（本地分支，未推送）
-- base SHA：`fd94490916376e691efcea51324ac4326b459e1f`（0.2.0，= 计划基线 = 开工时的 remote main）
-- head SHA（代码）：`e567646d875e5f5a658b78e60b8cdfaed8b233e9`（= 修复 `e567646d875e5f5a658b78e60b8cdfaed8b233e9`）；本文件与 verification.json/capability-matrix.json 在其后的 **docs-only commit** 中（见 `git log`，不改变任何 `src/`、`tests/`、`package.json`、`pnpm-lock.yaml`）
-- 历次被 review 的 HEAD：round 1 `6273d9aa6ef396cf1cc26838e2c0d09ab176f595`（代码 `e7c26fc`）；round 2 `730132bd99a471ed41d6bbf6b200219f13f569ba`（代码 `0388fe8`）；round 3 `566f3bdbcdd85d1139e48e3a87d4c6f5e844e43a`（代码 `cf8905d`）；round 4 `9e43a77ced4f84e1ab03c96ddc9a61ce349d44d4`（代码 `235d6de`）；round 5 `e7c0bbc4c39b26e77d48ab0979328ae8fa4a5b59`（代码 `68690f9`）；round 6 `166492ba9691f093b302c1c114e782bceee14a1d`（代码 `7b7c24c`）
+- 仓库路径 / remote：`/Users/ark/Dev/meshy-cli` / `https://github.com/meshy-dev/meshy-cli.git`；分支 `feat/skill-parity-s1`（本地，未推送）
+- base SHA：`fd94490916376e691efcea51324ac4326b459e1f`
+- 上一轮（accepted）代码 HEAD：`e567646d875e5f5a658b78e60b8cdfaed8b233e9`；docs HEAD：`4da216d3568fbd997bf85f8047ce3932672a25de`
+- 本轮代码 HEAD：`1d9f10976b5f754502c81591c64c712e492188d1`（= live 修复 commit）；本文件与 verification.json / capability-matrix.json / live-verification.json 在其后的 **docs-only commit** 中
 - 工作区是否还有未提交修改：无（docs commit 之后 `git status` 干净）
-- 实施包版本：2026-09-07 / v1
-- 实际源码与计划基线的差异：无（见 `docs/skill-parity/baseline-delta.md`）
-- PR URL：未创建（未获创建 PR / 推送授权）
-- Node / pnpm / OS / arch：Node v24.20.0（fnm）/ pnpm 11.24.0（corepack，`packageManager`）/ macOS 26.6 (Darwin 25.6.0) / arm64
+- Node / pnpm / OS：Node v24.20.0 / pnpm 11.24.0 / macOS 26.6.2 arm64
+- PR / 发布：未创建、未发布（需授权）
 
 ## 2. 完成状态
 
-- G1-code / review-ready：**第 6 轮 2 项 P1 已修复并有正向回归，P3 测试缺口已补；前五轮 29 项在新 HEAD 复核未回退（reviewer 正向脚本 20/20、8/8、24/24，六轮探针 0 复现，矩阵 16/16、10/10、20/20，上下文 5/5）；自评 passed，等待 Codex 复审确认**（上一轮结论 not_accepted）
-- G1-release / ready-for-S2：**not_run**（无复审结论、无真实账号/多 OS/切片器验证、未发布；按用户要求不在本轮范围）
-- mandatory 能力实现数 / 总数：**35 / 35**（`docs/skill-parity/capability-matrix.json`；7 项带 `review_round_6`，8 项 `review_round_5`，5 项 `review_round_4`，10 项 `review_round_3`，13 项 `review_round_2`，21 项 `review_round_1`，`review_status` 均为 "re-review pending"）
-- mandatory 离线测试通过 / 失败 / 未执行数：`pnpm test` **555 通过 / 0 失败 / 0 跳过**（555 项，含基线原有 363 项；覆盖 74 个 T-id 的离线部分，见 verification.json `behavior_tests`）
-- 真实 API / OS / GUI 验证通过 / 未执行项：通过 1 项部分（真实公开动画目录 GET，免费无鉴权，在 e567646 重跑：exit 0）+ macOS arm64 tarball 安装 smoke 29 项；未执行：T-104（真实账号 OAuth/Key 回归，含真实 token 端点是否返回 user_id）、T-109 Windows/Linux、T-110 鉴权 get/下载、T-111 UV/Creative Lab/showcases、T-112 真实切片器 open
-- 是否修改独立 Skills、MCP 或内部服务仓库：**没有**（六个 reviewer 目录未被改动；未调用付费接口；未发布）
+- G1-code：第 7 轮 accepted；本轮新增 2 个 live 修复待 Codex 复审（范围小：`src/client/types.ts` 6 个字段的 null 容忍；`src/internal/download.ts`+`artifacts.ts` 的文件名映射共享）。
+- G1-release：**尚未满足**。已完成：Codex review（第 7 轮）、真实账号/UV/Creative Lab/showcases/切片器/macOS+Linux 验证；未完成：Windows x64（无主机，not_run）、正式发布（未授权）、本轮两个修复的复审。
+- mandatory 能力 35/35 已实现；`capability-matrix.json` 每项新增 `live_verification`（33 项 live passed / passed_after_live_fixes，CAP-014 showcases 为账号门控 403 记录，CAP-034 打包为 partial（Windows not_run））。
+- 离线测试：`pnpm test` 558/558，0 跳过。
 
 ## 3. 本次具体改动
 
-`git log --oneline fd94490..HEAD`（最早在下）：
-
 ```
+1d9f109 fix(live): parse Creative Lab null timestamps; name Creative Lab parts and bundles in the legacy -o layout
+4da216d docs(skill-parity): round-7 handoff after Codex review round 6 fixes
 e567646 fix(review): address Codex review round 6 findings R6-F01, R6-F02 and test gap R6-T01
 166492b docs(skill-parity): round-6 handoff after Codex review round 5 fixes
 7b7c24c fix(review): address Codex review round 5 findings R5-F01–R5-F03
@@ -67,461 +63,283 @@ e7ea577 feat(cli): B01 v1 envelope, exit codes, local runtime, --api-key-file an
 c75588e docs(skill-parity): B00 baseline, endpoint contracts, decisions and fixtures
 ```
 
-修复 commit：
-
 ```
-e567646 fix(review): address Codex review round 6 findings R6-F01, R6-F02 and test gap R6-T01
+1d9f109 fix(live): parse Creative Lab null timestamps; name Creative Lab parts and bundles in the legacy -o layout
 
- README.md                            |   2 +-
- docs/skill-parity/decisions.md       |  45 +++++
- docs/skill-parity/migration-notes.md |   8 +
- skills/meshy-cli/SKILL.md            |   6 +-
- src/cmd/animation-catalog.ts         |   2 +-
- src/cmd/api.ts                       |   2 +-
- src/cmd/balance.ts                   |   2 +-
- src/cmd/doctor.ts                    |   2 +-
- src/cmd/download.ts                  |  72 ++++++--
- src/cmd/inspect.ts                   |   2 +-
- src/cmd/make.ts                      |   4 +-
- src/cmd/mesh.ts                      |   2 +-
- src/cmd/project.ts                   |  14 +-
- src/cmd/showcases.ts                 |   2 +-
- src/internal/command-helpers.ts      |   6 +-
- src/internal/download.ts             |  56 ++++---
- src/internal/obj-transform.ts        |  12 +-
- src/internal/paths.ts                |  99 ++++++++++-
- src/internal/project-store.ts        |   7 +-
- src/internal/runtime.ts              |   4 +
- src/internal/task-command.ts         |  86 ++++++----
- tests/codex-review-round5.test.ts    |  22 ++-
- tests/codex-review-round6.test.ts    | 313 +++++++++++++++++++++++++++++++++++
- 23 files changed, 665 insertions(+), 105 deletions(-)
+ docs/skill-parity/decisions.md                     |  37 ++++++
+ docs/skill-parity/migration-notes.md               |   7 ++
+ src/client/types.ts                                |  24 ++--
+ src/internal/artifacts.ts                          |   8 +-
+ src/internal/download.ts                           |  14 ++-
+ .../creative-lab-lamp-prototype.in-progress.json   |  17 +++
+ tests/live-verification.test.ts                    | 128 +++++++++++++++++++++
+ 7 files changed, 225 insertions(+), 10 deletions(-)
 ```
 
-要点：
+- `src/client/types.ts`：`nullableNumberOr0`（null/缺省 → 0）用于 6 个时间戳/计数字段。
+- `src/internal/artifacts.ts`：导出 `modelAsset`；`src/internal/download.ts`：legacy `enumerateArtifacts` 用产品感知映射得到 `filename`/`preferredExt`，`deriveFilename` 优先使用它。
+- `tests/live-verification.test.ts`：L01（fixture 解析 + get/wait 轮询）、L02（lamp/keychain build `-o` 命名）；fixture `tests/fixtures/skill-parity/creative-lab-lamp-prototype.in-progress.json`（真实捕获体，id/name 已替换）。
+- 文档：D-059、D-060；migration-notes §3.7；`docs/skill-parity/live-verification.json`（脱敏 live 记录：49 步 + Linux 双架构）。
 
-- `src/internal/paths.ts`：新增 `AuthorisedRoot`（given/real/anchor/dev/ino/directory/label）、`freezeRoot`（真实路径 + 最深已存在祖先的目录身份）、`assertRootIntact`（lstat 同一目录、非符号链接、dev/inode 相同）；`resolveWithinRoot(target, root: string | AuthorisedRoot)`：冻结根不再 realpath，先 `assertRootIntact` 再判定目标真实路径在 `root.real` 内。
-- `src/internal/runtime.ts`：`GlobalFlags.workspaceRoot` 在 `readGlobalFlags` 中由 `--workspace` 冻结（首次 I/O 前）。
-- `src/internal/command-helpers.ts`（`saveRawJson`）、`src/internal/project-store.ts`（`indexRootFor`）、`src/internal/download.ts`（`downloadAssets`/`downloadArtifacts`/`placeFetched`/`downloadArtifact`/`saveReportOnly`/`writeMeta`）、`src/internal/obj-transform.ts`（写根）、`src/cmd/project.ts`、`src/cmd/mesh.ts`、`src/cmd/make.ts`、`balance/doctor/api/inspect/animation-catalog/showcases` 的 `--save-json`：全部改为接收并使用冻结根。
-- `src/internal/task-command.ts`：`beginProjectContext`（get/wait/stream 在 openCommand 后、create 在预检中冻结项目根并记住是否已初始化；不在此拒绝，未初始化的项目仍作为请求后的记账失败，保持 R2-F03 的单 outcome）；`attachToProject` 用冻结根定位项目（`located` 真实路径），边界失败 → `projectBoundaryFailure`（无命令），其余 → record_project；记账通过 `located` 写入。
-- `src/cmd/download.ts`：`projectRoot`（workspace 或预检后冻结的项目目录）；项目阶段先 `resolveWithinRoot(projectDir, projectRoot)` → 失败走新 `projectBoundaryFailure`（recovery null、project.failed、完整 outcome）；通过后按真实路径算文件列表、断言 metadata、记账。
-- 测试：`tests/codex-review-round6.test.ts`（新，3 项）；`tests/codex-review-round5.test.ts` R6-T01 精确请求序列与按行候选；`R5-F03` 边界用例的消息断言随文案更新（"authorised boundary"）。
-- 文档：`decisions.md` D-057–D-058；`migration-notes.md` §3.6；README `--workspace` 行；SKILL.md 边界失败处置。
+## 4. Live verification 逐步记录（脱敏；完整字段见 `docs/skill-parity/live-verification.json`）
 
-## 4. 能力与接口证据
+| 步骤 | 凭据 | 内容 | credits |
+| --- | --- | --- | --- |
+| T104-01 | oauth | auth status (OAuth active) — masked credential, verified balance |  |
+| T104-02 | oauth | auth list — two profiles (api_key default, oauth) |  |
+| T104-03 | oauth | credentials.json shape: oauth profile has access/refresh tokens and login_id, no user_id (the real token endpoint did not return one) |  |
+| T104-04 | oauth | silent refresh observed: expires_at advanced, login_id kept, tokens rotated; refreshed token works |  |
+| T104-05 | api_key | journal replay with the same key: operation_replayed, no new task, balance unchanged |  |
+| T104-06 | oauth | same operation id under the OAuth profile → operation_conflict (credential), exit 2, nothing submitted |  |
+| T104-07 | api_key | same operation id with a different image → operation_conflict (payload); same bytes under another file name → replayed |  |
+| T104-08 | oauth | OAuth bearer on v2 get and v1 asset download — same bytes as the API-key download |  |
+| T110-01 | api_key | project init (real workspace ~/meshy-live) |  |
+| T110-02 | api_key | text-to-3d create --mode preview --async --project --save-json | 20 |
+| T110-03 | api_key | stream (ndjson) on the finished preview: task + outcome, sequence contiguous |  |
+| T110-04 | api_key | wait -o preview into the project (model.glb + thumbnail, meta.json, snapshot merged) |  |
+| T110-05 | api_key | download --list on the preview |  |
+| T110-06 | api_key | text-to-3d create --mode refine (glb,obj,fbx) --async | 10 |
+| T110-07 | api_key | stream (ndjson) during the refine: 30 progress events + 1 outcome, contiguous sequence |  |
+| T110-08 | api_key | wait -o refine: 9 files incl. OBJ+MTL+4 textures; real MTL map_Kd texture_0.png → texture_0_base_color.png by source_name; material_links complete |  |
+| T110-09 | api_key | download --model-format obj (selective, dependencies) — material_links complete |  |
+| T110-10 | api_key | download --asset thumbnail.primary --output file |  |
+| T110-11 | api_key | image-to-3d create from a local synthetic PNG (data URI) — server-side FAILED, 0 credits, task_failed relayed, FAILED recorded in the project | 0 |
+| T110-12 | api_key | download --list / get on the FAILED task (not_ready + task_not_ready warning; task_error relayed) |  |
+| T110-13 | api_key | image-to-3d retry with the real refine thumbnail: SUCCEEDED, OBJ/MTL relinked | 30 |
+| T110-14 | api_key | text-to-3d list --page-size 3 |  |
+| T110-15 | oauth | image-to-3d delete (the FAILED task) then get → not_found 404 exit 5 |  |
+| T111-01 | api_key | showcases list → 403 enterprise-only (account-gated): error.code server, http 403, exit 1 |  |
+| T111-02 | api_key | animation-catalog list (public, free) |  |
+| T111-03 | api_key | uv-unwrap on the 1.9M-face refine → API 400 (44k limit) mapped to validation exit 4; on the remeshed model SUCCEEDED | 5 |
+| T111-04 | api_key | remesh (8000 faces, glb,obj) SUCCEEDED; OBJ set relinked | 5 |
+| T111-05 | api_key | retexture (text style prompt, PBR) SUCCEEDED | 10 |
+| T111-06 | api_key | analyze-printability SUCCEEDED (0 credits): report-only, meta.json written, status warning (degenerate faces) | 0 |
+| T111-07 | api_key | rigging on the teapot → API 400 (face limit) then 422 (pose estimation failed) → validation exit 4 |  |
+| T111-08 | api_key | text-to-motion: CLI requires --duration (2–10 s); with --duration 4 SUCCEEDED, motion.fbx | 10 |
+| T111-09 | api_key | humanoid text-to-3d preview for the rig chain | 20 |
+| T111-10 | oauth | remesh the humanoid to 30k faces (rigging refused 1.95M faces with 400) | 5 |
+| T111-11 | oauth | rigging SUCCEEDED: rigged glb/fbx + walking/running clips (8 files) | 5 |
+| T111-12 | oauth | animate create --action-id 28 (Big Wave Hello) on the rig: stream 10 events + outcome; wait -o glb+fbx | 3 |
+| T111-13 | oauth | make 'a low-poly cactus…' -o: preview → refine, two journal records, downloads | 30 |
+| T111-14 | oauth | creative-lab lamp prototype create; get/wait on the IN_PROGRESS task FAILED with 'unexpected task shape' (finished_at: null) → live finding L01 | 30 |
+| T111-15 | oauth | after the L01 fix (reinstalled CLI): lamp prototype get/wait SUCCEEDED (lampshade glb + concept image) |  |
+| T111-16 | oauth | keychain prototype create + immediate wait polled through 3 IN_PROGRESS states to SUCCEEDED (L01 verified live) | 6 |
+| T111-17 | oauth | lamp build SUCCEEDED — legacy -o named the parts model.lamp_stl/model.base_stl → live finding L02 | 6 |
+| T111-18 | oauth | meshy download --list/--all on the lamp build names lamp.stl / base.stl (selective path was right) |  |
+| T111-19 | oauth | keychain builds: default (glb) and --model-format obj (ZIP bundle); legacy -o saved the bundle as model.obj → L02; selective path: model.obj.zip | 60 |
+| T111-20 | oauth | after the L02 fix (reinstalled CLI): -o on the same builds → lamp.stl/base.stl (byte-identical) and model.obj.zip |  |
+| T111-21 | oauth | figure prototype SUCCEEDED; first figure build FAILED server-side (0 credits, task_failed relayed); retry SUCCEEDED with OBJ/MTL relinked | 36 |
+| T111-22 | oauth | fridge-magnet prototype + build (exposed product) SUCCEEDED with the fixed CLI: bundle named by the shared mapping | 36 |
+| T112-01 | none | slicer detect finds Bambu Studio 02.08.02.61; slicer open on a prepared print OBJ launches it (macOS open -a, pid observed) |  |
+| T112-02 | none | mesh prepare-print on the real remeshed OBJ (60 mm) → print OBJ + copied MTL/texture; slicer open again on that file |  |
+| LOCAL-01 | none | project show/list on the real project: 11+ task entries with snapshots and operation ids; history index clean |  |
+| LOCAL-02 | none | inspect faces on real task snapshots → check_unknown (13): the API task JSON carries no face_count |  |
 
-### 4.1 第 6 轮 finding 修复后的实际输出（`round6-probes.mjs` 副本重跑，`e567646`，脱敏）
+Linux（OrbStack，`node:24-bookworm`）：linux/arm64 Debian GNU/Linux 12 (bookworm) node v24.20.0 → 29/29，sharp 0.35.4 (libvips 8.18.6); linux/x64 Debian GNU/Linux 12 (bookworm) node v24.20.0 → 29/29，sharp 0.35.4 (libvips 8.18.6)。
 
-**F01-download-project-boundary-task-json**
+### 4.1 关键实际输出（脱敏）
+
+L01 修复前（lamp prototype `wait`，IN_PROGRESS）：
 
 ```json
 {
-  "args": "download --task-json <tmp>/boundary-task-json.json --all --project <tmp>/ws-task-json/projects/<stamp>_escaped-project_0d2d --workspace <tmp>/ws-task-json --output-dir <tmp>/ws-task-json/assets",
-  "exit": 11,
-  "error": {
-    "code": "local_io",
-    "message": "1 file(s) were downloaded to <tmp>/ws-task-json/assets but --project <tmp>/ws-task-json/projects/<stamp>_escaped-project_0d2d is no longer a target inside the authorised boundary: --project <tmp>/ws-task-json/projects/<stamp>_escaped-project_0d2d is a symbolic link; refusing to write through it; nothing was recorded (no project lock, snapshot or metadata was written). Restore the project inside the workspace, then record task round2-task with `meshy project record` from that workspace",
-    "recovery": null,
-    "hint": null
-  },
-  "result.project": {
-    "project_dir": "<tmp>/ws-task-json/projects/<stamp>_escaped-project_0d2d",
-    "action": "failed",
-    "stage": "preview",
-    "recorded_files": [],
-    "error": {
-      "code": "local_io",
-      "message": "--project <tmp>/ws-task-json/projects/<stamp>_escaped-project_0d2d is a symbolic link; refusing to write through it"
-    },
-    "recovery": null
-  },
-  "result.task_id": "round2-task",
-  "downloads": {
-    "state": "completed"
-  },
-  "external_metadata_changed": false,
-  "external_history_changed": null,
-  "external_listing": [
-    "metadata.json"
-  ],
-  "requests": [
-    "GET /model.glb"
-  ]
-}
-```
-**F01-download-project-boundary-api**
-
-```json
-{
-  "args": "download --resource text-to-3d --task-id round2-task --all --project <tmp>/ws-api/projects/<stamp>_escaped-project_944d --workspace <tmp>/ws-api --output-dir <tmp>/ws-api/assets",
-  "exit": 11,
-  "error": {
-    "code": "local_io",
-    "message": "1 file(s) were downloaded to <tmp>/ws-api/assets but --project <tmp>/ws-api/projects/<stamp>_escaped-project_944d is no longer a target inside the authorised boundary: --project <tmp>/ws-api/projects/<stamp>_escaped-project_944d is a symbolic link; refusing to write through it; nothing was recorded (no project lock, snapshot or metadata was written). Restore the project inside the workspace, then record task round2-task with `meshy project record` from that workspace",
-    "recovery": null,
-    "hint": null
-  },
-  "result.project": {
-    "project_dir": "<tmp>/ws-api/projects/<stamp>_escaped-project_944d",
-    "action": "failed",
-    "stage": "preview",
-    "recorded_files": [],
-    "error": {
-      "code": "local_io",
-      "message": "--project <tmp>/ws-api/projects/<stamp>_escaped-project_944d is a symbolic link; refusing to write through it"
-    },
-    "recovery": null
-  },
-  "result.task_id": "round2-task",
-  "downloads": {
-    "state": "completed"
-  },
-  "external_metadata_changed": false,
-  "external_history_changed": null,
-  "external_listing": [
-    "metadata.json"
-  ],
-  "requests": [
-    "GET /openapi/v2/text-to-3d/round2-task",
-    "GET /model.glb"
-  ]
-}
-```
-**F02-mutable-workspace-boundary-get**
-
-```json
-{
-  "args": "text-to-3d get mutable-root-task --output-schema v1 --project <tmp>/mutable-ws-get/projects/<stamp>_mutable-root_cef3 --workspace <tmp>/mutable-ws-get",
-  "exit": 11,
-  "error": {
-    "code": "local_io",
-    "message": "task mutable-root-task exists but --project <tmp>/mutable-ws-get/projects/<stamp>_mutable-root_cef3 is no longer a target inside the authorised boundary: --workspace <tmp>/mutable-ws-get changed since the command started: <tmp>/mutable-ws-get is now a symbolic link; refusing to write outside the authorised boundary; nothing was recorded (no project lock, snapshot or metadata was written). Restore the project inside the workspace, then record the task with `meshy project record` from that workspace",
-    "recovery": null,
-    "hint": "meshy text-to-3d wait mutable-root-task --output-schema v1"
-  },
-  "result.project": null,
-  "result.task_id": "mutable-root-task",
-  "downloads": {
-    "state": "not_requested"
-  },
-  "external_metadata_changed": false,
-  "external_history_changed": false,
-  "external_listing": [
-    "metadata.json"
-  ],
-  "requests": [
-    "GET /openapi/v2/text-to-3d/mutable-root-task"
-  ]
-}
-```
-**F02-mutable-workspace-boundary-create-async**
-
-```json
-{
-  "args": "text-to-3d create --mode preview --prompt fixture --async --output-schema v1 --project <tmp>/mutable-ws-create-async/projects/<stamp>_mutable-root_66f8 --workspace <tmp>/mutable-ws-create-async",
-  "exit": 11,
-  "error": {
-    "code": "local_io",
-    "message": "task mutable-root-task exists (operation 2ac86063-8cad-4294-8728-20fccc09a615) but --project <tmp>/mutable-ws-create-async/projects/<stamp>_mutable-root_66f8 is no longer a target inside the authorised boundary: --workspace <tmp>/mutable-ws-create-async changed since the command started: <tmp>/mutable-ws-create-async is now a symbolic link; refusing to write outside the authorised boundary; nothing was recorded (no project lock, snapshot or metadata was written). Restore the project inside the workspace, then record the task with `meshy project record` from that workspace",
-    "recovery": null,
-    "hint": "meshy text-to-3d wait mutable-root-task --output-schema v1"
-  },
-  "result.project": null,
-  "result.task_id": "mutable-root-task",
-  "downloads": {
-    "state": "not_requested"
-  },
-  "external_metadata_changed": false,
-  "external_history_changed": false,
-  "external_listing": [
-    "metadata.json"
-  ],
-  "requests": [
-    "POST /openapi/v2/text-to-3d"
-  ]
+  "ok": false,
+  "error.code": "server",
+  "error.http_status": 200,
+  "message_head": "unexpected task shape from GET /lamp/v1/prototype/01a07f79-e9f7-7347-89c7-c46fb7a11d06: [\n  {\n    \"expected\": \"number\",\n"
 }
 ```
 
-### 4.2 矩阵（reviewer 脚本副本，`e567646`）
-
-`project-entry-matrix-check.mjs`：20/20 组有 `record_project` 恢复（metadata 缺失/损坏 = 可修复内容问题），全部 exit 11、task_id 保留。
-
-| schema | verb | fault | exit | task_id | record_project |
-| --- | --- | --- | --- | --- | --- |
-| legacy | get | damaged | 11 | legacy-get-damaged | yes |
-| legacy | get | missing | 11 | legacy-get-missing | yes |
-| legacy | wait | damaged | 11 | legacy-wait-damaged | yes |
-| legacy | wait | missing | 11 | legacy-wait-missing | yes |
-| legacy | stream | damaged | 11 | legacy-stream-damaged | yes |
-| legacy | stream | missing | 11 | legacy-stream-missing | yes |
-| legacy | create-async | damaged | 11 | legacy-create-async-damaged | yes |
-| legacy | create-async | missing | 11 | legacy-create-async-missing | yes |
-| legacy | create-sync | damaged | 11 | legacy-create-sync-damaged | yes |
-| legacy | create-sync | missing | 11 | legacy-create-sync-missing | yes |
-| v1 | get | damaged | 11 | v1-get-damaged | yes |
-| v1 | get | missing | 11 | v1-get-missing | yes |
-| v1 | wait | damaged | 11 | v1-wait-damaged | yes |
-| v1 | wait | missing | 11 | v1-wait-missing | yes |
-| v1 | stream | damaged | 11 | v1-stream-damaged | yes |
-| v1 | stream | missing | 11 | v1-stream-missing | yes |
-| v1 | create-async | damaged | 11 | v1-create-async-damaged | yes |
-| v1 | create-async | missing | 11 | v1-create-async-missing | yes |
-| v1 | create-sync | damaged | 11 | v1-create-sync-damaged | yes |
-| v1 | create-sync | missing | 11 | v1-create-sync-missing | yes |
-
-`material-matrix-check.mjs` 16/16；`round6-material-check.mjs` 10/10（无候选通道不提供证据、相同多候选集、source_name/source_stem + 无通道、map key 大小写）。
-
-### 4.3 tarball 安装 smoke（`e567646`，`meshy-cli-0.3.0.tgz`；`<verify>` 为临时 npm prefix）
-
-`<verify>/prefix/bin/meshy resources --output-schema v1` → exit 0
+L01 修复后（keychain prototype 创建后立即 `wait`）：
 
 ```json
 {
-  "schema_version": "meshy.cli/v1",
-  "command": "resources",
   "ok": true,
-  "result": {
-    "items": [
-      {
-        "name": "text-to-3d",
-        "kind": "task",
-        "command": "meshy text-to-3d",
-        "summary": "two-stage 3D generation from text (preview → refine)",
-        "endpoint": "/openapi/v2/text-to-3d",
-        "verbs": [
-          "create",
-          "get",
-          "list",
-          "wait",
-          "stream",
-          "delete"
-        ]
-      },
-      {
-        "name": "image-to-3d",
-        "kind": "task",
-        "command": "meshy image-to-3d",
-        "summary": "3D from a single image (standard or smart-topology low-poly)",
-        "endpoint": "/openapi/v1/image-to-3d",
-        "verbs": [
-          "create",
-          "get",
-          "list",
-          "wait",
-          "stream",
-          "delete"
-        ]
-      },
-      {
-        "name": "multi-image-to-3d",
-        "kind": "task",
-        "command": "meshy multi-image-to-3d",
-        "summary": "3D from multiple views (beta; prefer image-to-3d)",
-        "endpoint": "/openapi/v1/multi-image-to-3d",
-        "verbs": [
-          "create",
-          "get",
-          "list",
-          "wait",
-
-… (truncated)
-```
-
-`<verify>/prefix/bin/meshy doctor --output-schema v1` → exit 0
-
-```json
-{
-  "schema_version": "meshy.cli/v1",
-  "command": "doctor",
-  "ok": true,
-  "result": {
-    "cli": {
-      "version": "0.3.0",
-      "node": "v24.20.0",
-      "platform": "darwin",
-      "arch": "arm64"
-    },
-    "local_ready": true,
-    "api_ready": null,
-    "checks": [
-      {
-        "id": "cli",
-        "status": "ok",
-        "detail": "meshy-cli 0.3.0 on node v24.20.0 (darwin arm64)"
-      },
-      {
-        "id": "node",
-        "status": "ok",
-        "detail": "node v24.20.0 satisfies the required >=24"
-      },
-      {
-        "id": "base_urls",
-        "status": "ok",
-        "detail": "v1 https://api.meshy.ai/openapi/v1; v2 https://api.meshy.ai/openapi/v2; creative-lab https://api.meshy.ai/openapi/creative-lab; public-web https://api.meshy.ai/web/public"
-      },
-      {
-        "id": "api_key_file",
-        "status": "skipped",
-        "detail": "--api-key-file not given"
-      },
-      {
-        "id": "credentials",
-        "status": "warn",
-        "detail": "sources present: --api-key=no, MESHY_API_KEY=no, --api-key-file=none, stored profile=absent (<verify>/config/credentials.json); values are never read by doctor. API commands need --api-key, MESHY_API_KEY, --api-key-file <file> or `meshy auth login`"
-      },
-      {
-        "id": "workspace",
-        "status": "skipped",
-        "detail": "--workspace not given (files land next to their targets)"
-      },
-      {
-        "id": "cwd_env_files",
-        "status": "ok",
-        "detail": "no .env or .env.local in /pri
-… (truncated)
-```
-
-`<verify>/prefix/bin/meshy project record --project <verify>/work/meshy_output/<stamp>_smoke-demo_fixture- --task-id fixture-rig-1 --resource rigging --stage rigged --file rigged.glb --output-schema v1` → exit 0
-
-```json
-{
-  "schema_version": "meshy.cli/v1",
-  "command": "project.record",
-  "ok": true,
-  "result": {
-    "project_dir": "<verify>/work/meshy_output/<stamp>_smoke-demo_fixture-",
-    "action": "added",
-    "entry": {
-      "task_id": "fixture-rig-1",
-      "task_type": "rigging",
-      "resource": "rigging",
-      "endpoint": null,
-      "stage": "rigged",
-      "parent_task_id": null,
-      "status": null,
-      "files": [
-        "rigged.glb"
-      ],
-      "task_json": null,
-      "operation_id": null,
-      "created_at": "2026-09-08T03:45:25.184Z",
-      "updated_at": "2026-09-08T03:45:25.184Z"
-    },
-    "task_count": 1,
-    "index": {
-      "updated": true,
-      "error": null
-    },
-    "migrated_from_legacy": false
-  },
-  "error": null,
-  "warnings": [
+  "result.task.status": "SUCCEEDED",
+  "result.task.consumed_credits": 6,
+  "result.wait.polls": 4,
+  "files": [
     {
-      "code": "recorded_file_missing",
-      "message": "recorded file(s) not present in the project yet: rigged.glb"
+      "key": "image_0",
+      "bytes": 477978,
+      "status": "written",
+      "sha256_12": "e4eab2f32244"
     }
   ]
 }
 ```
 
-`<verify>/prefix/bin/meshy animation-catalog list --category DailyActions --search wave --output-schema v1` → exit 0
+L02 修复前/后（lamp build 与 keychain obj build 的 `-o` 文件名）：
 
 ```json
 {
-  "schema_version": "meshy.cli/v1",
-  "command": "animation-catalog.list",
-  "ok": true,
-  "result": {
-    "items": [
-      {
-        "action_id": 28,
-        "name": "Big Wave Hello",
-        "key": "Big_Wave_Hello",
-        "category": "DailyActions",
-        "sub_category": "Interacting",
-        "preview_url": "https://cdn.meshy.ai/webapp-assets/feature-demo/animation/preview/biped/Big_Wave_Hello.gif",
-        "rig_type": "style_02",
-        "is_default": false,
-        "is_free": false
-      },
-      {
-        "action_id": 290,
-        "name": "Wave One Hand",
-        "key": "Wave_One_Hand",
-        "category": "DailyActions",
-        "sub_category": "Interacting",
-        "preview_url": "https://cdn.meshy.ai/webapp-assets/feature-demo/animation/preview/biped/Wave_One_Hand.gif",
-        "rig_type": "style_02",
-        "is_default": false,
-        "is_free": false
-      },
-      {
-
-… (truncated)
+  "before_lamp": [
+    {
+      "key": "model_base_stl",
+      "bytes": 360284,
+      "status": "written",
+      "sha256_12": "5cbf2af2866c"
+    },
+    {
+      "key": "model_lamp_stl",
+      "bytes": 15162184,
+      "status": "written",
+      "sha256_12": "94f5809a85df"
+    }
+  ],
+  "before_keychain_legacy": [
+    {
+      "key": "model_obj",
+      "bytes": 46871892,
+      "status": "written",
+      "sha256_12": "bf665456914a"
+    }
+  ],
+  "selective_download_was_right": [
+    {
+      "key": "model.obj",
+      "relative_path": "keychain-build-selective/model.obj.zip",
+      "format": "zip",
+      "container_format": "zip"
+    }
+  ],
+  "after_fix": {
+    "lamp": [
+      [
+        "model_base_stl",
+        "base.stl"
+      ],
+      [
+        "model_lamp_stl",
+        "lamp.stl"
+      ]
+    ],
+    "keychain": [
+      [
+        "model_obj",
+        "model.obj.zip"
+      ]
+    ]
+  }
+}
 ```
 
-## 5. 实际验证记录
+OAuth refresh 观测（T-104）：
 
-全部绑定代码 HEAD `e567646d875e5f5a658b78e60b8cdfaed8b233e9`（Node v24.20.0，pnpm 11.24.0）；机器记录见 `docs/skill-parity/verification.json`。
-
-| 检查 | 结果 | 说明 |
-| --- | --- | --- |
-| `pnpm install --frozen-lockfile` | exit 0 | |
-| `pnpm typecheck` | exit 0 | src + tests |
-| `pnpm build` | exit 0 | |
-| `pnpm test` | **555 pass / 0 fail / 0 skip**（555 项，45 s） | 含 3 项 round-6 新回归 |
-| `dist/index.js --version` = package.json | exit 0 | |
-| `git diff --check fd94490` / `166492b` / 工作树 | exit 0 / 0 / 0 | 完整基线、本轮 diff、工作树 |
-| `poll.test.ts` × 12 | 12/12 | |
-| `codex-review-round1.test.ts` × 8 | 8/8 | |
-| round2–6 套件 × 3 | 3/3 | 含 SIGINT/竞争/两个 20 组矩阵 |
-| `round6-probes.mjs` 副本 | F01 ×2、F02 ×2 不再复现（exit 11，外部字节不变） | 正向验收在仓库测试 |
-| `round5-probes.mjs` 副本 | 0/4 复现 | |
-| `round4-probes.mjs` 副本 | 0/3 复现；D03 signal_sent=true exit 130 | |
-| `round3-probes.mjs` 副本 | 0/6 复现（exit 1） | fs.watch C03 signal_sent=true, exit 130（触发成功） |
-| `round2-probes.mjs` 副本 | 0/8 复现（exit 1） | |
-| `round1-probes.mjs` 副本 | 0/12 复现（exit 1） | |
-| `verify-original-regressions.py` | **20/20** | |
-| `verify-round3-4-regressions.py` | **8/8** | C03 以 D03 补证 |
-| `verify-round5-positive.py` | **24/24** | E01–E03 + 20 入口 |
-| `material-matrix-check.mjs` / `round6-material-check.mjs` | **16/16** / **10/10** | |
-| `project-entry-matrix-check.mjs` | **20/20** | |
-| `round4-context-checks.mjs` 副本 | **5/5** | |
-| `stream-finalization-check.mjs` 副本 | passed | |
-| tarball smoke | **29/29** | `meshy-cli-0.3.0.tgz` sha256 `bd3d39e71cfd41f7b19a5fe0b4e71805ed1634e8e5e3afb88ca5aa3242f7cb98`，398 files，bins ['meshy', 'meshy-cli'] |
-
-## 6. 真实环境验证
-
-- 已执行：真实公开动画目录 GET（免费、无鉴权；`<verify>/prefix/bin/meshy animation-catalog list --category DailyActions --search wave --output-schema v1` → exit 0；public unauthenticated GET of the animation catalog; result keys: items,count,fetched,total,filters,search_scope,source,authenticated,saved_json; matched=8; total=157）；macOS arm64 tarball 安装 + 29 项本地命令 smoke。
-- **not_run**（保持）：T-104 真实 API Key/OAuth 登录、重新登录、真实 token 端点 `user_id`；T-109 Windows x64 / Linux x64；T-110 鉴权 get / 已有任务资产下载；T-111 UV Unwrap / Creative Lab / showcases（付费或权限门控）；T-112 真实切片器 GUI；正式发布（未授权、未执行）。
-- 不把离线通过写成 G1-release passed；不进入 S2。
-
-## 7. 打包证据
-
-- `npm pack` → `meshy-cli-0.3.0.tgz`，sha256 `bd3d39e71cfd41f7b19a5fe0b4e71805ed1634e8e5e3afb88ca5aa3242f7cb98`，398 个文件；必需文件齐全 = true；禁止内容不存在 = true。
-- `npm install -g --prefix <tmp>` → bins ['meshy', 'meshy-cli']；无 Python 依赖。
-- 未 `npm publish`，未推送。
-
-## 8. 需要 Codex 复审的事项
-
-1. R6-F02 的冻结语义：根身份 = 冻结时最深已存在祖先的 (dev, ino)（workspace 尚不存在时为其祖先）；`assertRootIntact` 要求该路径仍是同一目录且非符号链接。请确认"稳定 `/var` 别名 / 父目录别名 / 指向不变的 workspace 符号链接均通过，目录被换或别名被重指向均拒绝"符合预期。
-2. 无 workspace 时项目目录本身作为冻结根（get/wait/stream 在首次请求前、create 在预检中、download 在预检后）；未初始化的项目**不**在请求前拒绝（保持 R2-F03 的"请求后单 outcome"语义与既有 project-store 测试）。
-3. R6-F01 的边界失败形状：`project.action="failed"` + `error` + `recovery: null`，`error.recovery` 为 null，hint 不是 record 命令；与 metadata 缺失/损坏的 `record_project` 分支明确区分。
-4. 任务动词的边界失败文案由 "inside the workspace" 改为 "inside the authorised boundary"（round-5 测试断言随之更新）；hint 回落为只读 `wait`。
-5. 旧 `round3-probes.mjs` 的 fs.watch C03 本轮副本 signal_sent=true（触发）；稳定证据仍为 D03、context 的 standalone-relink-interrupt 与仓库 C03。
-
-## 9. 最短复现步骤
-
-```bash
-cd /Users/ark/Dev/meshy-cli && git checkout e567646
-export FNM_DIR="$HOME/.local/share/fnm"; eval "$(fnm env --shell bash)"; fnm use 24
-pnpm install --frozen-lockfile && pnpm typecheck && pnpm test          # 555/555
-node --import tsx --test tests/codex-review-round6.test.ts             # F01 ×4 + control, F02 ×20, stable alias
-mkdir -p /tmp/r6 && cp /Users/ark/Dev/meshy-agent-integrations-research/reviews/cli-s1-7b7c24c/round6-probes.mjs /tmp/r6/
-node /tmp/r6/round6-probes.mjs /Users/ark/Dev/meshy-cli               # F01/F02 reproduced=false, exit 11, external bytes unchanged
-git diff --check fd94490 && git diff --check 166492b
+```json
+{
+  "original_expires_at_iso": "2026-09-08T05:52:10.945000+00:00",
+  "expires_at_now_iso": "2026-09-08T06:51:13.984000+00:00",
+  "refreshed": true,
+  "login_id_present": true,
+  "login_id_sha": "ee55f2134c19",
+  "created_at_unchanged": true,
+  "balance_after": 2515
+}
 ```
 
-## 10. 交给 Codex 的复审提示词
+真实 refine 的材质重链接（T-110）：
 
-> 请对 `/Users/ark/Dev/meshy-cli` 分支 `feat/skill-parity-s1` 做 Meshy CLI S1 第 7 轮 review。规范：2026-09-07 v1 实施包。代码 HEAD `e567646d875e5f5a658b78e60b8cdfaed8b233e9`（= 修复 `e567646d875e5f5a658b78e60b8cdfaed8b233e9`）；docs HEAD 为其后的 docs-only commit（`git log -1`）。上一轮（`…/reviews/cli-s1-7b7c24c/`）结论 changes_requested：R6-F01、R6-F02（P1）与 R6-T01（P3）。请核对：(1) `src/internal/paths.ts` 的 `AuthorisedRoot`/`freezeRoot`/`assertRootIntact` 与 `resolveWithinRoot` 冻结根分支是否在首次 I/O 前建立、且所有写入/恢复路径（`--save-json`、`-o` 下载与 sidecar、`make`、`mesh prepare-print`、`project`、任务动词与 `download` 的项目记账）都不再重新解析可变根；(2) `tests/codex-review-round6.test.ts` 是否按 acceptance 做了正向断言（task-json/API × 叶子/父目录；legacy/v1 × 5 动词 × 目录被换/别名重指向；exit 11、task/submission/operation_id、单 POST、精确 method/path、外部与原树整树摘要、无 snapshot/lock/temp、recovery null、无跨界命令；稳定别名与健康对照）；(3) `tests/codex-review-round5.test.ts` E03 20 组精确序列与 E02 按行候选（R6-T01）；(4) 前六轮 32 项 finding 是否保持通过（副本重跑 round1–6 探针、三个 verify 脚本、三个矩阵脚本、`round4-context-checks.mjs`、`stream-finalization-check.mjs`；旧 fs.watch C03 未触发时不得计为通过）。请勿修改 reviewer 证据目录；禁止付费调用、发布、Skill/MCP 迁移。真实账号、Windows/Linux、真实切片器、UV/Creative Lab/showcases 仍为 not_run；G1-release 与 S2 不在本轮范围。
+```json
+{
+  "result.downloads.material_links.status": "complete",
+  "result.downloads.material_links.texture_maps": [
+    {
+      "line": 12,
+      "material": "Material.005",
+      "reference": "texture_0.png",
+      "resolved_to": "texture_0_base_color.png",
+      "method": "source_name"
+    }
+  ],
+  "files": [
+    {
+      "key": "model_glb",
+      "bytes": 83900100,
+      "status": "written",
+      "sha256_12": "51d4b36507bc"
+    },
+    {
+      "key": "model_fbx",
+      "bytes": 99468604,
+      "status": "written",
+      "sha256_12": "915454648561"
+    },
+    {
+      "key": "model_obj",
+      "bytes": 195271847,
+      "status": "written",
+      "sha256_12": "d1e6f5bb707e"
+    },
+    {
+      "key": "model_mtl",
+      "bytes": 239,
+      "status": "written",
+      "sha256_12": "c9c73e2a3ec9"
+    },
+    {
+      "key": "thumbnail",
+      "bytes": 61083,
+      "status": "written",
+      "sha256_12": "e80a33787756"
+    },
+    {
+      "key": "texture_0_base_color",
+      "bytes": 19421816,
+      "status": "written",
+      "sha256_12": "5e0411a618eb"
+    },
+    {
+      "key": "texture_0_metallic",
+      "bytes": 19397,
+      "status": "written",
+      "sha256_12": "4fd4696a84f8"
+    },
+    {
+      "key": "texture_0_normal",
+      "bytes": 11884487,
+      "status": "written",
+      "sha256_12": "964426c0fc2e"
+    },
+    {
+      "key": "texture_0_roughness",
+      "bytes": 967530,
+      "status": "written",
+      "sha256_12": "60836dd75819"
+    }
+  ]
+}
+```
+
+## 5. 实际验证记录（绑定 `1d9f10976b5f754502c81591c64c712e492188d1`）
+
+| 检查 | 结果 |
+| --- | --- |
+| `pnpm install --frozen-lockfile` / `pnpm typecheck` / `pnpm build` | exit 0 / 0 / 0 |
+| `pnpm test` | **558/558**（45 s） |
+| `git diff --check` fd94490 / 4da216d / 工作树 | 0 / 0 / 0 |
+| poll ×12 / round1 ×8 / round2–6 ×3 | 12/12 / 8/8 / 3/3 |
+| 第 7 轮 reviewer 脚本副本（15 个） | round1–6 探针复现 0/0/0/0/0/0；verify 20/20、8/8、24/24、5/5；矩阵 16/16、10/10、20/20；context 5/5；stream passed |
+| tarball smoke（macOS） | **29/29**，`meshy-cli-0.3.0.tgz` sha256 `0d22647fd0568a7c6b44aba80ceb32a5de74781b6697d44986745ee78ddf9c8e`，398 files |
+
+## 6. 未修复的观察（供复审判断）
+
+- **OBS-1**（P3）：403 'enterprise only' from showcases maps to error.code server / exit 1; a dedicated permission code (or auth) may be clearer
+- **OBS-2**（P3）：downloaded asset files are published mode 0600 while rewritten MTL and JSON sidecars are 0644
+- **OBS-3**（P3）：task verbs' -o downloads are not recorded as files in the project entry (recorded only by meshy download --project); attachToProject.extra.files has no caller
+- **OBS-4**（P3）：download --list on a FAILED task reports downloads.state not_ready with ok:true (a terminal failure reads as 'not yet')
+- **OBS-5**（P3）：auth status/list/use ignore --output-schema v1 (legacy shape only)
+- **OBS-6**（P3）：real task JSON carries no face_count, so inspect faces from a task JSON always ends in check_unknown (13) — by design, but worth stating in docs
+- **OBS-7**（P3）：text-to-motion requires --duration client-side (2–10 s, 0.5 steps); confirm against the API default
+
+## 7. 尚未完成 / not_run
+
+- T-109 Windows x64：无主机。
+- `MESHY_API_KEY` 环境变量 / `--api-key-file` 对真实 API 的路径：仅离线测试覆盖（live 使用了存储的 API key profile）。
+- showcases 内容：账号非 enterprise（403 已记录）。
+- `auth logout/revoke`：留给所有者。
+- 正式发布：未授权、未执行。
+
+## 8. 交给 Codex 的复审提示词
+
+> 请对 `/Users/ark/Dev/meshy-cli` 分支 `feat/skill-parity-s1` 做 Meshy CLI S1 第 8 轮 review：复审 live verification 发现的两个修复。代码 HEAD `1d9f10976b5f754502c81591c64c712e492188d1`（上一轮 accepted 代码 `e567646`）；docs HEAD 为其后的 docs-only commit。请核对：(1) `src/client/types.ts` 的 null 容忍是否只影响 6 个"未发生"字段、v1 视图输出不变，`tests/live-verification.test.ts` L01 是否用真实捕获体（fixture）覆盖 schema 与 get/wait 轮询；(2) `src/internal/download.ts` + `artifacts.ts` 的命名共享是否保持 legacy slot key、relink 规则与既有测试（round1 R07、N04、C05、D01、E02）不变，L02 是否覆盖 lamp 与 keychain bundle；(3) `docs/skill-parity/live-verification.json` 与 verification.json/capability-matrix.json 的 live 结论是否与证据一致且无凭据/签名 URL 泄露；(4) 前七轮 32 项 finding 在 `1d9f109` 上仍保持通过（副本重跑记录见 §5）。禁止付费调用、发布、Skill/MCP 迁移；Windows 与发布仍为 not_run。

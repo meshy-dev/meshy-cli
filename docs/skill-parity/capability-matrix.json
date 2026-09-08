@@ -2,7 +2,7 @@
   "schema_version": 1,
   "title": "Meshy CLI S1 capability matrix — implementation tracking",
   "date": "2026-09-08",
-  "status": "review round 6 (Codex, reviewed 166492b/7b7c24c): changes_requested → R6-F01, R6-F02 fixed and R6-T01 covered in e567646; rounds 1–5 (29 findings) re-verified; G1-code re-review pending; G1-release not_run",
+  "status": "G1-code accepted (Codex round 7, e567646); live verification on the owner's real account done 2026-09-08 — every mandatory capability exercised live except Windows install (not_run) and enterprise showcases content (account-gated 403 recorded); two live defects fixed in 1d9f109 (L01/L02) awaiting Codex review; release not performed → G1-release not yet satisfied",
   "baseline": {
     "cli_sha": "fd94490916376e691efcea51324ac4326b459e1f",
     "skills_sha": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610"
@@ -35,7 +35,7 @@
         "tests/codex-review-round6.test.ts (create --async / sync create × workspace swapped / alias re-pointed → boundary refusal, single POST, journal kept)"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F01"
@@ -75,6 +75,18 @@
         "tests": [
           "tests/codex-review-round6.test.ts (create --async / sync create × workspace swapped / alias re-pointed → boundary refusal, single POST, journal kept)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-02",
+          "T110-06",
+          "T110-13",
+          "T111-09",
+          "T111-13"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -103,7 +115,7 @@
         "tests/codex-review-round6.test.ts (get; stable-alias control records normally)"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F01",
@@ -159,6 +171,16 @@
         "tests": [
           "tests/codex-review-round6.test.ts (get; stable-alias control records normally)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-04",
+          "T110-12",
+          "T104-08"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -189,7 +211,7 @@
         "tests/codex-review-round6.test.ts (wait)"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F01",
@@ -245,6 +267,20 @@
         "tests": [
           "tests/codex-review-round6.test.ts (wait)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-04",
+          "T110-08",
+          "T111-03",
+          "T111-04",
+          "T111-05",
+          "T111-11",
+          "T111-12"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -276,7 +312,7 @@
         "tests/codex-review-round6.test.ts (stream)"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F10"
@@ -329,6 +365,16 @@
         "tests": [
           "tests/codex-review-round6.test.ts (stream)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-03",
+          "T110-07",
+          "T111-12"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -355,7 +401,17 @@
       "intentional_differences": [
         "rigging list enabled (0.2.0 marked it unsupported; official docs and server routes provide it)"
       ],
-      "external_verification": "offline_primary"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T104-01",
+          "T110-14",
+          "T110-15"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-006",
@@ -379,7 +435,7 @@
         "tests/codex-review-round1.test.ts R04/F08"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F08"
@@ -389,6 +445,17 @@
         "tests": [
           "tests/codex-review-round1.test.ts R04/F08"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-06",
+          "T111-04",
+          "T111-05",
+          "T111-08"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -414,7 +481,7 @@
         "tests/operation-store.test.ts F06"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F06"
@@ -425,6 +492,16 @@
           "tests/codex-review-round1.test.ts R02/F06",
           "tests/operation-store.test.ts F06"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-11",
+          "T110-13",
+          "T104-07"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -449,7 +526,15 @@
         "src/cmd/uv-unwrap.ts: exclusive source, GLB-only, 404 reported as not_found; tests T-021"
       ],
       "intentional_differences": [],
-      "external_verification": "required_when_applicable_not_run"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-03"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-009",
@@ -474,7 +559,15 @@
         "src/cmd/creative-lab.ts figure prototype/build; tests T-022..T-025"
       ],
       "intentional_differences": [],
-      "external_verification": "required_when_applicable_not_run"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-21"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-010",
@@ -503,7 +596,7 @@
       "intentional_differences": [
         "deprecated lamp `text` prototype input is rejected before submission; official lamp page documents image_url"
       ],
-      "external_verification": "required_when_applicable_not_run",
+      "external_verification": "passed_after_live_fixes",
       "review_round_1": {
         "findings": [
           "F08"
@@ -513,6 +606,17 @@
         "tests": [
           "tests/codex-review-round1.test.ts R04/F08 (lamp)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed_after_live_fixes",
+        "evidence": [
+          "T111-14",
+          "T111-15",
+          "T111-17",
+          "T111-20"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -540,7 +644,7 @@
         "tests/codex-review-round1.test.ts R04/F08 (keychain)"
       ],
       "intentional_differences": [],
-      "external_verification": "required_when_applicable_not_run",
+      "external_verification": "passed_after_live_fixes",
       "review_round_1": {
         "findings": [
           "F08"
@@ -550,6 +654,16 @@
         "tests": [
           "tests/codex-review-round1.test.ts R04/F08 (keychain)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed_after_live_fixes",
+        "evidence": [
+          "T111-16",
+          "T111-19",
+          "T111-20"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -577,7 +691,7 @@
         "tests/codex-review-round1.test.ts R04/F08 (relief options shared with keychain)"
       ],
       "intentional_differences": [],
-      "external_verification": "required_when_applicable_not_run",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F08"
@@ -587,6 +701,14 @@
         "tests": [
           "tests/codex-review-round1.test.ts R04/F08 (relief options shared with keychain)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-22"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -610,7 +732,15 @@
         "src/cmd/animation-catalog.ts: public transport, no credential, local search; tests T-026"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-014",
@@ -636,7 +766,15 @@
       "intentional_differences": [
         "showcase_type accepts docs spelling \"animated\" and sends the server enum \"animate\" with a warning (decisions D-007)"
       ],
-      "external_verification": "required_when_applicable_not_run"
+      "external_verification": "live_account_gated_403",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "account_gated_403_recorded",
+        "evidence": [
+          "T111-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-015",
@@ -664,7 +802,7 @@
         "tests/codex-review-round5.test.ts E02 + 8x2 arbitration matrix"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F09"
@@ -714,6 +852,16 @@
         "tests": [
           "tests/codex-review-round5.test.ts E02 + 8x2 arbitration matrix"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-05",
+          "T111-18",
+          "T111-19"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -744,7 +892,7 @@
       "intentional_differences": [
         "download requires an explicit selector when a task exposes several assets (legacy defaulted to glb); legacy -o keeps downloading everything"
       ],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F09"
@@ -804,6 +952,16 @@
         "tests": [
           "tests/codex-review-round6.test.ts (download × task-json/API × leaf/parent symlink → exit 11, manifest kept, project.failed, outside tree byte-identical)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-09",
+          "T110-10",
+          "T111-18"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -837,7 +995,7 @@
         "tests/codex-review-round6.test.ts (frozen boundary for downloads and project records); round5 E03 exact request sequences (R6-T01)"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F03",
@@ -907,6 +1065,16 @@
         "tests": [
           "tests/codex-review-round6.test.ts (frozen boundary for downloads and project records); round5 E03 exact request sequences (R6-T01)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-08",
+          "T110-09",
+          "T111-20"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -931,7 +1099,7 @@
         "tests/codex-review-round2.test.ts N05 (save-json conflict after the stream → outcome)"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F01"
@@ -951,6 +1119,16 @@
         "tests": [
           "tests/codex-review-round2.test.ts N05 (save-json conflict after the stream → outcome)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-02",
+          "T104-08",
+          "LOCAL-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -974,7 +1152,7 @@
         "tests/codex-review-round1.test.ts R08/F03"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F03"
@@ -984,6 +1162,14 @@
         "tests": [
           "tests/codex-review-round1.test.ts R08/F03"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -1013,7 +1199,7 @@
         "tests/codex-review-round6.test.ts (project record refused across the boundary at every entry; recovery null; no index_dirty disguise)"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F03"
@@ -1075,6 +1261,15 @@
         "tests": [
           "tests/codex-review-round6.test.ts (project record refused across the boundary at every entry; recovery null; no index_dirty disguise)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T110-04",
+          "LOCAL-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -1101,7 +1296,7 @@
         "tests/codex-review-round2.test.ts N02 (index skipped with index.updated=false + reason)"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F03"
@@ -1121,6 +1316,14 @@
         "tests": [
           "tests/codex-review-round2.test.ts N02 (index skipped with index.updated=false + reason)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "LOCAL-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -1147,7 +1350,15 @@
       "intentional_differences": [
         "missing face_count is unknown (exit 13), never 0 (legacy check-faces passed unmeasured models); --max-faces has no default"
       ],
-      "external_verification": "offline_primary"
+      "external_verification": "passed_check_unknown_on_real_tasks",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed_check_unknown_on_real_tasks",
+        "evidence": [
+          "LOCAL-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-023",
@@ -1176,7 +1387,7 @@
       "intentional_differences": [
         "default output is <stem>.print.obj, in-place only with --in-place; NaN/Infinity/degenerate input is a validation error instead of silent scale 1.0 output"
       ],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F04"
@@ -1187,6 +1398,14 @@
           "tests/codex-review-round1.test.ts R12/F04",
           "tests/obj-transform.test.ts T-086 (planned paths reported)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T112-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -1209,7 +1428,15 @@
         "src/internal/slicers.ts detectSlicers (darwin/win32/linux rules, seven registered, multicolor flag) + src/cmd/slicer.ts detect; tests/slicers.test.ts T-088"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T112-01"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-025",
@@ -1235,7 +1462,16 @@
       "intentional_differences": [
         "no default-application fallback (legacy used os.startfile / xdg-open); Windows launches the detected absolute exe, not a PATH lookup"
       ],
-      "external_verification": "required_when_applicable_not_run"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T112-01",
+          "T112-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-026",
@@ -1257,7 +1493,15 @@
         "src/internal/doctor.ts runDoctorDetailed + src/cmd/doctor.ts (local default; --check-api one GET /balance; --check-slicers); tests/doctor.test.ts T-102/T-103"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "smoke doctor checks (macOS + Linux)"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-027",
@@ -1282,7 +1526,7 @@
       "intentional_differences": [
         "flag is --api-key-file, not --env-file: Node.js intercepts --env-file anywhere in argv (decisions D-025)"
       ],
-      "external_verification": "offline_primary",
+      "external_verification": "passed_stored_profiles",
       "review_round_1": {
         "findings": [
           "F05"
@@ -1292,6 +1536,15 @@
         "tests": [
           "tests/codex-review-round1.test.ts R01/F05 (API key digest)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed_stored_profiles",
+        "evidence": [
+          "T104-01",
+          "T104-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -1317,7 +1570,7 @@
         "tests/auth-headless.test.ts (device login mints login_id)"
       ],
       "intentional_differences": [],
-      "external_verification": "required_when_applicable_not_run",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F05"
@@ -1338,6 +1591,17 @@
           "tests/codex-review-round2.test.ts N07 (login_id binding, refresh keeps it, unverified refused)",
           "tests/auth-headless.test.ts (device login mints login_id)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T104-01",
+          "T104-03",
+          "T104-04",
+          "T104-08"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -1366,7 +1630,7 @@
         "tests/codex-review-round3.test.ts C06 (legacy error payload additive task_id/operation_id), C03 (exit 130 after relink interrupt)"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_2": {
         "findings": [
           "R2-F03",
@@ -1388,6 +1652,17 @@
         "tests": [
           "tests/codex-review-round3.test.ts C06 (legacy error payload additive task_id/operation_id), C03 (exit 130 after relink interrupt)"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-01",
+          "T110-11",
+          "T110-15",
+          "T104-08"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -1414,7 +1689,7 @@
         "tests/codex-review-round4.test.ts R4-T01 make identity (legacy/v1 × 503/SIGINT) reconciled with the journal"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F01",
@@ -1458,6 +1733,14 @@
         "tests": [
           "tests/codex-review-round4.test.ts R4-T01 make identity (legacy/v1 × 503/SIGINT) reconciled with the journal"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T111-13"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -1486,7 +1769,7 @@
         "tests/codex-review-round2.test.ts N07, credentialBinding unit test"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary",
+      "external_verification": "live_passed",
       "review_round_1": {
         "findings": [
           "F05",
@@ -1508,6 +1791,16 @@
         "tests": [
           "tests/codex-review-round2.test.ts N07, credentialBinding unit test"
         ]
+      },
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T104-05",
+          "T104-06",
+          "T104-07"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
       }
     },
     {
@@ -1532,7 +1825,16 @@
         "transport.ts path validation, redirect refusal, public transport; config.ts origin policy; tests transport.test.ts"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T104-08",
+          "T111-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-033",
@@ -1555,7 +1857,17 @@
         "runtime.ts buildLocalRuntime; index.ts update-check policy; tests T-102, T-012"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "T112-01",
+          "LOCAL-01",
+          "LOCAL-02"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-034",
@@ -1578,7 +1890,16 @@
         "npm pack → meshy-cli-0.3.0.tgz sha256 8e4e4d86faf18d5b5539264fdac5377059d033e07e4defc902e872f470e66367; installed into a temp prefix; both bins run; no Python; see verification.json package_smoke"
       ],
       "intentional_differences": [],
-      "external_verification": "required_when_applicable_not_run"
+      "external_verification": "live_partial_windows_not_run",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "partial_windows_not_run",
+        "evidence": [
+          "T-109 linux arm64/x64 29/29",
+          "macOS 29/29"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     },
     {
       "id": "CAP-035",
@@ -1600,7 +1921,15 @@
         "resources index generated from resource-registry.ts (kind task|query|local, verbs, endpoints); root/verb help updated; skills/meshy-cli/SKILL.md rewritten; tests/resource-registry.test.ts, smoke resources_v1"
       ],
       "intentional_differences": [],
-      "external_verification": "offline_primary"
+      "external_verification": "live_passed",
+      "live_verification": {
+        "date": "2026-09-08",
+        "status": "passed",
+        "evidence": [
+          "smoke help/resources checks"
+        ],
+        "record": "docs/skill-parity/live-verification.json"
+      }
     }
   ],
   "knowledge_only": [
@@ -1622,8 +1951,8 @@
     "branch": "feat/skill-parity-s1",
     "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
     "package_version_at_start": "0.2.0",
-    "updated_at": "2026-09-08T03:47:45.510877Z",
-    "code_head": "e567646d875e5f5a658b78e60b8cdfaed8b233e9"
+    "updated_at": "2026-09-08T06:09:04.640614Z",
+    "code_head": "1d9f10976b5f754502c81591c64c712e492188d1"
   },
   "review_rounds": [
     {
@@ -1734,5 +2063,91 @@
       "regression_tests": "tests/codex-review-round6.test.ts (R6-F01 4 download scenarios + control; R6-F02 20-entry mutable-workspace matrix + stable-alias control); codex-review-round5 E03 exact sequences and E02 line-bound candidates (R6-T01)",
       "probe_rerun": "reviews/cli-s1-7b7c24c copies on e567646: round6 0/4 reproduce (all exit 11, outside bytes unchanged); round5 0/4; round4 0/3 (D03 positive); round3 0/6; round2 0/8; round1 0/12; verify-original 20/20; verify-round3-4 8/8; verify-round5-positive 24/24; material matrix 16/16; round6 material 10/10; project entries 20/20; context 5/5; stream passed"
     }
-  ]
+  ],
+  "live_verification_run": {
+    "date": "2026-09-08",
+    "code_head_under_test": {
+      "before_live_fixes": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+      "live_fixes": "1d9f10976b5f754502c81591c64c712e492188d1",
+      "final": "1d9f10976b5f754502c81591c64c712e492188d1"
+    },
+    "credits": {
+      "start": 2806,
+      "end": 2479,
+      "after_oauth_refresh_check": 2515,
+      "source": "meshy balance --output-schema v1 before the first live step (auth status shown by the owner) and after the last one (live/balance-final.json)",
+      "consumed": 327
+    },
+    "record": "docs/skill-parity/live-verification.json",
+    "fixes": [
+      {
+        "id": "L01",
+        "decision": "D-059",
+        "commit": "1d9f10976b5f754502c81591c64c712e492188d1",
+        "test": "tests/live-verification.test.ts",
+        "summary": "Creative Lab in-progress bodies carry finished_at: null; schema now reads null timestamps/counts as 0; verified live afterwards"
+      },
+      {
+        "id": "L02",
+        "decision": "D-060",
+        "commit": "1d9f10976b5f754502c81591c64c712e492188d1",
+        "test": "tests/live-verification.test.ts",
+        "summary": "legacy -o names Creative Lab parts/bundles via the shared modelAsset mapping (lamp.stl, base.stl, model.obj.zip); verified live afterwards"
+      }
+    ],
+    "observations_not_fixed": [
+      {
+        "id": "OBS-1",
+        "severity": "P3",
+        "text": "403 'enterprise only' from showcases maps to error.code server / exit 1; a dedicated permission code (or auth) may be clearer"
+      },
+      {
+        "id": "OBS-2",
+        "severity": "P3",
+        "text": "downloaded asset files are published mode 0600 while rewritten MTL and JSON sidecars are 0644"
+      },
+      {
+        "id": "OBS-3",
+        "severity": "P3",
+        "text": "task verbs' -o downloads are not recorded as files in the project entry (recorded only by meshy download --project); attachToProject.extra.files has no caller"
+      },
+      {
+        "id": "OBS-4",
+        "severity": "P3",
+        "text": "download --list on a FAILED task reports downloads.state not_ready with ok:true (a terminal failure reads as 'not yet')"
+      },
+      {
+        "id": "OBS-5",
+        "severity": "P3",
+        "text": "auth status/list/use ignore --output-schema v1 (legacy shape only)"
+      },
+      {
+        "id": "OBS-6",
+        "severity": "P3",
+        "text": "real task JSON carries no face_count, so inspect faces from a task JSON always ends in check_unknown (13) — by design, but worth stating in docs"
+      },
+      {
+        "id": "OBS-7",
+        "severity": "P3",
+        "text": "text-to-motion requires --duration client-side (2–10 s, 0.5 steps); confirm against the API default"
+      }
+    ],
+    "reviewer_script_reruns_on_this_head": {
+      "round1": 0,
+      "round2": 0,
+      "round3": 0,
+      "round4": 0,
+      "round5": 0,
+      "round6": 0,
+      "verify_original": "20/20",
+      "verify_round3_4": "8/8",
+      "verify_round5": "24/24",
+      "verify_round6": "5/5",
+      "material_matrix": "16/16",
+      "round6_material": "10/10",
+      "project_entries": "20/20",
+      "context": "5/5",
+      "stream": true
+    }
+  }
 }
