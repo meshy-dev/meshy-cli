@@ -2,7 +2,7 @@
   "schema_version": 1,
   "title": "Meshy CLI S1 capability matrix — implementation tracking",
   "date": "2026-09-08",
-  "status": "review round 5 (Codex, reviewed e7c0bbc/68690f9): changes_requested → R5-F01–R5-F03 fixed in 7b7c24c; rounds 1–4 (26 findings) re-verified; G1-code re-review pending; G1-release not_run",
+  "status": "review round 6 (Codex, reviewed 166492b/7b7c24c): changes_requested → R6-F01, R6-F02 fixed and R6-T01 covered in e567646; rounds 1–5 (29 findings) re-verified; G1-code re-review pending; G1-release not_run",
   "baseline": {
     "cli_sha": "fd94490916376e691efcea51324ac4326b459e1f",
     "skills_sha": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610"
@@ -20,7 +20,7 @@
       "target": "meshy <resource> create --async",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "rounds 1–5 findings fixed; re-review pending",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
       "test_ids": [
         "T-040",
         "T-043",
@@ -31,7 +31,8 @@
         "src/internal/task-command.ts submitOnce: journal → single POST → journal; tests/task-lifecycle.test.ts T-040/T-043/T-044",
         "tests/codex-review-round1.test.ts R05/F01, R06/F01",
         "tests/codex-review-round3.test.ts C06 (legacy sync create keeps the accepted task)",
-        "tests/codex-review-round5.test.ts E03 (create --async / sync create × missing/damaged metadata → record_project with --operation-id/--workspace; escaped project → boundary, no command)"
+        "tests/codex-review-round5.test.ts E03 (create --async / sync create × missing/damaged metadata → record_project with --operation-id/--workspace; escaped project → boundary, no command)",
+        "tests/codex-review-round6.test.ts (create --async / sync create × workspace swapped / alias re-pointed → boundary refusal, single POST, journal kept)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -64,6 +65,16 @@
         "tests": [
           "tests/codex-review-round5.test.ts E03 (create --async / sync create × missing/damaged metadata → record_project with --operation-id/--workspace; escaped project → boundary, no command)"
         ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (create --async / sync create × workspace swapped / alias re-pointed → boundary refusal, single POST, journal kept)"
+        ]
       }
     },
     {
@@ -77,7 +88,7 @@
       "target": "meshy <resource> get --include-raw --save-json",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "rounds 1–5 findings fixed; re-review pending",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
       "test_ids": [
         "T-006",
         "T-008",
@@ -88,7 +99,8 @@
         "tests/codex-review-round1.test.ts R06/F01 (wait), R09/F03 (get -o)",
         "tests/codex-review-round2.test.ts N01 (report-only get -o), N06 (partial manifest), N08 (SIGINT)",
         "tests/codex-review-round3.test.ts C01+C02 (get -o sidecar race / finalisation manifest), C03 (relink interrupt), C06 (legacy get)",
-        "tests/codex-review-round5.test.ts E03 (get)"
+        "tests/codex-review-round5.test.ts E03 (get)",
+        "tests/codex-review-round6.test.ts (get; stable-alias control records normally)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -137,6 +149,16 @@
         "tests": [
           "tests/codex-review-round5.test.ts E03 (get)"
         ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (get; stable-alias control records normally)"
+        ]
       }
     },
     {
@@ -150,7 +172,7 @@
       "target": "meshy <resource> wait",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "rounds 1–5 findings fixed; re-review pending",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
       "test_ids": [
         "T-007",
         "T-047",
@@ -163,7 +185,8 @@
         "tests/codex-review-round2.test.ts N01/N06/N08 (wait -o)",
         "tests/poll.test.ts deterministic deadline tests",
         "tests/codex-review-round3.test.ts C06 (legacy wait -o)",
-        "tests/codex-review-round5.test.ts E03 (wait)"
+        "tests/codex-review-round5.test.ts E03 (wait)",
+        "tests/codex-review-round6.test.ts (wait)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -212,6 +235,16 @@
         "tests": [
           "tests/codex-review-round5.test.ts E03 (wait)"
         ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (wait)"
+        ]
       }
     },
     {
@@ -225,7 +258,7 @@
       "target": "meshy <resource> stream",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "rounds 1–5 findings fixed; re-review pending",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
       "test_ids": [
         "T-049",
         "T-050",
@@ -239,7 +272,8 @@
         "tests/codex-review-round1.test.ts R10/F10",
         "tests/codex-review-round2.test.ts N01 (stream -o), N05 (single outcome on post-stream failures)",
         "tests/codex-review-round3.test.ts C06 (legacy stream path shares emitLegacyOutcome wrapping)",
-        "tests/codex-review-round5.test.ts E03 (stream)"
+        "tests/codex-review-round5.test.ts E03 (stream)",
+        "tests/codex-review-round6.test.ts (stream)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -285,6 +319,16 @@
         "tests": [
           "tests/codex-review-round5.test.ts E03 (stream)"
         ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (stream)"
+        ]
       }
     },
     {
@@ -324,7 +368,7 @@
       "target": "existing commands with explicit supported payload",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-028",
         "T-033",
@@ -358,7 +402,7 @@
       "target": "typed media flags and final payload normalization",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-029",
         "T-030",
@@ -443,7 +487,7 @@
       "target": "meshy creative-lab lamp prototype|build <action>",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-022",
         "T-023",
@@ -482,7 +526,7 @@
       "target": "meshy creative-lab keychain prototype|build <action>",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-022",
         "T-023",
@@ -519,7 +563,7 @@
       "target": "meshy creative-lab fridge-magnet prototype|build <action>",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-022",
         "T-023",
@@ -605,7 +649,7 @@
       "target": "download asset registry with role and dependencies",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "rounds 1–5 findings fixed; re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-060",
         "T-062",
@@ -683,7 +727,7 @@
       "target": "meshy download --asset/--kind/--model-format",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "rounds 1–5 findings fixed; re-review pending",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
       "test_ids": [
         "T-061",
         "T-063"
@@ -694,7 +738,8 @@
         "tests/codex-review-round2.test.ts N04",
         "tests/codex-review-round3.test.ts C05",
         "tests/codex-review-round4.test.ts D01 (both orders) + arbitration unit cases",
-        "tests/codex-review-round5.test.ts E02 + 8x2 arbitration matrix"
+        "tests/codex-review-round5.test.ts E02 + 8x2 arbitration matrix",
+        "tests/codex-review-round6.test.ts (download × task-json/API × leaf/parent symlink → exit 11, manifest kept, project.failed, outside tree byte-identical)"
       ],
       "intentional_differences": [
         "download requires an explicit selector when a task exposes several assets (legacy defaulted to glb); legacy -o keeps downloading everything"
@@ -749,6 +794,16 @@
         "tests": [
           "tests/codex-review-round5.test.ts E02 + 8x2 arbitration matrix"
         ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F01"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (download × task-json/API × leaf/parent symlink → exit 11, manifest kept, project.failed, outside tree byte-identical)"
+        ]
       }
     },
     {
@@ -762,7 +817,7 @@
       "target": "safe download with actual final-path manifest",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "rounds 1–5 findings fixed; re-review pending",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
       "test_ids": [
         "T-064",
         "T-065",
@@ -778,7 +833,8 @@
         "tests/codex-review-round2.test.ts N03 (no mkdir before refusal), N04, N06, N08",
         "tests/codex-review-round3.test.ts C01+C02, C03, C05",
         "tests/codex-review-round4.test.ts D01, D02 (symlink/damaged/unwritable + recovery replay), preflight",
-        "tests/codex-review-round5.test.ts E01 (verbatim replay keeps --workspace), E02"
+        "tests/codex-review-round5.test.ts E01 (verbatim replay keeps --workspace), E02",
+        "tests/codex-review-round6.test.ts (frozen boundary for downloads and project records); round5 E03 exact request sequences (R6-T01)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -840,6 +896,17 @@
         "tests": [
           "tests/codex-review-round5.test.ts E01 (verbatim replay keeps --workspace), E02"
         ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F01",
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (frozen boundary for downloads and project records); round5 E03 exact request sequences (R6-T01)"
+        ]
       }
     },
     {
@@ -853,7 +920,7 @@
       "target": "--save-json and project task snapshots",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-010",
         "T-063"
@@ -897,7 +964,7 @@
       "target": "meshy project init",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-072",
         "T-077"
@@ -930,7 +997,7 @@
       "target": "meshy project record/show",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "rounds 1–5 findings fixed; re-review pending",
+      "review_status": "rounds 1–6 findings fixed; re-review pending",
       "test_ids": [
         "T-073",
         "T-074",
@@ -942,7 +1009,8 @@
         "tests/codex-review-round2.test.ts N02 (implicit history root confined; metadata recorded)",
         "tests/codex-review-round3.test.ts C04 (aliased project records files)",
         "tests/codex-review-round4.test.ts D02 + preflight; project.action=failed with record_project recovery",
-        "tests/codex-review-round5.test.ts E01, E03, boundary case; codex-review-round4 D02 verbatim replay"
+        "tests/codex-review-round5.test.ts E01, E03, boundary case; codex-review-round4 D02 verbatim replay",
+        "tests/codex-review-round6.test.ts (project record refused across the boundary at every entry; recovery null; no index_dirty disguise)"
       ],
       "intentional_differences": [],
       "external_verification": "offline_primary",
@@ -996,6 +1064,17 @@
         "tests": [
           "tests/codex-review-round5.test.ts E01, E03, boundary case; codex-review-round4 D02 verbatim replay"
         ]
+      },
+      "review_round_6": {
+        "findings": [
+          "R6-F01",
+          "R6-F02"
+        ],
+        "status": "fixed",
+        "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+        "tests": [
+          "tests/codex-review-round6.test.ts (project record refused across the boundary at every entry; recovery null; no index_dirty disguise)"
+        ]
       }
     },
     {
@@ -1009,7 +1088,7 @@
       "target": "meshy project list/rebuild-index",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-073",
         "T-075",
@@ -1081,7 +1160,7 @@
       "target": "meshy mesh prepare-print",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-083",
         "T-084",
@@ -1191,7 +1270,7 @@
       "target": "--env-file without automatic dotenv/shell scanning",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-100",
         "T-101"
@@ -1226,7 +1305,7 @@
       "target": "preserve existing auth commands and token protocol",
       "baseline_status": "existing_needs_regression",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-104",
         "T-105"
@@ -1272,7 +1351,7 @@
       "target": "--output-schema v1; legacy compatibility",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-001",
         "T-002",
@@ -1322,7 +1401,7 @@
       "target": "make --async / --stop-after-first",
       "baseline_status": "partial",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-041",
         "T-042"
@@ -1392,7 +1471,7 @@
       "target": "operation journal; never claim server idempotency",
       "baseline_status": "missing",
       "implementation_status": "implemented",
-      "review_status": "earlier-round findings fixed (re-verified on 7b7c24c); re-review pending",
+      "review_status": "earlier-round findings fixed (re-verified on e567646); re-review pending",
       "test_ids": [
         "T-043",
         "T-044",
@@ -1543,8 +1622,8 @@
     "branch": "feat/skill-parity-s1",
     "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
     "package_version_at_start": "0.2.0",
-    "updated_at": "2026-09-08T03:10:09.966960Z",
-    "code_head": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7"
+    "updated_at": "2026-09-08T03:47:45.510877Z",
+    "code_head": "e567646d875e5f5a658b78e60b8cdfaed8b233e9"
   },
   "review_rounds": [
     {
@@ -1638,6 +1717,22 @@
       "code_head": "7b7c24c0357fb9a351438da2c1bc6a5cb1ebbae7",
       "regression_tests": "tests/codex-review-round5.test.ts (E01 verbatim replay with --workspace, E02 both orders + 8x2 matrix, E03 20-entry matrix + verbatim replay, escaped-project boundary); round4 D02 replay verbatim; R4-T01 SIGINT manifest exact",
       "probe_rerun": "reviews/cli-s1-68690f9 copies on 7b7c24c: round5 E01/E02x2/E03 no longer reproduce; material matrix 16/16; project entries 20/20 record_recovery; round4 0/3 (D03 positive), round3 0/6, round2 0/8, round1 0/12; verify-original-regressions 20/20; verify-round3-4 8/8; context 5/5; stream passed"
+    },
+    {
+      "round": 6,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-7b7c24c",
+      "reviewed_head": "166492ba9691f093b302c1c114e782bceee14a1d",
+      "verdict": "changes_requested",
+      "findings": [
+        "R6-F01",
+        "R6-F02",
+        "R6-T01 (test gap)"
+      ],
+      "fixed_in": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+      "code_head": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+      "regression_tests": "tests/codex-review-round6.test.ts (R6-F01 4 download scenarios + control; R6-F02 20-entry mutable-workspace matrix + stable-alias control); codex-review-round5 E03 exact sequences and E02 line-bound candidates (R6-T01)",
+      "probe_rerun": "reviews/cli-s1-7b7c24c copies on e567646: round6 0/4 reproduce (all exit 11, outside bytes unchanged); round5 0/4; round4 0/3 (D03 positive); round3 0/6; round2 0/8; round1 0/12; verify-original 20/20; verify-round3-4 8/8; verify-round5-positive 24/24; material matrix 16/16; round6 material 10/10; project entries 20/20; context 5/5; stream passed"
     }
   ]
 }
