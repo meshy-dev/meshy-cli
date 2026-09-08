@@ -697,3 +697,40 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   nothing is disguised as `index_dirty`. Assets already downloaded stay where
   they landed. Missing/damaged metadata after the preflight keeps the
   `record_project` recovery of D-052/D-056.
+
+## D-059 Timestamps and counts a server sends as null read as 0
+
+- Live verification (real account, 2026-09-08): the Creative Lab endpoints
+  return `finished_at: null` (and may return null for the other "not yet"
+  fields) while a task is IN_PROGRESS, whereas the v2 endpoints return 0. The
+  task schema accepted only a number with a default for *absence*, so every
+  `creative-lab … get`/`wait` on a running task failed with "unexpected task
+  shape" (v1 `error.code: "server"`, HTTP 200) until the task had finished — a
+  `wait` could never poll through. `progress`, `preceding_tasks`, `created_at`,
+  `started_at`, `finished_at` and `expires_at` now accept null and absence alike
+  and normalise both to 0, the value the v2 endpoints already use; the v1 task
+  view keeps showing a timestamp that has not happened as `null`. The body
+  captured live is `tests/fixtures/skill-parity/creative-lab-lamp-prototype.in-progress.json`
+  and `tests/live-verification.test.ts` (L01) replays it through the schema and
+  through `creative-lab lamp prototype get`/`wait`. Verified live afterwards: a
+  keychain prototype created and waited on immediately polled through three
+  IN_PROGRESS states to SUCCEEDED; the lamp prototype's `get`/`wait` and the lamp
+  build completed.
+
+## D-060 The legacy `-o` layout names Creative Lab parts and bundles like `meshy download`
+
+- Live verification (real account, 2026-09-08): the task verbs' `-o` downloader
+  (`downloadArtifacts`, the 0.2.0 layout) derived every `model_urls` file name
+  as `model.<key>`, which is right for format keys (`glb`, `obj`) but wrong for
+  Creative Lab builds: the lamp parts landed as `model.lamp_stl` /
+  `model.base_stl` and the keychain build's OBJ — which the server delivers as
+  a ZIP bundle (model.obj + model.mtl + texture.png) — as `model.obj`, an
+  extension no slicer or loader accepts. `meshy download` already named them
+  `lamp.stl`, `base.stl`, `model.obj.zip` through the product-aware
+  `modelAsset` mapping in artifacts.ts; that mapping is now shared: the legacy
+  enumerator asks it for the file name and expected format (product taken from
+  the task type), keeps its own slot keys (`model_lamp_stl`, `model_obj`) in
+  `saved_files`/the manifest, and a ZIP bundle is neither relinked nor renamed
+  by content type. `tests/live-verification.test.ts` (L02) covers both products;
+  the same tasks re-downloaded live produce `lamp.stl`/`base.stl` (byte-identical
+  to the mis-named files) and `model.obj.zip`.

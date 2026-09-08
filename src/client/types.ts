@@ -59,19 +59,29 @@ export const PrintabilitySchema = z
   .passthrough();
 export type Printability = z.infer<typeof PrintabilitySchema>;
 
+/** A count or epoch-millisecond field that a server may omit or send as null: absent and null both read as 0. */
+const nullableNumberOr0 = z
+  .number()
+  .nullable()
+  .optional()
+  .transform((v) => v ?? 0);
+
 export const TaskSchema = z
   .object({
     id: z.string(),
     type: z.string().default(""),
     name: z.string().nullable().optional(),
     status: z.string().default(""),
-    progress: z.number().default(0),
-    preceding_tasks: z.number().default(0),
+    // The v2 endpoints report 0 for a timestamp that has not happened yet; the
+    // Creative Lab endpoints report null (observed live: finished_at: null while
+    // IN_PROGRESS). Both mean "not yet" and normalise to 0.
+    progress: nullableNumberOr0,
+    preceding_tasks: nullableNumberOr0,
 
-    created_at: z.number().default(0),
-    started_at: z.number().default(0),
-    finished_at: z.number().default(0),
-    expires_at: z.number().default(0),
+    created_at: nullableNumberOr0,
+    started_at: nullableNumberOr0,
+    finished_at: nullableNumberOr0,
+    expires_at: nullableNumberOr0,
 
     task_error: TaskErrorSchema.nullable().optional(),
 

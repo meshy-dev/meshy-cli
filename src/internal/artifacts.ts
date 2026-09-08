@@ -62,7 +62,13 @@ export function productFromTaskType(type: unknown): { product: string; stage: st
   return m ? { product: m[1]!, stage: m[2]! } : null;
 }
 
-function modelAsset(fmtKey: string, url: string, product: string | null): Asset {
+/**
+ * The asset a `model_urls` entry stands for. Shared with the legacy `-o`
+ * downloader so both paths name Creative Lab parts the same way (`lamp.stl`,
+ * `base.stl`, `bundle.zip`, the keychain/fridge-magnet OBJ bundle as
+ * `model.obj.zip`) instead of turning the key into an extension.
+ */
+export function modelAsset(fmtKey: string, url: string, product: string | null): Asset {
   const key = `model.${fmtKey}`;
   const sourcePath = `model_urls.${fmtKey}`;
   switch (fmtKey) {

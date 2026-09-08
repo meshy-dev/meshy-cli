@@ -33,7 +33,7 @@ import { CliError, UsageError } from "./errors.js";
 import { logger } from "./logger.js";
 import { freezeRoot, isInside, realpathLenient, resolveWithinRoot, safeExtension, safeSegment, type AuthorisedRoot } from "./paths.js";
 import { USER_AGENT } from "./user-agent.js";
-import type { Asset } from "./artifacts.js";
+import { modelAsset, productFromTaskType, type Asset } from "./artifacts.js";
 import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";
 
 /** Extensions sharp can transcode between. */
@@ -604,15 +604,24 @@ export interface Artifact {
   url: string;
   /** Expected extension inferred from the slot name (no dot, may be empty). */
   preferredExt: string;
+  /** File name to save under when the slot name is not `<stem>.<ext>` (Creative Lab parts, bundles). */
+  filename?: string;
 }
 
 export function enumerateArtifacts(task: Task): Artifact[] {
   const out: Artifact[] = [];
 
   if (task.model_urls) {
+    // `model_urls` keys are usually formats (glb, obj) but Creative Lab builds
+    // use part names (`lamp_stl`, `base_stl`, `bundle_zip`) and deliver the
+    // keychain / fridge-magnet OBJ as a ZIP bundle. The selective downloader
+    // already knows this (artifacts.ts); the legacy layout names the files the
+    // same way while keeping its slot keys (`model_lamp_stl`).
+    const product = productFromTaskType(task.type)?.product ?? null;
     for (const [ext, url] of Object.entries(task.model_urls)) {
       if (typeof url === "string" && url) {
-        out.push({ key: `model_${ext}`, url, preferredExt: ext.toLowerCase() });
+        const asset = modelAsset(ext, url, product);
+        out.push({ key: `model_${ext}`, url, preferredExt: asset.format ?? ext.toLowerCase(), filename: asset.filename });
       }
     }
   }
@@ -872,6 +881,7 @@ export async function downloadArtifacts(
 }
 
 function deriveFilename(artifact: Artifact): string {
+  if (artifact.filename) return artifact.filename;
   if (artifact.key.startsWith("model_")) {
     const ext = artifact.key.slice("model_".length);
     return `model.${ext}`;

@@ -179,6 +179,13 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 | `download --project P --workspace W --output-dir W/assets` with P or its parent replaced by a symlink to an outside project during the transfer | outside metadata.json rewritten, exit 0 with `files_outside_project` | exit 11 `local_io`, completed manifest kept, `project.action="failed"` with the reason, `recovery: null`, outside tree untouched | R6-F01 |
 | `get`/`wait`/`stream` with `--project` that is not an initialised project | refused after the request | refused before any request | R6-F02 (D-057) |
 
+### 3.7 Corrections from the live (real-account) verification (visible in both schemas)
+
+| Behaviour | before the fix | after | Decision |
+| --- | --- | --- | --- |
+| `creative-lab … get`/`wait` while the task is IN_PROGRESS (the endpoint returns `finished_at: null`) | `server` error "unexpected task shape", HTTP 200, exit 1 on every poll until completion | parses; null timestamps/counts read as 0 (v1 view shows `null` as before); `wait` polls through | D-059 |
+| task verbs `-o` on a Creative Lab lamp build / keychain OBJ build | `model.lamp_stl`, `model.base_stl`; the OBJ ZIP bundle saved as `model.obj` | `lamp.stl`, `base.stl`, `model.obj.zip` — the same names `meshy download` uses; slot keys unchanged | D-060 |
+
 New global flags: `--output-schema`, `--api-key-file`, `--workspace`, `--no-update-check`,
 `--base-url-creative-lab`. New per-command flags on task verbs: `--save-json`,
 `--include-raw`, `--project`, `--stage`, `--operation-id`, `--stop-after-first` (make),

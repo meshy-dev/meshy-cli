@@ -1,0 +1,17 @@
+{
+  "id": "creative-lab-live-in-progress",
+  "type": "creative-lab-lamp-prototype",
+  "name": "live lamp",
+  "status": "IN_PROGRESS",
+  "progress": 5,
+  "created_at": 1788845091914,
+  "started_at": 1788845091918,
+  "finished_at": null,
+  "expires_at": 1789104291914,
+  "task_error": null,
+  "preceding_tasks": 0,
+  "consumed_credits": 30,
+  "model_urls": {},
+  "thumbnail_url": "",
+  "image_urls": []
+}
