@@ -202,8 +202,12 @@ test("R03/F07 wait: slow body, expiry during sleep and --timeout 0 behave as spe
     assert.equal(slowBody.code, 8, `${slowBody.stderr}\n${slowBody.stdout}`);
     assert.equal((parseSingleJson(slowBody.stdout) as { error: { code: string } }).error.code, "timed_out");
 
-    // Expiry while sleeping: budget 300 ms, interval 250 ms → one GET, then the
-    // sleep runs out the budget; no second GET after the deadline.
+    // Expiry while sleeping: budget 300 ms, interval 250 ms → a GET at 0 and at
+    // ~250 ms, then the sleep is cut to the ~50 ms left. The loop may wake a
+    // fraction before the deadline and issue one more deadline-bound GET (D-044:
+    // an early wake may poll again, never after the deadline), so the count is
+    // 1–3 and a third GET can only sit at the deadline itself — never inside the
+    // interval — and every GET the server saw started within the budget.
     mode = "instant";
     stamps.length = 0;
     origin = Date.now();
@@ -211,9 +215,13 @@ test("R03/F07 wait: slow body, expiry during sleep and --timeout 0 behave as spe
     assert.equal(expiry.code, 8, expiry.stderr);
     const eo = parseSingleJson(expiry.stdout) as { result: { task: { status: string }; wait: { polls: number } } };
     assert.equal(eo.result.task.status, "IN_PROGRESS", "the last status seen is reported");
-    assert.ok(eo.result.wait.polls >= 1 && eo.result.wait.polls <= 2, `polls=${eo.result.wait.polls}`);
+    assert.ok(eo.result.wait.polls >= 1 && eo.result.wait.polls <= 3, `polls=${eo.result.wait.polls}`);
     const firstGet = stamps[0]!;
-    assert.ok(stamps.every((t) => t - firstGet <= 300 + 60), `every GET started within the budget: ${JSON.stringify(stamps.map((t) => t - firstGet))}`);
+    const offsets = stamps.map((t) => t - firstGet);
+    assert.ok(offsets.length >= eo.result.wait.polls && offsets.length - eo.result.wait.polls <= 1, `every counted poll is a GET the server saw (at most one deadline-bound GET was cut off): polls=${eo.result.wait.polls} gets=${JSON.stringify(offsets)}`);
+    assert.ok(offsets.every((t) => t <= 300 + 60), `every GET started within the budget: ${JSON.stringify(offsets)}`);
+    if (offsets.length >= 2) assert.ok(offsets[1]! >= 250 - 20, `the second GET waited the full interval: ${JSON.stringify(offsets)}`);
+    if (offsets.length === 3) assert.ok(offsets[2]! >= 300 - 20, `a third GET can only be the deadline wake-up: ${JSON.stringify(offsets)}`);
 
     // --timeout 0: exactly one query bounded by the read timeout, not by a zero budget.
     mode = "slow-200";

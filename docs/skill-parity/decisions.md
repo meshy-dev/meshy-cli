@@ -454,6 +454,13 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   and the one real-timer smoke asserts only the invariant a real clock can prove:
   no GET *starts* after the deadline. The subprocess tests with slow headers/bodies
   (R03) are kept.
+- Round 4 (test-only): the R03 subprocess check "expiry during the sleep" capped
+  the poll count at two, but the final budget-cut sleep may wake a fraction before
+  the deadline and issue one more deadline-bound GET — the early-wake case above —
+  so it failed about once in six runs. It now asserts what a real clock can prove:
+  every GET the server saw started within the budget, the second waited the full
+  interval, a third can only be the deadline wake-up, and the counted polls match
+  the GETs seen (at most one cut off by the deadline).
 
 ## D-045 The legacy sidecar is published like an asset
 
