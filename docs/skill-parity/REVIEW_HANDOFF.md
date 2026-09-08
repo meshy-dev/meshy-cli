@@ -30,7 +30,7 @@ Filled from the 2026-09-07 / v1 implementation package. `not_run` means not veri
 ## 2. 完成状态
 
 - G1-code：第 7 轮 accepted；第 8 轮 accepted（本轮 2 个 live 修复 L01/L02 已关闭，范围小：`src/client/types.ts` 6 个字段的 null 容忍；`src/internal/download.ts`+`artifacts.ts` 的文件名映射共享）。
-- G1-release：**尚未满足（发布进行中）**。已完成：Codex review（第 7、8 轮 accepted）、真实账号/UV/Creative Lab/showcases/切片器/macOS+Linux 验证、所有者发布授权（2026-09-08）；未完成：正式发布与可追溯记录（PR 合并后经 release.yml 发布 0.3.0，随后记录）；Windows x64 由所有者决定本次不验证，保持 not_run。
+- G1-release：**passed（2026-09-08）**。PR #5 以 merge commit `1d7ff01` 合入 `main`，tag `v0.3.0`（`1d7ff01`），`release.yml` 发布 `meshy-cli@0.3.0`（shasum `e852b682ee74fb82fe201c78e0445556856d6b0b`）与 `@meshy-ai/cli@0.3.0`，并以真实用户方式 `npm install -g meshy-cli@0.3.0` 复验。原状态记录：**尚未满足（发布进行中）**。已完成：Codex review（第 7、8 轮 accepted）、真实账号/UV/Creative Lab/showcases/切片器/macOS+Linux 验证、所有者发布授权（2026-09-08）；未完成：正式发布与可追溯记录（PR 合并后经 release.yml 发布 0.3.0，随后记录）；Windows x64 由所有者决定本次不验证，保持 not_run。
 - mandatory 能力 35/35 已实现；`capability-matrix.json` 每项新增 `live_verification`（33 项 live passed / passed_after_live_fixes，CAP-014 showcases 为账号门控 403 记录，CAP-034 打包为 partial（Windows not_run））。
 - 离线测试：`pnpm test` 558/558，0 跳过。
 
