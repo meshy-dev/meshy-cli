@@ -14,7 +14,7 @@
  */
 
 import { Command, Option } from "commander";
-import { readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { findTaskResource, TASK_RESOURCES, type TaskResourceDescriptor } from "../client/resource-registry.js";
 import { enumerateAssets, selectAssets, SelectionError, type Asset, type AssetKind } from "../internal/artifacts.js";
@@ -24,10 +24,9 @@ import { downloadAssets, type DownloadedFile } from "../internal/download.js";
 import { CliError, UsageError, type Warning } from "../internal/errors.js";
 import { realpathLenient, resolveWithinRoot, safeSegment } from "../internal/paths.js";
 import { warning } from "../internal/result.js";
-import { indexRootFor, recordTask, stageFromTaskType } from "../internal/project-store.js";
+import { indexRootFor, projectRecordCommand, readProject, recordTask, stageFromTaskType, type RecordInput } from "../internal/project-store.js";
 import { buildLocalRuntime, buildRuntime } from "../internal/runtime.js";
 import { extractTaskObject } from "../internal/task-view.js";
-import { existsSync } from "node:fs";
 import { relative } from "node:path";
 
 const TASK_JSON_MAX_BYTES = 16 * 1024 * 1024;
@@ -126,9 +125,7 @@ export const downloadCommand = new Command("download")
         ? resolveWithinRoot(resolvePath(opts.project), opened.flags.workspace, { label: "--project" }).path
         : resolvePath(opts.project)
       : null;
-    if (projectDir && !existsSync(join(projectDir, "metadata.json"))) {
-      throw new UsageError(`--project ${opts.project} is not an initialised project (no metadata.json); run \`meshy project init\` first`);
-    }
+    if (projectDir) preflightProject(projectDir, opts.project!, opts.stage);
     if (projectDir && opts.url) throw new UsageError("--project needs a task context; it cannot be combined with --url");
     const warnings: Warning[] = [];
 
@@ -262,41 +259,120 @@ export const downloadCommand = new Command("download")
       throw err;
     }
     warnings.push(...result.warnings.map((w) => warning(w.code, w.message)));
-    let project: Record<string, unknown> | null = null;
-    if (projectDir && task) {
-      const taskId = String(task["id"] ?? "");
-      // Compare in one real-path frame: the project may be reached through an
-      // alias (a symlinked parent, macOS /var → /private/var) while the
-      // downloader reports real paths; the recorded name is relative to the real project.
-      const projectReal = realpathLenient(projectDir);
-      const files = result.files
-        .filter((f) => f.status === "written")
-        .map((f) => relative(projectReal, realpathLenient(f.path)).split(/[\\/]/).join("/"))
-        .filter((f) => f.length > 0 && !f.startsWith("..") && !f.startsWith("/"));
-      const indexRoot = indexRootFor(projectDir, undefined, opened.flags.workspace);
-      const rec = recordTask(projectDir, {
-        taskId,
-        stage: opts.stage ?? stageFromTaskType(task["type"], descriptor?.id ?? "download"),
-        resource: descriptor?.id ?? null,
-        taskType: typeof task["type"] === "string" ? (task["type"] as string) : null,
-        endpoint: descriptor?.legacyEndpoint ?? null,
-        status: typeof task["status"] === "string" ? (task["status"] as string) : null,
-        files,
-      }, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
-      if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}`));
-      if (files.length !== result.files.filter((f) => f.status === "written").length) warnings.push(warning("files_outside_project", "some files were written outside the project directory and were not recorded"));
-      project = { project_dir: projectDir, action: rec.action, stage: rec.entry.stage, recorded_files: files };
-    }
-    await emitResult(opened, null, {
+    // Everything the caller must still learn if the project bookkeeping below
+    // fails: what was asked for, what landed (with the digests on disk), where
+    // the raw task went. The project phase never owns this state.
+    const outcome = {
       source: sourceInfo,
       selection: { selected: selected.map((a) => a.key), dependencies: dependencies.map((a) => a.key) },
       downloads: { state: result.complete ? "completed" : "partial", files: result.files, metadata_path: null, material_links: result.materialLinks },
       unknown_urls: enumeration?.unknown_urls ?? [],
       saved_json: savedJson,
-      project,
       ...(opts.includeRaw ? { raw } : {}),
-    }, { warnings });
+    };
+    let project: Record<string, unknown> | null = null;
+    if (projectDir && task) {
+      const written = result.files.filter((f) => f.status === "written");
+      const input: RecordInput = {
+        taskId: String(task["id"] ?? opts.taskId ?? ""),
+        stage: opts.stage ?? stageFromTaskType(task["type"], descriptor?.id ?? "download"),
+        resource: descriptor?.id ?? null,
+        taskType: typeof task["type"] === "string" ? (task["type"] as string) : null,
+        endpoint: descriptor?.legacyEndpoint ?? null,
+        status: typeof task["status"] === "string" ? (task["status"] as string) : null,
+        files: [],
+      };
+      try {
+        // Compare in one real-path frame: the project may be reached through an
+        // alias (a symlinked parent, macOS /var → /private/var) while the
+        // downloader reports real paths; the recorded name is relative to the real project.
+        const projectReal = realpathLenient(projectDir);
+        input.files = written
+          .map((f) => relative(projectReal, realpathLenient(f.path)).split(/[\\/]/).join("/"))
+          .filter((f) => f.length > 0 && !f.startsWith("..") && !f.startsWith("/"));
+        const indexRoot = indexRootFor(projectDir, undefined, opened.flags.workspace);
+        const rec = recordTask(projectDir, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
+        if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}`));
+        if (input.files.length !== written.length) warnings.push(warning("files_outside_project", "some files were written outside the project directory and were not recorded"));
+        project = { project_dir: projectDir, action: rec.action, stage: rec.entry.stage, recorded_files: input.files };
+      } catch (err) {
+        throw projectRecordFailure(err, { projectDir, dir, input, written: written.length, outcome, warnings });
+      }
+    }
+    await emitResult(opened, null, { ...outcome, project }, { warnings });
   });
+
+/**
+ * `--project` checks that can fail before any transfer, so that they do:
+ * metadata.json must exist, be a regular file (never a symlink the record
+ * step would refuse to replace) and parse as a project; `--stage` must not be
+ * blank. Nothing is downloaded when one of these fails. What changes *after*
+ * this check is caught by `projectRecordFailure`.
+ */
+function preflightProject(projectDir: string, flag: string, stage: string | undefined): void {
+  const metaPath = join(projectDir, "metadata.json");
+  let st: ReturnType<typeof lstatSync> | null = null;
+  try {
+    st = lstatSync(metaPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT" && (err as NodeJS.ErrnoException).code !== "ENOTDIR") throw err;
+  }
+  if (!st) throw new UsageError(`--project ${flag} is not an initialised project (no metadata.json); run \`meshy project init\` first`);
+  if (!st.isFile()) {
+    throw new CliError({ code: "local_io", message: `--project ${flag}: metadata.json is not a regular file (${st.isSymbolicLink() ? "a symbolic link" : st.isDirectory() ? "a directory" : "special"}); nothing was downloaded` });
+  }
+  try {
+    readProject(projectDir);
+  } catch (err) {
+    if (err instanceof CliError) {
+      throw new CliError({ code: err.code, message: `--project ${flag}: ${err.message} (nothing was downloaded)`, recovery: err.recovery, cause: err });
+    }
+    throw err;
+  }
+  if (stage !== undefined && stage.trim() === "") throw new UsageError("--stage must not be blank");
+}
+
+/**
+ * The transfers are done and the files are on disk; only the project entry
+ * could not be written. The error keeps its own class (a refused symlink,
+ * a damaged metadata.json, a lock timeout, a full disk are all local_io) and
+ * carries the complete download result plus a `project` record that says what
+ * failed and the one command that redoes just the bookkeeping. Nothing is
+ * rolled back, re-downloaded or re-submitted.
+ */
+function projectRecordFailure(
+  err: unknown,
+  ctx: { projectDir: string; dir: string; input: RecordInput; written: number; outcome: Record<string, unknown>; warnings: Warning[] },
+): CliError {
+  const base = err instanceof CliError ? err : null;
+  const code = base?.code ?? "local_io";
+  const reason = err instanceof Error ? err.message : String(err);
+  const command = projectRecordCommand(ctx.projectDir, ctx.input);
+  const recovery = { action: "record_project", automatic: false, command };
+  return new CliError({
+    code,
+    message: `${ctx.written} file(s) were downloaded to ${ctx.dir} but recording task ${ctx.input.taskId} in project ${ctx.projectDir} failed: ${reason}`,
+    exitCode: base?.exitCode,
+    httpStatus: base?.httpStatus ?? null,
+    retryable: base?.retryable ?? false,
+    recovery,
+    hint: command,
+    details: base?.details,
+    warnings: [...ctx.warnings, ...(base?.warnings ?? [])],
+    result: {
+      ...ctx.outcome,
+      project: {
+        project_dir: ctx.projectDir,
+        action: "failed",
+        stage: ctx.input.stage,
+        recorded_files: [],
+        error: { code, message: reason },
+        recovery,
+      },
+    },
+    cause: err,
+  });
+}
 
 function describeAsset(a: Asset): Record<string, unknown> {
   return {

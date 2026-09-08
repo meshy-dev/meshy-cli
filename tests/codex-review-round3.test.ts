@@ -363,7 +363,7 @@ test("R3-F03 without source evidence a saved-name match is still accepted (conse
 // R3-F02 / C06 — legacy schema keeps the accepted task on every download failure
 // ---------------------------------------------------------------------------
 
-test("C06/R3-F02 legacy sync create/wait/make: an asset 503, a sidecar failure and SIGINT still report task_id, the real operation_id, next and the manifest; exactly one POST", async () => {
+test("C06/R3-F02 legacy sync create/wait/get: an asset 503, a sidecar failure and SIGINT still report task_id, the real operation_id, next and the manifest; exactly one POST (make: codex-review-round4 R4-T01 with distinct step ids)", async () => {
   let assetMode: "503" | "ok" | "slow" = "503";
   let plant: (() => void) | null = null;
   let child: ChildProcess | null = null;
@@ -446,32 +446,6 @@ test("C06/R3-F02 legacy sync create/wait/make: an asset 503, a sidecar failure a
     assert.equal(ip.task_id, "paid-legacy-created-id");
     assert.ok(!existsSync(target));
 
-    // Legacy make -o: chain done, download 503 → task id, executed steps, next.
-    assetMode = "503";
-    api.requests.length = 0;
-    const made = await runCli(["make", "a fixture cactus", "-o", join(dir, "legacy-make")], { env, cwd: dir });
-    assert.equal(made.code, 7, `${made.stderr}\n${made.stdout}`);
-    const mp = parseSingleJson(made.stdout) as LegacyErrorPayload & { result?: { executed?: unknown[] } };
-    assert.equal(mp.code, "network");
-    assert.equal(mp.status, 503);
-    assert.equal(mp.task_id, "paid-legacy-created-id");
-    assert.equal(mp.result?.executed?.length, 2);
-    assert.match(mp.result?.next?.wait ?? "", /wait paid-legacy-created-id/);
-    assert.ok(mp.operation_id, "make reports the real operation id of the finished step");
-    assert.equal(api.requests.filter((q) => q.method === "POST").length, 2, "two chain steps, no re-submission");
-
-    // v1 make -o: SIGINT during the final download keeps the chain context (round-2 N08 named make; this asserts it).
-    assetMode = "slow";
-    api.requests.length = 0;
-    const madeInt = await runCli(["make", "a fixture cactus", ...V1, "-o", join(dir, "make-int.glb")], { env, cwd: dir, onSpawn: (c) => (child = c) });
-    assert.equal(madeInt.code, 130, `${madeInt.stderr}\n${madeInt.stdout}`);
-    const mi = parseSingleJson(madeInt.stdout) as { error: { code: string }; result: { task_id: string; executed: unknown[]; downloads: { state: string } } };
-    assert.equal(mi.error.code, "interrupted");
-    assert.equal(mi.result.task_id, "paid-legacy-created-id");
-    assert.equal(mi.result.executed.length, 2);
-    assert.equal(mi.result.downloads.state, "failed");
-    assert.ok(!existsSync(join(dir, "make-int.glb")));
-    assert.equal(api.requests.filter((q) => q.method === "POST").length, 2);
   } finally {
     await api.close();
   }

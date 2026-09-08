@@ -153,6 +153,15 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 | Ctrl-C during the OBJ/MTL rewrite | download completes, exit 0 | exit 130 `interrupted`, committed files kept, no sidecar, no temp file | R3-F05 |
 | `download --project` through an alias path | files not recorded, false `files_outside_project` | files recorded relative to the real project directory | R3-F06 |
 
+### 3.4 Corrections from Codex review round 4 (visible in both schemas)
+
+| Behaviour | before the fix | after | Finding |
+| --- | --- | --- | --- |
+| MTL whose different references reach the sole texture only through channel fallbacks (name channel for one, key channel for the other) | both rewritten to the one texture, `material_links.status=complete` | both kept as written, `method: ambiguous` with one shared `note`, `status=incomplete`, one `material_reference_ambiguous` warning; identity matches (source name) keep their texture | R4-F01 |
+| `download --project` when the project record fails after the transfer (metadata.json replaced by a symlink, damaged, unwritable directory, lock) | exit 11 with `result: null` | exit 11 (same class), full `result` incl. `downloads` manifest and `saved_json`, `project.action="failed"` with `error`, `error.recovery.action="record_project"` and `hint` = the `meshy project record …` command; assets kept, nothing re-downloaded or re-submitted | R4-F02 |
+| `download --project` with a metadata.json that is a symlink or not valid JSON, or a blank `--stage` | detected after the transfer | refused before any request ("nothing was downloaded") | R4-F02 |
+| task verbs `--project` record failure | `local_io` without a recovery | same class, plus `recovery.action="record_project"` and the record command as hint | R4-F02 |
+
 New global flags: `--output-schema`, `--api-key-file`, `--workspace`, `--no-update-check`,
 `--base-url-creative-lab`. New per-command flags on task verbs: `--save-json`,
 `--include-raw`, `--project`, `--stage`, `--operation-id`, `--stop-after-first` (make),

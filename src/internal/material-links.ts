@@ -24,7 +24,19 @@
  * reference. Several candidates for the same rule is an *ambiguity*: the
  * reference stays as written, the candidates are listed and the report is
  * `incomplete` — the CLI never picks the first of several material groups'
- * textures. Unresolved references are reported the same way. The whole pass is
+ * textures.
+ *
+ * The first three rules are *identity* evidence; the channel and only-texture
+ * rules are *heuristics*. Resolution therefore runs in two passes over the
+ * whole MTL: every distinct reference is resolved on its own first, then the
+ * heuristic results are checked against each other — a texture that several
+ * different references would fall back to (whichever channel rule each one
+ * took to get there, in whichever order they appear) serves none of them, and a
+ * reference that different keys would send to different textures is not
+ * rewritten either. Two material groups collapsing onto one image without
+ * evidence that they name the same file is exactly the guess this module must
+ * not make; a reference with identity evidence keeps its texture regardless.
+ * Unresolved references are reported the same way. The whole pass is
  * cooperative: an abort signal stops it before the next read, write or
  * publication, leaving no temp file behind.
  */
@@ -331,41 +343,37 @@ function parseMapLine(line: string): { indent: string; key: string; options: str
   return { indent, key, options: "", ref: rest };
 }
 
-type Resolution = { kind: "hit"; name: string; method: LinkMethod } | { kind: "ambiguous"; method: LinkMethod; candidates: string[]; note?: string } | { kind: "none" };
+/**
+ * One reference's verdict. `identity` marks evidence of *which* file was meant
+ * (source name, saved name, source stem) as opposed to a channel/only-texture
+ * heuristic, which the second pass may still veto.
+ */
+type Resolution =
+  | { kind: "hit"; name: string; method: LinkMethod; identity: boolean }
+  | { kind: "ambiguous"; method: LinkMethod; candidates: string[]; note?: string }
+  | { kind: "none" };
 
 /** Apply one rule: exactly one candidate resolves, several are an ambiguity, none falls through. */
-function pick(candidates: TextureDescriptor[], method: LinkMethod): Resolution | null {
-  if (candidates.length === 1) return { kind: "hit", name: candidates[0]!.name, method };
+function pick(candidates: TextureDescriptor[], method: LinkMethod, identity: boolean): Resolution | null {
+  if (candidates.length === 1) return { kind: "hit", name: candidates[0]!.name, method, identity };
   if (candidates.length > 1) return { kind: "ambiguous", method, candidates: candidates.map((c) => c.name) };
   return null;
 }
 
-/** Channel a map line speaks about: a channel word in the referenced name, else the MTL key's channel. */
-function channelOfMapLine(key: string, ref: string): string | null {
-  return channelInFileName(basename(ref.replaceAll("\\", "/"))) ?? MAP_KEY_CHANNEL[key.toLowerCase()] ?? null;
-}
-
-/**
- * Channel-based rules may only decide when one distinct reference speaks about
- * that channel: two materials both wanting "the base color" while a single base
- * color texture was downloaded is a choice the CLI must not make.
- */
-function pickByChannel(channel: string, textures: TextureDescriptor[], competing: Map<string, Set<string>>, method: LinkMethod): Resolution | null {
+/** Channel rule: one texture of that channel is a (heuristic) hit, several are an ambiguity, none falls through. */
+function pickByChannel(channel: string, textures: TextureDescriptor[], method: LinkMethod): Resolution | null {
   const candidates = textures.filter((t) => t.channel === channel);
   if (candidates.length === 0) return null;
   if (candidates.length > 1) return { kind: "ambiguous", method: "ambiguous", candidates: candidates.map((c) => c.name) };
-  const refs = competing.get(channel);
-  if (refs && refs.size > 1) {
-    return { kind: "ambiguous", method: "ambiguous", candidates: candidates.map((c) => c.name), note: `${refs.size} different references (${[...refs].map((r) => `'${r}'`).join(", ")}) all point at the only ${channel} texture, ${candidates[0]!.name}` };
-  }
-  return { kind: "hit", name: candidates[0]!.name, method };
+  return { kind: "hit", name: candidates[0]!.name, method, identity: false };
 }
 
-function resolveTextureReference(key: string, ref: string, textures: TextureDescriptor[], distinctRefs: number, competing: Map<string, Set<string>>): Resolution {
+/** First pass: resolve one (key, reference) pair on its own evidence; competition between references is decided afterwards. */
+function resolveTextureReference(key: string, ref: string, textures: TextureDescriptor[], distinctRefs: number): Resolution {
   const refBase = basename(ref.replaceAll("\\", "/"));
   const lower = refBase.toLowerCase();
   // 1. The name the server served a texture under is the only evidence of which image the MTL meant.
-  const bySource = pick(textures.filter((t) => t.source_name !== null && t.source_name.toLowerCase() === lower), "source_name");
+  const bySource = pick(textures.filter((t) => t.source_name !== null && t.source_name.toLowerCase() === lower), "source_name", true);
   if (bySource) return bySource;
   // 2. A saved file of that name — unless it is known to come from a different
   //    source: the CLI's generated names can collide with another texture's
@@ -374,7 +382,7 @@ function resolveTextureReference(key: string, ref: string, textures: TextureDesc
   if (named.length === 1) {
     const t = named[0]!;
     if (t.source_name === null || t.source_name.toLowerCase() === lower) {
-      return { kind: "hit", name: t.name, method: t.name === ref ? "unchanged" : "exact" };
+      return { kind: "hit", name: t.name, method: t.name === ref ? "unchanged" : "exact", identity: true };
     }
     return {
       kind: "ambiguous",
@@ -385,20 +393,79 @@ function resolveTextureReference(key: string, ref: string, textures: TextureDesc
   }
   if (named.length > 1) return { kind: "ambiguous", method: "ambiguous", candidates: named.map((t) => t.name) };
   const stem = stemOf(refBase);
-  const byStem = pick(textures.filter((t) => t.source_name !== null && stemOf(t.source_name) === stem), "source_stem");
+  const byStem = pick(textures.filter((t) => t.source_name !== null && stemOf(t.source_name) === stem), "source_stem", true);
   if (byStem) return byStem;
+  // 3. Heuristics: a channel word in the referenced name, then the channel the
+  //    MTL key implies. Whichever one lands is what the second pass compares.
   const inName = channelInFileName(refBase);
   if (inName) {
-    const r = pickByChannel(inName, textures, competing, "channel_in_name");
+    const r = pickByChannel(inName, textures, "channel_in_name");
     if (r) return r;
   }
   const ofKey = MAP_KEY_CHANNEL[key.toLowerCase()];
   if (ofKey) {
-    const r = pickByChannel(ofKey, textures, competing, "channel_of_key");
+    const r = pickByChannel(ofKey, textures, "channel_of_key");
     if (r) return r;
   }
-  if (textures.length === 1 && distinctRefs === 1) return { kind: "hit", name: textures[0]!.name, method: "only_texture" };
+  if (textures.length === 1 && distinctRefs === 1) return { kind: "hit", name: textures[0]!.name, method: "only_texture", identity: false };
   return { kind: "none" };
+}
+
+interface MapPair {
+  key: string;
+  ref: string;
+  res: Resolution;
+}
+
+function pairId(key: string, ref: string): string {
+  return `${key.toLowerCase()}\u0000${ref}`;
+}
+
+/**
+ * Second pass: heuristic hits compete on the texture they actually reached.
+ * A texture that any *other* distinct reference also reaches — by a hit of
+ * either kind, or as an ambiguity it could not decide — is not handed to a
+ * heuristic one: nothing shows those references name the same image. A single
+ * reference that different keys would send to different textures is not
+ * rewritten at all. Identity hits are kept as they are.
+ */
+function arbitrate(pairs: MapPair[]): Map<string, Resolution> {
+  // texture name → the distinct references contending for it and how they got there
+  const contenders = new Map<string, Map<string, LinkMethod>>();
+  const contend = (name: string, ref: string, method: LinkMethod, identity: boolean): void => {
+    const byRef = contenders.get(name) ?? new Map<string, LinkMethod>();
+    if (!byRef.has(ref) || identity) byRef.set(ref, method);
+    contenders.set(name, byRef);
+  };
+  for (const { ref, res } of pairs) {
+    if (res.kind === "hit") contend(res.name, ref, res.method, res.identity);
+    else if (res.kind === "ambiguous") for (const c of res.candidates) contend(c, ref, "ambiguous", false);
+  }
+  const decided = new Map<string, Resolution>();
+  for (const { key, ref, res } of pairs) {
+    const id = pairId(key, ref);
+    if (res.kind !== "hit" || res.identity) {
+      decided.set(id, res);
+      continue;
+    }
+    const rivals = [...(contenders.get(res.name) ?? new Map<string, LinkMethod>())].filter(([r]) => r !== ref);
+    const elsewhere = pairs.filter((p) => p.ref === ref && p.res.kind === "hit" && p.res.name !== res.name);
+    if (rivals.length === 0 && elsewhere.length === 0) {
+      decided.set(id, res);
+      continue;
+    }
+    // The note is the same for every member of the group, so the caller's
+    // warning can say it once.
+    const note =
+      rivals.length > 0
+        ? `${[[ref, res.method] as [string, LinkMethod], ...rivals]
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([r, m]) => `'${r}' (${m})`)
+            .join(" and ")} compete for ${res.name}; different references cannot share one texture without evidence that they name the same image`
+        : `'${ref}' would be rewritten to ${res.name} for ${key} but to ${elsewhere.map((p) => `${(p.res as { name: string }).name} for ${p.key}`).join(", ")}; one reference names one file`;
+    decided.set(id, { kind: "ambiguous", method: "ambiguous", candidates: [res.name], note });
+  }
+  return decided;
 }
 
 /**
@@ -475,20 +542,22 @@ export async function relinkMaterials(files: readonly LinkableFile[], opts: { si
       report.warnings.push(warning("material_reference_unresolved", `${basename(mtl.path)} is ${size} bytes; too large for an MTL, texture references were not checked`));
       return report;
     }
-    const distinctRefs = new Set<string>();
-    // Which distinct references speak about each channel — a single texture
-    // cannot serve two different references.
-    const competing = new Map<string, Set<string>>();
-    for (const raw of readFileSync(mtl.path, "utf8").split(/\r?\n/)) {
-      const parsed = parseMapLine(raw);
-      if (!parsed) continue;
-      distinctRefs.add(parsed.ref);
-      const channel = channelOfMapLine(parsed.key, parsed.ref);
-      if (channel) {
-        if (!competing.has(channel)) competing.set(channel, new Set());
-        competing.get(channel)!.add(parsed.ref);
-      }
+    // Pass 1: every distinct (key, reference) pair on its own evidence.
+    const parsedLines = readFileSync(mtl.path, "utf8")
+      .split(/\r?\n/)
+      .map(parseMapLine)
+      .filter((p): p is NonNullable<ReturnType<typeof parseMapLine>> => p !== null);
+    const distinctRefs = new Set(parsedLines.map((p) => p.ref));
+    const pairs: MapPair[] = [];
+    const seenPairs = new Set<string>();
+    for (const p of parsedLines) {
+      const id = pairId(p.key, p.ref);
+      if (seenPairs.has(id)) continue;
+      seenPairs.add(id);
+      pairs.push({ key: p.key, ref: p.ref, res: resolveTextureReference(p.key, p.ref, textures, distinctRefs.size) });
     }
+    // Pass 2: heuristic hits compete on the texture they actually reached.
+    const decided = arbitrate(pairs);
     let material: string | null = null;
     const mtlChanged = await rewriteLines(mtl.path, (line, lineNo) => {
       const t = line.trim();
@@ -498,7 +567,7 @@ export async function relinkMaterials(files: readonly LinkableFile[], opts: { si
       }
       const parsed = parseMapLine(line);
       if (!parsed) return null;
-      const res = resolveTextureReference(parsed.key, parsed.ref, textures, distinctRefs.size, competing);
+      const res: Resolution = decided.get(pairId(parsed.key, parsed.ref)) ?? { kind: "none" };
       if (res.kind === "none") {
         report.texture_maps.push({ line: lineNo, material, reference: parsed.ref, resolved_to: null, method: "unresolved" });
         return null;
@@ -516,10 +585,20 @@ export async function relinkMaterials(files: readonly LinkableFile[], opts: { si
     const unresolved = report.texture_maps.filter((l) => l.method === "unresolved");
     if (ambiguous.length > 0) {
       report.status = "incomplete";
+      // One sentence per distinct reason; a note shared by a group of
+      // references (they compete for one texture) is said once, naming the
+      // material groups involved.
+      const reasons = new Map<string, string[]>();
+      for (const l of ambiguous) {
+        const text = l.note ?? `'${l.reference}' could be ${l.candidates!.join(" or ")}`;
+        const materials = reasons.get(text) ?? [];
+        if (l.material && !materials.includes(l.material)) materials.push(l.material);
+        reasons.set(text, materials);
+      }
       report.warnings.push(
         warning(
           "material_reference_ambiguous",
-          `${basename(mtl.path)}: ${ambiguous.map((l) => (l.note ? `${l.note}${l.material ? ` (${l.material})` : ""}` : `'${l.reference}'${l.material ? ` (${l.material})` : ""} could be ${l.candidates!.join(" or ")}`)).join("; ")}; the references stay as written — the CLI does not guess between material groups or sources`,
+          `${basename(mtl.path)}: ${[...reasons].map(([text, materials]) => `${text}${materials.length ? ` (${materials.join(", ")})` : ""}`).join("; ")}; the references stay as written — the CLI does not guess between material groups or sources`,
         ),
       );
     }

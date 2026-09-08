@@ -490,6 +490,29 @@ export function saveTaskSnapshot(projectDir: string, taskId: string, raw: unknow
   return { path: resolved.path, relative: relative(resolved.root, resolved.path).split(sep).join("/") };
 }
 
+/** Quote one argument for a command a human can paste into a shell; plain tokens stay bare. */
+function shellArg(value: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * The `meshy project record` invocation that redoes exactly one thing: the
+ * metadata entry a command could not write. Assets, task and journal are left
+ * alone — the caller runs it once the project directory is repaired.
+ */
+export function projectRecordCommand(projectDir: string, input: RecordInput, opts: { root?: string } = {}): string {
+  const parts = ["meshy", "project", "record", "--project", shellArg(projectDir), "--task-id", shellArg(input.taskId), "--stage", shellArg(input.stage)];
+  if (input.resource) parts.push("--resource", shellArg(input.resource));
+  if (input.taskType) parts.push("--task-type", shellArg(input.taskType));
+  if (input.parentTaskId) parts.push("--parent-task-id", shellArg(input.parentTaskId));
+  if (input.status) parts.push("--status", shellArg(input.status));
+  for (const f of input.files ?? []) parts.push("--file", shellArg(f));
+  if (input.taskJson) parts.push("--task-json", shellArg(input.taskJson));
+  if (input.operationId) parts.push("--operation-id", shellArg(input.operationId));
+  if (opts.root) parts.push("--root", shellArg(opts.root));
+  return parts.join(" ");
+}
+
 /** Derive a stage name from a task type (`text-to-3d-preview` → preview, `creative-lab-lamp-build` → build). */
 export function stageFromTaskType(type: unknown, fallback: string): string {
   if (typeof type !== "string" || !type) return fallback;

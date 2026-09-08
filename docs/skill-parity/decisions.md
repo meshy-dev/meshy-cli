@@ -527,3 +527,61 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   are now resolved with `realpathLenient` before the containment test and the
   relative path (as `saveTaskSnapshot` already did); the user-facing paths in the
   result are unchanged. Files genuinely outside the project are still not recorded.
+
+## D-051 Material heuristics compete on the texture they actually reach
+
+- R4-F01: channel competition was computed on the channel each reference
+  *declared* (a channel word in its name, else the MTL key's channel), while
+  resolution fell through: `map_Kd body_normal.png` declared normal, found no
+  normal texture and fell back to the key's base color — the very texture
+  `map_Kd eyes_diffuse.png` reached through its name — and the base-color
+  competition set had never counted it. Two material groups were rewritten to
+  one image and the report said `complete`. Resolution now runs in two passes
+  over the whole MTL: every distinct (key, reference) pair is resolved on its
+  own (`source_name` / `exact` / `source_stem` are *identity* evidence, the
+  channel and only-texture rules are *heuristics*), then `arbitrate` vetoes a
+  heuristic hit whenever any other distinct reference contends for that
+  texture — by a hit of either kind, or as an ambiguity it could not decide —
+  and when the same reference would land on different textures under different
+  keys. Identity hits are never vetoed, so C05's source-name mapping, N04's
+  multi-material set and the round-1 distinct-channel fallbacks are unchanged;
+  a lone reference may still fall back by key. Vetoed references stay as
+  written with `method: "ambiguous"`, `candidates: [<texture>]` and one `note`
+  shared by the group; `material_links.status` is `incomplete` and the single
+  `material_reference_ambiguous` warning states each reason once, naming the
+  material groups. The order of the references is irrelevant.
+
+## D-052 A project-record failure keeps the download result and says how to redo the record alone
+
+- R4-F02: in `meshy download --project` the realpath / `indexRootFor` /
+  `recordTask` phase ran after the download's try/catch, so a refused
+  metadata.json replacement (a symlink planted during the transfer), a damaged
+  metadata.json or a lock/permission failure surfaced as `local_io` with
+  `result: null` although every asset was on disk. The phase is now wrapped
+  (`projectRecordFailure`): the error keeps its class (code, exit code, HTTP
+  status), carries the complete result — `source`, `selection`, `downloads`
+  with the digests actually on disk, `unknown_urls`, `saved_json` — plus
+  `project: { action: "failed", stage, recorded_files: [], error, recovery }`,
+  and `error.recovery = { action: "record_project", automatic: false, command }`
+  (also the `hint`), where `command` is the exact `meshy project record …`
+  invocation with the task id, stage, resource, task type, status and the files
+  that landed inside the project (`projectRecordCommand`). Nothing is rolled
+  back, re-downloaded or re-submitted, and `index_dirty` keeps its meaning
+  (metadata committed, history index not). What can be seen before the
+  transfer is refused before it (`preflightProject`: metadata.json must exist,
+  be a regular file and parse as a project; `--stage` must not be blank) with
+  "nothing was downloaded" and no request. The task verbs' `--project`
+  attachment reports the same `record_project` recovery and hint on failure.
+
+## D-053 `make`'s reported identity is asserted against the journal (R4-T01)
+
+- Test-only. The round-3 C06 make scenarios had both POSTs return the same task
+  id and only checked `operation_id` for presence, so a future regression that
+  reported step 1's id would have passed. `tests/codex-review-round4.test.ts`
+  runs the two-step text chain with distinct step ids under both schemas, for an
+  asset 503 and for a SIGINT during the final download, and checks
+  `result.task_id`, `submission.operation_id`, `executed[-1].operation_id` and
+  the legacy top-level `operation_id` against the *last* accepted journal
+  record, `executed[0].operation_id` against step 1's record, the refine
+  payload's `preview_task_id` against step 1, and the request sequence
+  POST GET POST GET GET. C06 keeps the create/wait/get/sidecar/SIGINT scenarios.

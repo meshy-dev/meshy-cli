@@ -374,14 +374,28 @@ under (then by channel), one candidate only: with several material groups a
 reference that could mean two files is left as written and reported as
 ambiguous, and a reference that merely equals one of the CLI's generated names
 (`texture_0_base_color.png`) while the server called that image something else
-is ambiguous too — identity follows the source, never the file name on disk. Every link is listed under `result.downloads.material_links`
+is ambiguous too — identity follows the source, never the file name on disk.
+Channel fallbacks (a channel word in the reference, the MTL key's channel, the
+only texture there is) are heuristics and compete on the texture they actually
+reach: when two different references would both fall back to the same image, or
+one reference would go to different images under different keys, they all stay
+as written and are reported as ambiguous — the CLI never merges material groups
+without evidence that they name the same file. Every link is listed under `result.downloads.material_links`
 (`status: complete | incomplete`, the `newmtl` group of each map), rewritten
 files carry `relinked: true` with their final sha256, and a reference that
 matches no or several downloaded files stays as written and is warned
 (`material_reference_unresolved` / `material_reference_ambiguous`). Files are published
 exclusively (never overwritten without `--overwrite`), checked against the
 content type and magic bytes, kept inside the output directory (or `--workspace`),
-and listed with size and sha256 in `result.downloads.files`. Asset hosts never
+and listed with size and sha256 in `result.downloads.files`. With `--project <dir>`
+the files that landed inside the project are recorded in its `metadata.json`;
+when that record fails after the transfer (metadata.json replaced by a symlink,
+damaged, or locked) the command exits 11 with the complete `result` — manifest,
+`saved_json`, `project.action: "failed"` — and `error.recovery.command` is the
+one `meshy project record …` invocation that redoes the record; the assets stay
+where they landed. Problems visible before the transfer (no metadata.json, a
+symlink or invalid JSON in its place, a blank `--stage`) are refused with no
+request made. Asset hosts never
 receive the API credential; an expired signed URL is refreshed once when the
 task came from the API and reported as unrefreshable when it came from a file.
 

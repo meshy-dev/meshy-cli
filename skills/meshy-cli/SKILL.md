@@ -177,7 +177,12 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
 - Legacy-schema errors (no `--output-schema v1`) after a create carry additive
   `task_id` / `operation_id` fields and a `hint` with the resume command — never re-create.
 - `result.downloads.material_links.status: "incomplete"` → name the references that
-  stayed unresolved or ambiguous (`texture_maps[].method`) instead of claiming the model loads.
+  stayed unresolved or ambiguous (`texture_maps[].method`, `note`) instead of claiming the
+  model loads; two material groups that would share one texture without evidence are
+  deliberately left as written.
+- `result.project.action: "failed"` (download `--project`, exit 11) → the assets are on
+  disk (`result.downloads.files`); repair the project's `metadata.json`, then run
+  `error.recovery.command` (`meshy project record …`) — do not download again.
 - Exit 10 → reconcile with `<resource> list`; never submit the same create again blindly.
 - A `FAILED` task → relay `result.task.task_error.message` verbatim; do not guess a cause.
 - Any error may carry `error.recovery.command` — prefer it over improvising.

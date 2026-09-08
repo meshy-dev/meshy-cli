@@ -58,7 +58,7 @@ import {
 } from "./operation-store.js";
 import { originOf } from "./config.js";
 import { resolveWithinRoot } from "./paths.js";
-import { indexRootFor, recordTask, saveTaskSnapshot, stageFromTaskType } from "./project-store.js";
+import { indexRootFor, projectRecordCommand, recordTask, saveTaskSnapshot, stageFromTaskType, type RecordInput } from "./project-store.js";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 
@@ -294,28 +294,38 @@ function attachToProject(
   if (!projectFlag) return null;
   const projectDir = resolveProjectDir(projectFlag, opened.flags.workspace);
   const stage = (opts.stage as string | undefined) ?? (typeof extra.payload?.["mode"] === "string" ? (extra.payload["mode"] as string) : descriptor.creativeLab?.stage ?? stageFromTaskType(task?.type, descriptor.id));
+  const input: RecordInput = {
+    taskId,
+    stage,
+    resource: descriptor.id,
+    taskType: task?.type ?? null,
+    endpoint: descriptor.legacyEndpoint,
+    parentTaskId: parentTaskIdFromPayload(extra.payload ?? null),
+    status: task?.status ?? null,
+    taskJson: null,
+    operationId: extra.operationId ?? null,
+    files: extra.files ?? [],
+  };
   try {
     const snapshot = task && raw ? saveTaskSnapshot(projectDir, taskId, raw) : null;
+    input.taskJson = snapshot?.relative ?? null;
     const indexRoot = indexRootFor(projectDir, undefined, opened.flags.workspace);
-    const rec = recordTask(projectDir, {
-      taskId,
-      stage,
-      resource: descriptor.id,
-      taskType: task?.type ?? null,
-      endpoint: descriptor.legacyEndpoint,
-      parentTaskId: parentTaskIdFromPayload(extra.payload ?? null),
-      status: task?.status ?? null,
-      taskJson: snapshot?.relative ?? null,
-      operationId: extra.operationId ?? null,
-      files: extra.files ?? [],
-    }, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
+    const rec = recordTask(projectDir, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
     if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}; run \`meshy project rebuild-index\``));
     if (rec.migrated_from_legacy) warnings.push(warning("metadata_migrated", "legacy metadata.json migrated to schema_version 2 (backup kept beside it)"));
     return { project_dir: projectDir, snapshot: snapshot?.path ?? null, stage, action: rec.action, index: rec.index };
   } catch (err) {
+    // The task exists and the journal is written; only the project entry is
+    // missing. The recovery redoes that one step — nothing is re-submitted.
+    const command = projectRecordCommand(projectDir, input);
     throw new CliError({
       code: err instanceof CliError ? err.code : "local_io",
       message: `task ${taskId} exists but recording it in ${projectDir} failed: ${err instanceof Error ? err.message : String(err)}`,
+      httpStatus: err instanceof CliError ? err.httpStatus : null,
+      retryable: err instanceof CliError ? err.retryable : false,
+      recovery: { action: "record_project", automatic: false, command },
+      hint: command,
+      details: err instanceof CliError ? err.details : undefined,
       cause: err,
     });
   }
