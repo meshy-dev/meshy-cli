@@ -42,7 +42,7 @@ const prepareCommand = new Command("prepare-print")
         throw new UsageError("--output/-o and --in-place are mutually exclusive: pick a new file or replace the input, not both");
       }
       const cwd = process.cwd();
-      const workspace = opened.flags.workspace;
+      const workspace = opened.flags.workspaceRoot;
 
       // Reads may follow a symlinked input; an in-place replacement may not
       // (renaming over the link would drop the bytes somewhere else).

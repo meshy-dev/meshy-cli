@@ -22,7 +22,7 @@ import { emitResult, openCommand, saveRawJson, type OpenedCommand } from "../int
 import { abortSignal } from "../internal/context.js";
 import { downloadAssets, type DownloadedFile } from "../internal/download.js";
 import { CliError, UsageError, type Warning } from "../internal/errors.js";
-import { realpathLenient, resolveWithinRoot, safeSegment } from "../internal/paths.js";
+import { freezeRoot, realpathLenient, resolveWithinRoot, safeSegment, type AuthorisedRoot } from "../internal/paths.js";
 import { warning } from "../internal/result.js";
 import { assertProjectMetadataPresent, indexRootFor, projectRecordCommand, readProject, recordTask, stageFromTaskType, type RecordInput } from "../internal/project-store.js";
 import { buildLocalRuntime, buildRuntime } from "../internal/runtime.js";
@@ -120,12 +120,16 @@ export const downloadCommand = new Command("download")
     if (selectors.length > 1) throw new UsageError(`selectors are mutually exclusive (got ${selectors.map((s) => `--${s}`).join(", ")})`);
     if (opts.withDependencies && opts.geometryOnly) throw new UsageError("--with-dependencies and --geometry-only are mutually exclusive");
     if (opened.flags.output && opts.outputDir) throw new UsageError("--output/-o and --output-dir are mutually exclusive");
+    // The write boundary was frozen with the flags (--workspace); without one the
+    // project directory itself is frozen here, before any request.
+    const workspaceRoot = opened.flags.workspaceRoot;
     const projectDir = opts.project
-      ? opened.flags.workspace
-        ? resolveWithinRoot(resolvePath(opts.project), opened.flags.workspace, { label: "--project" }).path
+      ? workspaceRoot
+        ? resolveWithinRoot(resolvePath(opts.project), workspaceRoot, { label: "--project" }).path
         : resolvePath(opts.project)
       : null;
     if (projectDir) preflightProject(projectDir, opts.project!, opts.stage);
+    const projectRoot: AuthorisedRoot | null = projectDir ? (workspaceRoot ?? freezeRoot(projectDir, { label: "--project" })) : null;
     if (projectDir && opts.url) throw new UsageError("--project needs a task context; it cannot be combined with --url");
     const warnings: Warning[] = [];
 
@@ -163,7 +167,7 @@ export const downloadCommand = new Command("download")
         return new Map(fresh.assets.filter((a) => a.url).map((a) => [a.key, a.url!] as const));
       };
     }
-    const savedJson = opts.saveJson && raw ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspace }) : null;
+    const savedJson = opts.saveJson && raw ? saveRawJson(opts.saveJson, raw, { workspace: workspaceRoot }) : null;
 
     // ---- enumerate + select ----
     let selected: Asset[];
@@ -226,7 +230,7 @@ export const downloadCommand = new Command("download")
       throw new UsageError(`${toDownload.length} files would be written (${toDownload.map((a) => a.key).join(", ")}); --output names one file — use --output-dir <dir>`);
     }
     const dir = outputFile ? dirname(resolvePath(outputFile)) : resolvePath(outputDir!);
-    const root = opened.flags.workspace ? resolvePath(opened.flags.workspace) : dir;
+    const root: string | AuthorisedRoot = workspaceRoot ?? dir;
 
     const files: DownloadedFile[] = [];
     let result;
@@ -282,21 +286,31 @@ export const downloadCommand = new Command("download")
         status: typeof task["status"] === "string" ? (task["status"] as string) : null,
         files: [],
       };
-      const workspace = opened.flags.workspace ? resolvePath(opened.flags.workspace) : undefined;
+      const workspace = workspaceRoot?.given;
+      // 1. The location, against the boundary frozen before the transfers: the
+      //    frozen directory must still be there and the project must resolve
+      //    inside it now. A project (or a parent of it) replaced by a symlink to
+      //    somewhere else during the transfer is refused before any lock,
+      //    snapshot or metadata write — and gets no command that would write there.
+      let located: string;
+      try {
+        located = resolveWithinRoot(projectDir, projectRoot!, { label: "--project" }).path;
+      } catch (err) {
+        throw projectBoundaryFailure(err, { projectDir, dir, input, written: written.length, outcome, warnings });
+      }
       try {
         // Compare in one real-path frame: the project may be reached through an
         // alias (a symlinked parent, macOS /var → /private/var) while the
         // downloader reports real paths; the recorded name is relative to the real project.
         // The file list is known before the project is examined, so a recovery
         // command always names what landed inside the project.
-        const projectReal = realpathLenient(projectDir);
         input.files = written
-          .map((f) => relative(projectReal, realpathLenient(f.path)).split(/[\\/]/).join("/"))
+          .map((f) => relative(located, realpathLenient(f.path)).split(/[\\/]/).join("/"))
           .filter((f) => f.length > 0 && !f.startsWith("..") && !f.startsWith("/"));
-        // The project passed the preflight; it must still be one now.
-        assertProjectMetadataPresent(projectDir, opts.project!);
-        const indexRoot = indexRootFor(projectDir, undefined, opened.flags.workspace);
-        const rec = recordTask(projectDir, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
+        // 2. The project passed the preflight; it must still be one now. Writes go through the real path.
+        assertProjectMetadataPresent(located, opts.project!);
+        const indexRoot = indexRootFor(located, undefined, workspaceRoot);
+        const rec = recordTask(located, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
         if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}`));
         if (input.files.length !== written.length) warnings.push(warning("files_outside_project", "some files were written outside the project directory and were not recorded"));
         project = { project_dir: projectDir, action: rec.action, stage: rec.entry.stage, recorded_files: input.files };
@@ -335,6 +349,40 @@ function preflightProject(projectDir: string, flag: string, stage: string | unde
     throw err;
   }
   if (stage !== undefined && stage.trim() === "") throw new UsageError("--stage must not be blank");
+}
+
+/**
+ * The transfers are done and the files are on disk, but the project no longer
+ * lies inside the boundary frozen when the command started (its directory or a
+ * parent was replaced by a symlink to somewhere else, or the boundary itself
+ * was moved). Nothing was locked, snapshotted or written; the complete download
+ * result is kept and `project.action` is `failed` — and no `meshy project
+ * record` command is offered, because the only one that would succeed is one
+ * that writes across the boundary.
+ */
+function projectBoundaryFailure(
+  err: unknown,
+  ctx: { projectDir: string; dir: string; input: RecordInput; written: number; outcome: Record<string, unknown>; warnings: Warning[] },
+): CliError {
+  const reason = err instanceof Error ? err.message : String(err);
+  return new CliError({
+    code: "local_io",
+    message: `${ctx.written} file(s) were downloaded to ${ctx.dir} but --project ${ctx.projectDir} is no longer a target inside the authorised boundary: ${reason}; nothing was recorded (no project lock, snapshot or metadata was written). Restore the project inside the workspace, then record task ${ctx.input.taskId} with \`meshy project record\` from that workspace`,
+    warnings: ctx.warnings,
+    details: { project: ctx.projectDir, task_id: ctx.input.taskId, stage: ctx.input.stage, recorded: false },
+    result: {
+      ...ctx.outcome,
+      project: {
+        project_dir: ctx.projectDir,
+        action: "failed",
+        stage: ctx.input.stage,
+        recorded_files: [],
+        error: { code: "local_io", message: reason },
+        recovery: null,
+      },
+    },
+    cause: err,
+  });
 }
 
 /**

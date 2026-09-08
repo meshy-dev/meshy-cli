@@ -185,8 +185,10 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
   `error.recovery.command` (`meshy project record …`, it already carries the original
   `--workspace` and `--operation-id`) verbatim — do not download or create again. The same
   command appears after a task verb's `--project` record failure (legacy: `hint`); when the
-  error says the project is *no longer inside the workspace* there is deliberately no
-  command — move the project back first.
+  error says the project is *no longer a target inside the authorised boundary* (the project,
+  its parent or the workspace itself changed while the request was in flight) there is
+  deliberately no command and `recovery` is null — restore the directory first, then record
+  with `meshy project record` from inside the original workspace.
 - Exit 10 → reconcile with `<resource> list`; never submit the same create again blindly.
 - A `FAILED` task → relay `result.task.task_error.message` verbatim; do not guess a cause.
 - Any error may carry `error.recovery.command` — prefer it over improvising.

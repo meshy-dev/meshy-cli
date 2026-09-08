@@ -249,6 +249,7 @@ test("E01/R5-F01 download --project P --workspace P (path with a space and a quo
 // ---------------------------------------------------------------------------
 
 interface TextureMap {
+  line: number;
   material: string | null;
   reference: string;
   resolved_to: string | null;
@@ -293,7 +294,15 @@ test("E02/R5-F02 map_Kd shared.png + map_Bump shared.png with one base color and
       const dl = env.result.downloads;
       assert.equal(dl.state, "completed");
       assert.equal(dl.material_links.status, "incomplete");
-      const byKey = new Map(dl.material_links.texture_maps.map((l) => [l.reference + "/" + (l.candidates ?? []).join(","), l]));
+      const candidatesByLine = { "map_Kd shared.png": ["texture_0_base_color.png"], "map_Bump shared.png": ["texture_0_normal.png", "texture_1_normal.png"] } as const;
+      assert.deepEqual(
+        dl.material_links.texture_maps.map((l) => [l.line, l.candidates]),
+        [
+          [2, [...candidatesByLine[lines[order[0]]]]],
+          [3, [...candidatesByLine[lines[order[1]]]]],
+        ],
+        `${label}: each line carries the candidate set of its own key (line 2 = ${lines[order[0]]}, line 3 = ${lines[order[1]]})`,
+      );
       assert.equal(dl.material_links.texture_maps.length, 2);
       for (const l of dl.material_links.texture_maps) {
         assert.equal(l.reference, "shared.png");
@@ -304,8 +313,6 @@ test("E02/R5-F02 map_Kd shared.png + map_Bump shared.png with one base color and
         assert.match(l.note ?? "", /map_Bump could only make it texture_0_normal\.png or texture_1_normal\.png/);
         assert.match(l.note ?? "", /one reference names one file/);
       }
-      assert.ok(byKey.has("shared.png/texture_0_base_color.png"), `${label}: the map_Kd line lists its own candidate`);
-      assert.ok(byKey.has("shared.png/texture_0_normal.png,texture_1_normal.png"), `${label}: the map_Bump line lists its own candidates`);
       assert.deepEqual(dl.material_links.rewritten.map((p) => basename(p)), ["model.obj"], `${label}: only the OBJ's mtllib changed`);
       for (const f of dl.files) {
         assert.equal(sha(f.path), f.sha256, `${label}: ${f.key} digest matches disk`);
@@ -441,8 +448,11 @@ test("E03/R5-F03 legacy/v1 × get/wait/stream/create-async/create-sync × metada
             assert.equal(records.length, 0, id);
             assert.equal(api.requests.filter((q) => q.method === "POST").length, 0, id);
           }
-          if (verb === "get" || verb === "stream" || verb === "create-async") assert.equal(api.requests.length, 1, `${id}: one request only`);
-          assert.equal(api.requests.filter((q) => q.method === "DELETE").length, 0);
+          // Exact request sequence for every entry: the fixture is SUCCEEDED on the first GET, so no extra poll is tolerated.
+          const base = "/openapi/v2/text-to-3d";
+          const expectedRequests: Array<[string, string]> =
+            verb === "get" || verb === "wait" ? [["GET", `${base}/${id}`]] : verb === "stream" ? [["GET", `${base}/${id}/stream`]] : verb === "create-async" ? [["POST", base]] : [["POST", base], ["GET", `${base}/${id}`]];
+          assert.deepEqual(api.requests.map((q) => [q.method, q.path]), expectedRequests, `${id}: exact method/path sequence`);
           // A damaged metadata still lets the snapshot land; a missing one does not — and the command says which.
           const taskJson = optionValue(words, "--task-json");
           if (fault === "missing" || verb === "create-async") assert.equal(taskJson, undefined, `${id}: no snapshot was written`);
@@ -505,7 +515,7 @@ test("R5-F03 a project that leaves the workspace during the request (replaced by
       assert.equal(records[0]!.state, "accepted");
       assert.equal(result.submission.operation_id, records[0]!.operation_id);
       const message = schema === "v1" ? (out["error"] as { message: string }).message : String(out["message"]);
-      assert.match(message, /no longer a target inside the workspace/, schema);
+      assert.match(message, /no longer a target inside the authorised boundary/, schema);
       assert.match(message, /symbolic link|outside the authorised root/, schema);
       assert.match(message, /nothing was recorded/, schema);
       assert.match(message, new RegExp(`operation ${records[0]!.operation_id}`), `${schema}: the journal operation is named`);

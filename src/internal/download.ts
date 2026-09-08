@@ -31,7 +31,7 @@ import type { Task } from "../client/types.js";
 import { publishTempFile, tempPathFor, writeJsonFile } from "./atomic-file.js";
 import { CliError, UsageError } from "./errors.js";
 import { logger } from "./logger.js";
-import { isInside, realpathLenient, resolveWithinRoot, safeExtension, safeSegment } from "./paths.js";
+import { freezeRoot, isInside, realpathLenient, resolveWithinRoot, safeExtension, safeSegment, type AuthorisedRoot } from "./paths.js";
 import { USER_AGENT } from "./user-agent.js";
 import type { Asset } from "./artifacts.js";
 import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";
@@ -315,8 +315,8 @@ export interface DownloadAssetsOptions extends FetchOptions {
   /** Single-file mode (exactly one asset). */
   targetFile?: string;
   overwrite?: boolean;
-  /** Authorised root every final path must stay inside. */
-  root: string;
+  /** Authorised root every final path must stay inside — frozen before the first transfer (a string is frozen here). */
+  root: string | AuthorisedRoot;
   /** Validate magic/content-type for models (the legacy wrapper turns this off). */
   validateContent?: boolean;
   /** Bounded URL refresh hook (API source): returns fresh URLs by key or null. */
@@ -351,13 +351,16 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
   const files: DownloadedFile[] = [];
   const warnings: Array<{ code: string; message: string }> = [];
   const dir = opts.targetFile ? dirname(resolvePath(opts.targetFile)) : resolvePath(opts.targetDir!);
-  const rootReal = realpathLenient(opts.root);
+  // The root is frozen once: its real path and directory identity now, re-proven
+  // at every later check, so a boundary replaced during a transfer is refused.
+  const root: AuthorisedRoot = typeof opts.root === "string" ? freezeRoot(opts.root, { label: "output root" }) : opts.root;
+  const rootReal = root.real;
   // The directory and every planned leaf must be inside the root (and no
   // symlink) before anything at all is created — a refused target must not
   // leave a directory behind; the check repeats after any MIME-driven rename.
-  resolveWithinRoot(dir, rootReal, { label: "output directory" });
+  resolveWithinRoot(dir, root, { label: "output directory" });
   for (const asset of assets) {
-    resolveWithinRoot(join(dir, plannedName(asset, opts.targetFile)), rootReal, { label: "planned download path" });
+    resolveWithinRoot(join(dir, plannedName(asset, opts.targetFile)), root, { label: "planned download path" });
   }
   mkdirSync(dir, { recursive: true });
 
@@ -367,7 +370,7 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
     let entry: DownloadedFile;
     try {
       if (asset.kind === "report") {
-        const target = resolveWithinRoot(planned.endsWith(".json") ? planned : `${planned}.json`, rootReal, { label: "report path" }).path;
+        const target = resolveWithinRoot(planned.endsWith(".json") ? planned : `${planned}.json`, root, { label: "report path" }).path;
         const res = writeJsonFile(target, asset.report, { overwrite: opts.overwrite ?? false });
         const bytes = statSync(target).size;
         entry = { key: asset.key, path: target, relative_path: rel(rootReal, target), bytes, sha256: createHash("sha256").update(readFileSync(target)).digest("hex"), content_type: "application/json", format: "json", container_format: null, extracted: null, status: "written", error: null, publish_method: res.method, relinked: false };
@@ -389,7 +392,7 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
             } else throw err;
           } else throw err;
         }
-        entry = await placeFetched(asset, fetched, planned, rootReal, opts, warnings);
+        entry = await placeFetched(asset, fetched, planned, root, opts, warnings);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -488,10 +491,11 @@ async function placeFetched(
   asset: Asset,
   fetched: FetchedFile,
   planned: string,
-  rootReal: string,
+  root: AuthorisedRoot,
   opts: DownloadAssetsOptions,
   warnings: Array<{ code: string; message: string }>,
 ): Promise<DownloadedFile> {
+  const rootReal = root.real;
   const actualExt = extFromContentType(fetched.contentType);
   const requestedExt = safeExtension(extname(planned));
   let finalPath = planned;
@@ -533,7 +537,7 @@ async function placeFetched(
   // must not be a symlink or an existing file (unless --overwrite).
   let resolved: string;
   try {
-    resolved = resolveWithinRoot(finalPath, rootReal, { label: "final download path" }).path;
+    resolved = resolveWithinRoot(finalPath, root, { label: "final download path" }).path;
   } catch (err) {
     removeQuietly(tmp);
     throw err;
@@ -694,8 +698,8 @@ export interface DownloadResult {
 }
 
 export interface DownloadArtifactsOptions {
-  /** Authorised root (the --workspace); every directory and file must resolve inside it. Default: the output directory itself. */
-  root?: string;
+  /** Authorised root (the --workspace, frozen when the flags were read); every directory and file must resolve inside it. Default: the output directory itself. A string is frozen here. */
+  root?: string | AuthorisedRoot;
   /** Cooperative cancellation (SIGINT): aborts the in-flight transfer and stops every later download, relink and publish. */
   signal?: AbortSignal;
 }
@@ -768,13 +772,13 @@ export async function downloadArtifacts(
   const artifacts = enumerateArtifacts(task);
   // An explicit workspace is the root for everything written here — the
   // directory, every planned file and the sidecar — checked before mkdir.
-  const workspaceReal = opts.root !== undefined ? realpathLenient(resolvePath(opts.root)) : null;
+  const workspaceRoot: AuthorisedRoot | null = opts.root === undefined ? null : typeof opts.root === "string" ? freezeRoot(opts.root, { label: "--workspace" }) : opts.root;
   if (artifacts.length === 0) {
     // Report-only tasks (analyze-printability) carry their result in a
     // structured field instead of downloadable files. Persist the full task
     // JSON so `-o` still means "give me the result on disk".
     if (task.printability != null) {
-      return saveReportOnly(task, outputPath, resource, workspaceReal);
+      return saveReportOnly(task, outputPath, resource, workspaceRoot);
     }
     throw new Error(`task ${task.id} has no downloadable artifacts`);
   }
@@ -814,13 +818,13 @@ export async function downloadArtifacts(
     );
   }
 
-  if (workspaceReal) {
-    resolveWithinRoot(targetDir, workspaceReal, { label: "output directory" });
-    for (const p of [...plan.map((x) => x.target), metadataPath]) resolveWithinRoot(p, workspaceReal, { label: "planned download path" });
+  if (workspaceRoot) {
+    resolveWithinRoot(targetDir, workspaceRoot, { label: "output directory" });
+    for (const p of [...plan.map((x) => x.target), metadataPath]) resolveWithinRoot(p, workspaceRoot, { label: "planned download path" });
   }
 
   mkdirSync(targetDir, { recursive: true });
-  const root = workspaceReal ?? realpathLenient(targetDir);
+  const root: AuthorisedRoot = workspaceRoot ?? freezeRoot(targetDir, { label: "output directory" });
   const files: LegacyDownloadedFile[] = [];
   const saved: string[] = [];
   for (const { artifact, target } of plan) {
@@ -892,7 +896,7 @@ interface PlacedArtifact {
 }
 
 /** Fetch one artifact into place. Errors keep their class: a CliError from the fetch/publish core is rethrown untouched. */
-async function downloadArtifact(artifact: Artifact, targetPath: string, root: string, signal: AbortSignal | undefined): Promise<PlacedArtifact> {
+async function downloadArtifact(artifact: Artifact, targetPath: string, root: AuthorisedRoot, signal: AbortSignal | undefined): Promise<PlacedArtifact> {
   logger.debug(`GET ${redact(artifact.url)}`);
   const fetched = await fetchToTemp(artifact.url, targetPath, { signal });
   const actualExt = extFromContentType(fetched.contentType);
@@ -949,7 +953,7 @@ async function downloadArtifact(artifact: Artifact, targetPath: string, root: st
  * the extension would be worse than a clear error. Every path is proven inside
  * the workspace (when given) before any directory or file is created.
  */
-function saveReportOnly(task: Task, outputPath: string, resource: string, workspaceReal: string | null): DownloadResult {
+function saveReportOnly(task: Task, outputPath: string, resource: string, workspaceRoot: AuthorisedRoot | null): DownloadResult {
   const singleFileMode = looksLikeFile(outputPath);
   const abs = resolvePath(outputPath);
   if (singleFileMode) {
@@ -965,7 +969,7 @@ function saveReportOnly(task: Task, outputPath: string, resource: string, worksp
           `(delete it or choose a different --output path to rerun)`,
       );
     }
-    if (workspaceReal) resolveWithinRoot(abs, workspaceReal, { label: "report path" });
+    if (workspaceRoot) resolveWithinRoot(abs, workspaceRoot, { label: "report path" });
     writeJsonFile(abs, { resource, task, downloaded_at: new Date().toISOString() }, { overwrite: false, mode: 0o644 });
     return { savedFiles: [], metadataPath: abs, materialLinks: null, files: [] };
   }
@@ -976,12 +980,12 @@ function saveReportOnly(task: Task, outputPath: string, resource: string, worksp
         `(delete it or choose a different --output path to rerun)`,
     );
   }
-  if (workspaceReal) {
-    resolveWithinRoot(abs, workspaceReal, { label: "output directory" });
-    resolveWithinRoot(metadataPath, workspaceReal, { label: "planned download path" });
+  if (workspaceRoot) {
+    resolveWithinRoot(abs, workspaceRoot, { label: "output directory" });
+    resolveWithinRoot(metadataPath, workspaceRoot, { label: "planned download path" });
   }
   mkdirSync(abs, { recursive: true });
-  writeMeta(task, resource, metadataPath, [], workspaceReal ?? realpathLenient(abs));
+  writeMeta(task, resource, metadataPath, [], workspaceRoot ?? freezeRoot(abs, { label: "output directory" }));
   return { savedFiles: [], metadataPath, materialLinks: null, files: [] };
 }
 
@@ -991,7 +995,7 @@ function saveReportOnly(task: Task, outputPath: string, resource: string, worksp
  * publication time (a symlink or file that appeared since the preflight is
  * refused, never followed or truncated) and the write is exclusive and atomic.
  */
-function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], root: string): void {
+function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], root: AuthorisedRoot): void {
   const meta = {
     resource,
     task,

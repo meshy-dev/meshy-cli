@@ -652,3 +652,48 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   record step, so a metadata.json that disappears during the transfer is
   `local_io` with the record_project recovery rather than an API-style
   `not_found`.
+
+## D-057 The write boundary is frozen before the first request
+
+- R6-F02: every containment check re-resolved the root (`--workspace`) with
+  realpath at check time. A workspace directory swapped for a symlink to another
+  tree while a request was in flight — or the alias a workspace was given
+  through re-pointed — made root and target move together, so the check passed
+  and the task snapshot, metadata and history landed outside the boundary the
+  user had authorised; `get` and `create --async` reported success. The root is
+  now an `AuthorisedRoot` frozen when the global flags are read (before any
+  request or write): its real path and the identity (device, inode) of the
+  physical directory behind it (`freezeRoot`). `resolveWithinRoot` given such a
+  root never resolves it again: it first proves that this very directory is still
+  at that path (a directory, same identity — a symlink or a different directory
+  there is refused, D-057 message "changed since the command started"), then that
+  the target's real path lies inside the frozen real path. The frozen root flows
+  through every write: `--save-json`, `-o` downloads (`downloadArtifacts`,
+  `downloadAssets`, sidecar, report-only), `make`, `mesh prepare-print`,
+  `project` commands, and the task verbs' project attachment, whose project is
+  written through its proven real path. Without a workspace the project directory
+  itself is frozen at the start of `get`/`wait`/`stream`/`create` (a project
+  that is not initialised is refused before any request) and of `download`.
+  Stable aliases (macOS `/var` → `/private/var`, a symlinked parent, a workspace
+  given through a symlink that keeps pointing at the same directory) resolve to
+  the same physical directory and pass as before; the recovery command still
+  carries the workspace as the user named it.
+
+## D-058 The download command re-validates the project inside the frozen boundary
+
+- R6-F01: `download --project` only checked that `metadata.json` behind the
+  project path was a regular file, so a project directory (or its parent)
+  replaced by a symlink to an outside project during the asset transfer was
+  followed: the outside metadata was rewritten and the command exited 0 with a
+  mere `files_outside_project` warning. Before any project lock, snapshot or
+  metadata write the project is now resolved against the frozen boundary (the
+  workspace, or the project directory itself when no workspace is given) and the
+  record is written through its real path. A failure there is a *boundary*
+  failure distinct from a repairable metadata problem: exit 11 / `local_io`, the
+  complete download result (source, selection, manifest with on-disk digests,
+  saved_json) is kept, `project.action = "failed"` with the reason and
+  `recovery: null` — no `meshy project record` command is offered, because the
+  only one that would succeed is one that writes across the boundary — and
+  nothing is disguised as `index_dirty`. Assets already downloaded stay where
+  they landed. Missing/damaged metadata after the preflight keeps the
+  `record_project` recovery of D-052/D-056.

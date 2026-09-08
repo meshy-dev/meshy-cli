@@ -25,7 +25,7 @@ import { randomBytes } from "node:crypto";
 import { writeJsonFile } from "./atomic-file.js";
 import { CliError, UsageError } from "./errors.js";
 import { withFileLock } from "./lock.js";
-import { realpathLenient, resolveWithinRoot, safeSegment } from "./paths.js";
+import { realpathLenient, resolveWithinRoot, safeSegment, type AuthorisedRoot } from "./paths.js";
 
 export const METADATA_SCHEMA_VERSION = 2;
 export const HISTORY_VERSION = 1;
@@ -100,14 +100,15 @@ export interface StoreOptions {
  * the index is left alone with an explicit reason — nothing is ever written,
  * locked or temp-filed outside the workspace.
  */
-export function indexRootFor(projectDir: string, explicitRoot: string | undefined, workspace: string | undefined): { root: string; skipIndex?: string } {
+export function indexRootFor(projectDir: string, explicitRoot: string | undefined, workspace: string | AuthorisedRoot | undefined): { root: string; skipIndex?: string } {
   const root = explicitRoot !== undefined ? resolvePath(explicitRoot) : resolvePath(projectDir, "..");
   if (!workspace) return { root };
+  const workspacePath = typeof workspace === "string" ? resolvePath(workspace) : workspace.given;
   try {
     resolveWithinRoot(root, workspace, { label: "history root" });
     return { root };
   } catch (err) {
-    return { root, skipIndex: `history root ${root} resolves outside --workspace ${resolvePath(workspace)}; metadata.json was recorded but history.json was not touched (${err instanceof Error ? err.message : String(err)}) — run \`meshy project rebuild-index --root ${root}\` from a workspace that contains it` };
+    return { root, skipIndex: `history root ${root} resolves outside --workspace ${workspacePath}; metadata.json was recorded but history.json was not touched (${err instanceof Error ? err.message : String(err)}) — run \`meshy project rebuild-index --root ${root}\` from a workspace that contains it` };
   }
 }
 

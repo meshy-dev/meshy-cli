@@ -59,7 +59,7 @@ const listCommand = new Command("list")
       };
       const runtime = await buildRuntime(opened.flags);
       const { items, raw } = await runtime.client.showcases.list(request, { signal: abortSignal() });
-      const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspace }) : null;
+      const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
       await emitResult(
         opened,
         items,

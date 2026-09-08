@@ -14,7 +14,7 @@ import { emit, emitEnvelope, type OutputFormat } from "./output.js";
 import { okEnvelope, type OutputSchema } from "./result.js";
 import { readGlobalFlags, resolveSchema, type GlobalFlags } from "./runtime.js";
 import { writeJsonFile } from "./atomic-file.js";
-import { resolveWithinRoot } from "./paths.js";
+import { resolveWithinRoot, type AuthorisedRoot } from "./paths.js";
 
 export interface OpenedCommand extends CommandContext {
   flags: GlobalFlags;
@@ -71,11 +71,11 @@ export interface SavedJson {
 export function saveRawJson(
   target: string,
   raw: unknown,
-  opts: { workspace?: string | undefined; overwrite?: boolean; cwd?: string } = {},
+  opts: { workspace?: string | AuthorisedRoot | undefined; overwrite?: boolean; cwd?: string } = {},
 ): SavedJson {
   const cwd = opts.cwd ?? process.cwd();
   const abs = resolvePath(cwd, target);
-  const root = opts.workspace ?? dirname(abs);
+  const root: string | AuthorisedRoot = opts.workspace ?? dirname(abs);
   const resolved = resolveWithinRoot(abs, root, { cwd, label: "--save-json target" });
   const text = `${JSON.stringify(raw, null, 2)}\n`;
   writeJsonFile(resolved.path, raw, { overwrite: opts.overwrite ?? false });

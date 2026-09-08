@@ -53,7 +53,7 @@ import { finished } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
 import { copyFilePublished, publishTempFile, tempPathFor } from "./atomic-file.js";
 import { CliError, UsageError, type Warning } from "./errors.js";
-import { isInside, realpathLenient, resolveWithinRoot } from "./paths.js";
+import { freezeRoot, isInside, realpathLenient, resolveWithinRoot, type AuthorisedRoot } from "./paths.js";
 import { warning } from "./result.js";
 
 export type Vec3 = [number, number, number];
@@ -123,10 +123,12 @@ export interface PrepareObjOptions {
   maxBytes?: number;
   /**
    * Authorised root for every write (the output and each copied dependency).
-   * Defaults to the output's directory; pass the --workspace to confine writes
-   * to it. Checked on real paths, so symlinked parents cannot escape it.
+   * Defaults to the output's directory; pass the --workspace (frozen with the
+   * flags) to confine writes to it. Checked on real paths against the frozen
+   * directory, so symlinked parents cannot escape it and a root replaced
+   * mid-run is refused.
    */
-  root?: string;
+  root?: string | AuthorisedRoot;
 }
 
 export function rotateYUpToZUp(v: Vec3): Vec3 {
@@ -661,7 +663,7 @@ export async function prepareObjForPrint(inputPath: string, opts: PrepareObjOpti
   // Every path written by this run must resolve inside the write root: the
   // output itself and each dependency copy, checked on real paths before any
   // directory is created. A `materials/` symlink pointing elsewhere fails here.
-  const writeRoot = realpathLenient(opts.root !== undefined ? resolvePath(opts.root) : outputDir);
+  const writeRoot: AuthorisedRoot = opts.root === undefined ? freezeRoot(outputDir, { label: "output directory" }) : typeof opts.root === "string" ? freezeRoot(opts.root, { label: "--workspace" }) : opts.root;
   if (!inPlace) resolveWithinRoot(output, writeRoot, { label: "output" });
   for (const copy of plan.copies) {
     copy.real = resolveWithinRoot(copy.target, writeRoot, { label: `material dependency target for '${copy.ref}'` }).path;

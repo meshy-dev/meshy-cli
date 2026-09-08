@@ -12,6 +12,7 @@
  */
 
 import { Command } from "commander";
+import { freezeRoot, type AuthorisedRoot } from "./paths.js";
 import { MeshyClient } from "../client/index.js";
 import { loadConfig, type ConfigOverrides, type MeshyConfig } from "./config.js";
 import { credentialsPath, readCredentials, saveProfile } from "./credentials.js";
@@ -34,6 +35,8 @@ export interface GlobalFlags {
   /** Path given to --api-key-file (only MESHY_API_KEY is read from it). */
   envFile?: string;
   workspace?: string;
+  /** The --workspace frozen when the flags were read (real path + directory identity); every write is confined to it. */
+  workspaceRoot?: AuthorisedRoot;
   /** false when --no-update-check was given. */
   updateCheck: boolean;
   verbose: boolean;
@@ -234,6 +237,7 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
     output: opts.output,
     envFile: opts.apiKeyFile,
     workspace: opts.workspace,
+    workspaceRoot: opts.workspace ? freezeRoot(opts.workspace, { label: "--workspace" }) : undefined,
     updateCheck: opts.updateCheck !== false,
     verbose: Boolean(opts.verbose),
     logLevel: normalizeLogLevel(opts.logLevel),

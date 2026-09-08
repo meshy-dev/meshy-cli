@@ -57,7 +57,7 @@ import {
   type OperationRecord,
 } from "./operation-store.js";
 import { originOf } from "./config.js";
-import { resolveWithinRoot } from "./paths.js";
+import { resolveWithinRoot, freezeRoot, type AuthorisedRoot } from "./paths.js";
 import { assertProjectMetadataPresent, indexRootFor, projectRecordCommand, recordTask, saveTaskSnapshot, stageFromTaskType, type RecordInput } from "./project-store.js";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
@@ -263,7 +263,7 @@ function parentTaskIdFromPayload(payload: Record<string, unknown> | null): strin
 }
 
 /** Resolve --project: an initialised project directory, inside the workspace when one is set. */
-function resolveProjectDir(projectFlag: string, workspace: string | undefined, cwd = process.cwd()): string {
+function resolveProjectDir(projectFlag: string, workspace: string | AuthorisedRoot | undefined, cwd = process.cwd()): string {
   const projectDir = resolvePath(cwd, projectFlag);
   if (!existsSync(join(projectDir, "metadata.json"))) {
     throw new CliError({
@@ -300,8 +300,12 @@ function attachToProject(
 ): ProjectAttachment | null {
   const projectFlag = opts.project as string | undefined;
   if (!projectFlag) return null;
-  const workspace = opened.flags.workspace ? resolvePath(opened.flags.workspace) : undefined;
   const projectDir = resolvePath(projectFlag);
+  // The boundary was frozen before the first request (the workspace, or the
+  // project directory itself when no workspace is given); it is never resolved
+  // again from a path that may have been replaced since.
+  const root: AuthorisedRoot = opened.flags.workspaceRoot ?? (opts.__projectRoot as AuthorisedRoot | undefined) ?? freezeRoot(projectDir, { label: "--project" });
+  const workspace = opened.flags.workspaceRoot?.given;
   const stage = (opts.stage as string | undefined) ?? (typeof extra.payload?.["mode"] === "string" ? (extra.payload["mode"] as string) : descriptor.creativeLab?.stage ?? stageFromTaskType(task?.type, descriptor.id));
   const input: RecordInput = {
     taskId,
@@ -315,23 +319,28 @@ function attachToProject(
     operationId: extra.operationId ?? null,
     files: extra.files ?? [],
   };
-  // 1. The location. A project that now resolves outside the workspace, or has
-  //    become a symlink, is a boundary problem: the task exists and is journaled,
-  //    but no recovery command may be handed out that writes across that line.
-  if (workspace) {
-    try {
-      resolveWithinRoot(projectDir, workspace, { label: "--project" });
-    } catch (err) {
-      throw projectBoundaryFailure(err, taskId, projectFlag, input);
-    }
-  }
-  // 2. The record itself, including "is this still an initialised project".
+  // 1. The location. The frozen boundary must still be the directory it was,
+  //    and the project must resolve inside it now — a workspace or project
+  //    replaced by a symlink while the request was in flight, or a project that
+  //    now resolves elsewhere, is a boundary problem: the task exists and is
+  //    journaled, but no recovery command may be handed out that writes across
+  //    that line. What passes is written through its real path.
+  let located: string;
   try {
-    assertProjectMetadataPresent(projectDir, projectFlag);
-    const snapshot = task && raw ? saveTaskSnapshot(projectDir, taskId, raw) : null;
+    located = resolveWithinRoot(projectDir, root, { label: "--project" }).path;
+  } catch (err) {
+    throw projectBoundaryFailure(err, taskId, projectFlag, input);
+  }
+  // 2. The record itself, including "is this (still) an initialised project".
+  try {
+    if (opts.__projectInitialised === false && !existsSync(join(located, "metadata.json"))) {
+      throw new CliError({ code: "local_io", message: `--project ${projectFlag} is not an initialised project (no metadata.json); run \`meshy project init\` first` });
+    }
+    assertProjectMetadataPresent(located, projectFlag);
+    const snapshot = task && raw ? saveTaskSnapshot(located, taskId, raw) : null;
     input.taskJson = snapshot?.relative ?? null;
-    const indexRoot = indexRootFor(projectDir, undefined, workspace);
-    const rec = recordTask(projectDir, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
+    const indexRoot = indexRootFor(located, undefined, opened.flags.workspaceRoot);
+    const rec = recordTask(located, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
     if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}; run \`meshy project rebuild-index\``));
     if (rec.migrated_from_legacy) warnings.push(warning("metadata_migrated", "legacy metadata.json migrated to schema_version 2 (backup kept beside it)"));
     return { project_dir: projectDir, snapshot: snapshot?.path ?? null, stage, action: rec.action, index: rec.index };
@@ -362,7 +371,7 @@ function projectBoundaryFailure(err: unknown, taskId: string, projectFlag: strin
   const reason = err instanceof Error ? err.message : String(err);
   return new CliError({
     code: "local_io",
-    message: `task ${taskId} exists${input.operationId ? ` (operation ${input.operationId})` : ""} but --project ${projectFlag} is no longer a target inside the workspace: ${reason}; nothing was recorded. Restore the project inside the workspace, then record the task with \`meshy project record\` from that workspace`,
+    message: `task ${taskId} exists${input.operationId ? ` (operation ${input.operationId})` : ""} but --project ${projectFlag} is no longer a target inside the authorised boundary: ${reason}; nothing was recorded (no project lock, snapshot or metadata was written). Restore the project inside the workspace, then record the task with \`meshy project record\` from that workspace`,
     details: { project: projectFlag, task_id: taskId, operation_id: input.operationId ?? null, stage: input.stage, recorded: false },
     cause: err,
   });
@@ -372,7 +381,7 @@ function projectBoundaryFailure(err: unknown, taskId: string, projectFlag: strin
 function saveJsonInContext(opts: Record<string, unknown>, opened: OpenedCommand, raw: unknown, ctx: TaskContext): SavedJson | null {
   if (!opts.saveJson) return null;
   try {
-    return saveRawJson(String(opts.saveJson), raw, { workspace: opened.flags.workspace });
+    return saveRawJson(String(opts.saveJson), raw, { workspace: opened.flags.workspaceRoot });
   } catch (err) {
     throw withTaskContext(err, ctx);
   }
@@ -402,7 +411,7 @@ function attachInContext(
 // ---------------------------------------------------------------------------
 
 /** `-o` target: inside the workspace (or its own directory), no symlink leaf, not an existing file. */
-export function preflightOutputPath(output: string, workspace: string | undefined, cwd = process.cwd()): void {
+export function preflightOutputPath(output: string, workspace: string | AuthorisedRoot | undefined, cwd = process.cwd()): void {
   const abs = resolvePath(cwd, output);
   resolveWithinRoot(abs, workspace ?? dirname(abs), { cwd, label: "--output" });
   if (looksLikeFile(abs) && existsSync(abs)) {
@@ -415,7 +424,7 @@ export function preflightOutputPath(output: string, workspace: string | undefine
 }
 
 /** `--save-json` target: inside the workspace (or its own directory), no symlink leaf, not an existing file. */
-export function preflightSaveJsonPath(target: string, workspace: string | undefined, cwd = process.cwd()): void {
+export function preflightSaveJsonPath(target: string, workspace: string | AuthorisedRoot | undefined, cwd = process.cwd()): void {
   const abs = resolvePath(cwd, target);
   const resolved = resolveWithinRoot(abs, workspace ?? dirname(abs), { cwd, label: "--save-json target" });
   if (existsSync(resolved.path)) {
@@ -427,12 +436,30 @@ export function preflightSaveJsonPath(target: string, workspace: string | undefi
   }
 }
 
+/**
+ * Freeze the project's write boundary before the first request: with a
+ * workspace it is the workspace (already frozen with the flags); without one it
+ * is the project directory as it is right now. Whether the project was
+ * initialised at this moment is remembered too, so a later "no metadata.json"
+ * can say which it was. Nothing is refused here for get/wait/stream — a
+ * bookkeeping problem stays a bookkeeping problem after the request (one
+ * outcome); create's preflight refuses an uninitialised project before its POST.
+ */
+function beginProjectContext(opts: Record<string, unknown>, opened: OpenedCommand): void {
+  const projectFlag = opts.project as string | undefined;
+  if (!projectFlag || opts.__projectRoot) return;
+  const projectDir = resolvePath(projectFlag);
+  opts.__projectInitialised = existsSync(join(projectDir, "metadata.json"));
+  opts.__projectRoot = opened.flags.workspaceRoot ?? freezeRoot(projectDir, { label: "--project" });
+}
+
 function preflightLocalTargets(opts: Record<string, unknown>, opened: OpenedCommand): void {
-  if (opts.saveJson) preflightSaveJsonPath(String(opts.saveJson), opened.flags.workspace);
-  if (opened.flags.output) preflightOutputPath(opened.flags.output, opened.flags.workspace);
+  if (opts.saveJson) preflightSaveJsonPath(String(opts.saveJson), opened.flags.workspaceRoot);
+  if (opened.flags.output) preflightOutputPath(opened.flags.output, opened.flags.workspaceRoot);
   if (opts.project) {
     try {
-      resolveProjectDir(String(opts.project), opened.flags.workspace);
+      resolveProjectDir(String(opts.project), opened.flags.workspaceRoot);
+      beginProjectContext(opts, opened);
     } catch (err) {
       if (err instanceof CliError) {
         throw new CliError({ code: err.code, message: `${err.message} (nothing was submitted)`, recovery: err.recovery, cause: err });
@@ -542,6 +569,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
   TASK_JSON_OPTIONS(cmd.command("get <task-id>").description("Retrieve a single task by id (any status is a successful query)")).action(
     async (taskId: string, opts: Record<string, unknown>, thisCmd: Command) => {
       const opened = openCommand(thisCmd, `${prefix}.get`, defaultSchema);
+    beginProjectContext(opts, opened);
       const runtime = await buildRuntime(opened.flags);
       const { task, raw } = await endpointOf(runtime.client).retrieveDetailed(taskId, { signal: abortSignal() });
       const submission: SubmissionInfo = { state: "accepted", operation_id: null };
@@ -575,6 +603,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       .option("--timeout <seconds>", "max seconds to wait (0 = a single query)", "600"),
   ).action(async (taskId: string, opts: Record<string, unknown>, thisCmd: Command) => {
     const opened = openCommand(thisCmd, `${prefix}.wait`, defaultSchema);
+    beginProjectContext(opts, opened);
     const timeoutSeconds = parseTimeoutSeconds(opts.timeout ?? "600");
     const runtime = await buildRuntime(opened.flags);
     const endpoint = endpointOf(runtime.client);
@@ -590,6 +619,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       .option("--idle-timeout <seconds>", "abort when no bytes arrive for this long (keep-alives count)", "60"),
   ).action(async (taskId: string, opts: Record<string, unknown>, thisCmd: Command) => {
     const opened = openCommand(thisCmd, `${prefix}.stream`, defaultSchema);
+    beginProjectContext(opts, opened);
     if (!descriptor.supports.stream) throw new UsageError(`${spec.name} does not support stream`);
     const timeoutSeconds = parseTimeoutSeconds(opts.timeout ?? "600");
     const idleSeconds = parseTimeoutSeconds(opts.idleTimeout ?? "60", "--idle-timeout");
@@ -634,7 +664,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         if (!Number.isInteger(page.page_num) || page.page_num < 1) throw new UsageError("--page must be a positive integer");
         if (!Number.isInteger(page.page_size) || page.page_size < 1) throw new UsageError("--page-size must be a positive integer");
         const { tasks, raw } = await endpointOf(runtime.client).listDetailed(page, { signal: abortSignal() });
-        const savedJson = opts.saveJson ? saveRawJson(opts.saveJson as string, raw, { workspace: opened.flags.workspace }) : null;
+        const savedJson = opts.saveJson ? saveRawJson(opts.saveJson as string, raw, { workspace: opened.flags.workspaceRoot }) : null;
         const rawItems = Array.isArray(raw) ? raw : [];
         await emitResult(
           opened,
@@ -872,7 +902,7 @@ async function maybeDownloadV1(
   if (!output) return NOT_REQUESTED();
   if (task.status !== "SUCCEEDED") return { state: "not_ready", files: [], metadata_path: null };
   try {
-    const { files, metadataPath, materialLinks } = await downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspace, signal: abortSignal() });
+    const { files, metadataPath, materialLinks } = await downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspaceRoot, signal: abortSignal() });
     if (materialLinks) warnings.push(...materialLinks.warnings);
     return {
       state: "completed",
@@ -1059,7 +1089,7 @@ function interruptedError(
   let saved = savedJson;
   if (!saved && opts.saveJson && last) {
     try {
-      saved = saveRawJson(opts.saveJson as string, last.raw, { workspace: opened.flags.workspace });
+      saved = saveRawJson(opts.saveJson as string, last.raw, { workspace: opened.flags.workspaceRoot });
     } catch {
       saved = null;
     }
@@ -1234,7 +1264,7 @@ async function emitLegacyOutcome(
 
   if (output) {
     if (succeeded) {
-      const { savedFiles, metadataPath } = await downloadArtifacts(task, output, resourceName, { root: runtime.flags.workspace, signal: abortSignal() });
+      const { savedFiles, metadataPath } = await downloadArtifacts(task, output, resourceName, { root: runtime.flags.workspaceRoot, signal: abortSignal() });
       const successReport: Parameters<typeof printReport>[0] = {
         status: "SUCCESS",
         taskId: task.id,

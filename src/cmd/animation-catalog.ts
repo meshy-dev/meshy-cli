@@ -70,7 +70,7 @@ const listCommand = new Command("list")
     if (total !== null && total !== entries.length) {
       warnings.push(warning("catalog_total_mismatch", `server reported total=${total} but returned ${entries.length} entries; only the returned batch was searched`));
     }
-    const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspace }) : null;
+    const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
     await emitResult(
       opened,
       items,

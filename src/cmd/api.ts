@@ -61,7 +61,7 @@ export const apiCommand = new Command("api")
       /* leave as text */
     }
     const saveJson = opts.saveJson as string | undefined;
-    const saved = saveJson ? saveRawJson(saveJson, parsed, { workspace: opened.flags.workspace }) : null;
+    const saved = saveJson ? saveRawJson(saveJson, parsed, { workspace: opened.flags.workspaceRoot }) : null;
     await emitResult(
       opened,
       parsed,

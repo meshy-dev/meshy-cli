@@ -171,6 +171,14 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 | task verbs `--project` when metadata.json disappears (or the project leaves the workspace) after the preflight | `local_io`, `recovery: null`, hint = `wait` | missing/damaged/locked → `record_project` command with `--operation-id` and `--workspace` (hint too); project outside the workspace → explicit boundary message, task and journal named, no command | R5-F03 |
 | `download --project` when metadata.json disappears during the transfer | `not_found` (exit 5) from the record step | `local_io` (exit 11) with the full result and the record_project recovery | R5-F03 |
 
+### 3.6 Corrections from Codex review round 6 (visible in both schemas)
+
+| Behaviour | before the fix | after | Finding |
+| --- | --- | --- | --- |
+| `--workspace W` directory (or the alias it was given through) replaced by a symlink to an outside tree while a request is in flight; task verbs with `--project` | root re-resolved at check time → snapshot/metadata/history written outside, exit 0 | boundary frozen with the flags (real path + directory identity); exit 11 `local_io`, task/journal kept, single POST, nothing written outside, `recovery: null`, no record command | R6-F02 |
+| `download --project P --workspace W --output-dir W/assets` with P or its parent replaced by a symlink to an outside project during the transfer | outside metadata.json rewritten, exit 0 with `files_outside_project` | exit 11 `local_io`, completed manifest kept, `project.action="failed"` with the reason, `recovery: null`, outside tree untouched | R6-F01 |
+| `get`/`wait`/`stream` with `--project` that is not an initialised project | refused after the request | refused before any request | R6-F02 (D-057) |
+
 New global flags: `--output-schema`, `--api-key-file`, `--workspace`, `--no-update-check`,
 `--base-url-creative-lab`. New per-command flags on task verbs: `--save-json`,
 `--include-raw`, `--project`, `--stage`, `--operation-id`, `--stop-after-first` (make),

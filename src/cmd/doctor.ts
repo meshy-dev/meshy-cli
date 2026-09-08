@@ -60,7 +60,7 @@ export function buildDoctorCommand(): Command {
         checkApi: Boolean(opts.checkApi),
         checkSlicers: Boolean(opts.checkSlicers),
       });
-      const saved = opts.saveJson ? saveRawJson(opts.saveJson, report, { workspace: opened.flags.workspace }) : null;
+      const saved = opts.saveJson ? saveRawJson(opts.saveJson, report, { workspace: opened.flags.workspaceRoot }) : null;
       const result: Record<string, unknown> = { ...report, saved_json: saved };
       if (opts.checkApi && report.api_ready !== true) {
         throw apiCheckFailure(apiFailure ?? { stage: "balance", error: new Error("--check-api did not complete") }, result);
