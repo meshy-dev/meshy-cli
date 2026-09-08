@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "G1-code accepted by Codex round 7 (e567646); live verification against the owner's real account completed on 2026-09-08 with two defects found and fixed (L01, L02, commit 1d9f109); Windows x64 not_run; release not performed; live fixes await Codex review",
+  "status": "G1-code accepted by Codex rounds 7 (e567646) and 8 (1d9f109: live fixes L01/L02 closed); live verification against the owner's real account completed 2026-09-08; Windows x64 not_run (skipped by the owner's decision); release authorised 2026-09-08 and in progress via release.yml — G1-release is recorded only after the publish is verified",
   "rules": "Every entry binds a command or test id to the code SHA it ran against. not_run is not passed. Entries are replaced when re-run on a newer HEAD.",
   "environment": {
     "os": "macOS 26.6.2 (Darwin 25.6.0) arm64",
@@ -838,7 +838,7 @@
       "scope": "macOS arm64 / Windows x64 / Linux x64 install and local commands",
       "result": "partial",
       "sha": "1d9f10976b5f754502c81591c64c712e492188d1",
-      "detail": "macOS 26.6.2 arm64 Node v24.20.0: tarball install + 29 smoke checks passed; Linux (OrbStack docker node:24-bookworm): linux/arm64 Debian GNU/Linux 12 (bookworm) node v24.20.0 29/29 sharp 0.35.4 (libvips 8.18.6) (OrbStack docker, node:24-bookworm, native); linux/x64 Debian GNU/Linux 12 (bookworm) node v24.20.0 29/29 sharp 0.35.4 (libvips 8.18.6) (OrbStack docker, node:24-bookworm, linux/amd64 emulated); the owner also installed the same tarball globally (npm install -g ~/Downloads/meshy-cli-0.3.0.tgz) and ran every live command through that install. Windows x64: not_run (no host)",
+      "detail": "macOS 26.6.2 arm64 Node v24.20.0: tarball install + 29 smoke checks passed; Linux (OrbStack docker node:24-bookworm): linux/arm64 Debian GNU/Linux 12 (bookworm) node v24.20.0 29/29 sharp 0.35.4 (libvips 8.18.6) (OrbStack docker, node:24-bookworm, native); linux/x64 Debian GNU/Linux 12 (bookworm) node v24.20.0 29/29 sharp 0.35.4 (libvips 8.18.6) (OrbStack docker, node:24-bookworm, linux/amd64 emulated); the owner also installed the same tarball globally (npm install -g ~/Downloads/meshy-cli-0.3.0.tgz) and ran every live command through that install. Windows x64: not_run (no host; the owner decided on 2026-09-08 to skip it for this release)",
       "linux": [
         {
           "platform": "linux/arm64",
@@ -936,7 +936,7 @@
     }
   ],
   "code_head": "1d9f10976b5f754502c81591c64c712e492188d1",
-  "recorded_at": "2026-09-08T06:09:04.640614Z",
+  "recorded_at": "2026-09-08T08:34:23.922875Z",
   "behavior_test_note": "Every T-id below is asserted by node:test files that run offline (loopback HTTP mocks, temp dirs). covered_offline_only marks ids whose live/OS/GUI part remains not_run. review_round_1…6 notes name the Codex finding and probe the file now covers; live_fix notes name the defect found in the real-account verification.",
   "package_smoke": {
     "tarball": "meshy-cli-0.3.0.tgz",
@@ -2338,6 +2338,26 @@
         "passed": true,
         "sha": "e567646d875e5f5a658b78e60b8cdfaed8b233e9"
       }
+    },
+    {
+      "round": 7,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-e567646",
+      "reviewed_head": "4da216d3568fbd997bf85f8047ce3932672a25de",
+      "reviewed_code_head": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+      "verdict": "accepted",
+      "findings": [],
+      "note": "R6-F01/R6-F02/R6-T01 closed; 32 findings from rounds 1-6 not regressed; G1-code accepted"
+    },
+    {
+      "round": 8,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-1d9f109",
+      "reviewed_head": "c70b06cc3509b6e36b18a51783b368d816c964b4",
+      "reviewed_code_head": "1d9f10976b5f754502c81591c64c712e492188d1",
+      "verdict": "accepted",
+      "findings": [],
+      "note": "live fixes L01/L02 closed; 32 prior findings not regressed on 1d9f109; 255 prior evidence files unchanged; OBS-1..7 judged non-blocking P3 observations; G1-code continues accepted"
     }
   ],
   "live_verification_run": {
@@ -2425,5 +2445,12 @@
       "context": "5/5",
       "stream": true
     }
+  },
+  "release": {
+    "authorised_by_owner_on": "2026-09-08",
+    "integration": "feat/skill-parity-s1 → main via pull request (owner's decision); merge commit, as for the previous releases",
+    "mechanism": ".github/workflows/release.yml (workflow_dispatch, run on main after the merge) publishes meshy-cli and the scoped alias @meshy-ai/cli at package.json version 0.3.0 with the repository's NPM_TOKEN; no local npm publish",
+    "windows_x64": "not_run — the owner decided on 2026-09-08 to skip it for this release (no host)",
+    "status": "pending — recorded with the published version, tag and registry digest in a docs commit after the publish is verified"
   }
 }

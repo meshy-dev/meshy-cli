@@ -2,7 +2,7 @@
   "schema_version": 1,
   "title": "Meshy CLI S1 capability matrix — implementation tracking",
   "date": "2026-09-08",
-  "status": "G1-code accepted (Codex round 7, e567646); live verification on the owner's real account done 2026-09-08 — every mandatory capability exercised live except Windows install (not_run) and enterprise showcases content (account-gated 403 recorded); two live defects fixed in 1d9f109 (L01/L02) awaiting Codex review; release not performed → G1-release not yet satisfied",
+  "status": "G1-code accepted (Codex round 7 on e567646, round 8 on 1d9f109 — live fixes L01/L02 closed, 0 findings); live verification on the owner's real account done 2026-09-08 — every mandatory capability exercised live except Windows install (not_run, skipped by the owner's decision) and enterprise showcases content (account-gated 403 recorded); release authorised 2026-09-08, publish via release.yml after the PR merge → G1-release recorded once the publish is verified",
   "baseline": {
     "cli_sha": "fd94490916376e691efcea51324ac4326b459e1f",
     "skills_sha": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610"
@@ -1898,7 +1898,8 @@
           "T-109 linux arm64/x64 29/29",
           "macOS 29/29"
         ],
-        "record": "docs/skill-parity/live-verification.json"
+        "record": "docs/skill-parity/live-verification.json",
+        "note": "Windows x64 not_run: skipped for this release by the owner's decision (2026-09-08); macOS arm64 and Linux arm64/x64 passed"
       }
     },
     {
@@ -1951,7 +1952,7 @@
     "branch": "feat/skill-parity-s1",
     "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
     "package_version_at_start": "0.2.0",
-    "updated_at": "2026-09-08T06:09:04.640614Z",
+    "updated_at": "2026-09-08T08:34:23.922875Z",
     "code_head": "1d9f10976b5f754502c81591c64c712e492188d1"
   },
   "review_rounds": [
@@ -2062,6 +2063,26 @@
       "code_head": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
       "regression_tests": "tests/codex-review-round6.test.ts (R6-F01 4 download scenarios + control; R6-F02 20-entry mutable-workspace matrix + stable-alias control); codex-review-round5 E03 exact sequences and E02 line-bound candidates (R6-T01)",
       "probe_rerun": "reviews/cli-s1-7b7c24c copies on e567646: round6 0/4 reproduce (all exit 11, outside bytes unchanged); round5 0/4; round4 0/3 (D03 positive); round3 0/6; round2 0/8; round1 0/12; verify-original 20/20; verify-round3-4 8/8; verify-round5-positive 24/24; material matrix 16/16; round6 material 10/10; project entries 20/20; context 5/5; stream passed"
+    },
+    {
+      "round": 7,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-e567646",
+      "reviewed_head": "4da216d3568fbd997bf85f8047ce3932672a25de",
+      "reviewed_code_head": "e567646d875e5f5a658b78e60b8cdfaed8b233e9",
+      "verdict": "accepted",
+      "findings": [],
+      "note": "R6-F01/R6-F02/R6-T01 closed; 32 findings from rounds 1-6 not regressed; G1-code accepted"
+    },
+    {
+      "round": 8,
+      "reviewer": "Codex",
+      "review_dir": "meshy-agent-integrations-research/reviews/cli-s1-1d9f109",
+      "reviewed_head": "c70b06cc3509b6e36b18a51783b368d816c964b4",
+      "reviewed_code_head": "1d9f10976b5f754502c81591c64c712e492188d1",
+      "verdict": "accepted",
+      "findings": [],
+      "note": "live fixes L01/L02 closed; 32 prior findings not regressed on 1d9f109; 255 prior evidence files unchanged; OBS-1..7 judged non-blocking P3 observations; G1-code continues accepted"
     }
   ],
   "live_verification_run": {
@@ -2149,5 +2170,12 @@
       "context": "5/5",
       "stream": true
     }
+  },
+  "release": {
+    "authorised_by_owner_on": "2026-09-08",
+    "integration": "feat/skill-parity-s1 → main via pull request (owner's decision); merge commit, as for the previous releases",
+    "mechanism": ".github/workflows/release.yml (workflow_dispatch, run on main after the merge) publishes meshy-cli and the scoped alias @meshy-ai/cli at package.json version 0.3.0 with the repository's NPM_TOKEN; no local npm publish",
+    "windows_x64": "not_run — the owner decided on 2026-09-08 to skip it for this release (no host)",
+    "status": "pending — recorded with the published version, tag and registry digest in a docs commit after the publish is verified"
   }
 }

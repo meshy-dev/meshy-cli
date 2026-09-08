@@ -1,6 +1,6 @@
 # Meshy CLI S1 Review Handoff
 
-Filled from the 2026-09-07 / v1 implementation package. `not_run` means not verified. 本文件为 **Round 8**：第 7 轮 Codex review 已 **accepted**（G1-code，代码 `e567646`，docs `4da216d`，证据 `…/reviews/cli-s1-e567646/`）；本轮是 **真实账号 live verification** 及其发现的 2 个缺陷的修复，交给 Codex 复审这两个修复并核对 live 证据。七处 reviewer 证据目录均未被改动；第 7 轮的 15 个脚本副本在新 HEAD 上重跑。
+Filled from the 2026-09-07 / v1 implementation package. `not_run` means not verified. **第 8 轮 Codex 结论（2026-09-08）：accepted** — L01/L02 关闭，前七轮 32 项 finding 在 `1d9f109` 未回退，G1-code 继续接受；证据 `…/reviews/cli-s1-1d9f109/`（0 findings）。随后所有者授权：分支经 PR 合并、通过 `release.yml` 发布 0.3.0，Windows x64 本次不验证；发布结果在发布后的 docs commit 中记录。本文件为 **Round 8**：第 7 轮 Codex review 已 **accepted**（G1-code，代码 `e567646`，docs `4da216d`，证据 `…/reviews/cli-s1-e567646/`）；本轮是 **真实账号 live verification** 及其发现的 2 个缺陷的修复，交给 Codex 复审这两个修复并核对 live 证据。七处 reviewer 证据目录均未被改动；第 7 轮的 15 个脚本副本在新 HEAD 上重跑。
 
 ## 0. Live verification 结论与本轮修复
 
@@ -25,12 +25,12 @@ Filled from the 2026-09-07 / v1 implementation package. `not_run` means not veri
 - 本轮代码 HEAD：`1d9f10976b5f754502c81591c64c712e492188d1`（= live 修复 commit）；本文件与 verification.json / capability-matrix.json / live-verification.json 在其后的 **docs-only commit** 中
 - 工作区是否还有未提交修改：无（docs commit 之后 `git status` 干净）
 - Node / pnpm / OS：Node v24.20.0 / pnpm 11.24.0 / macOS 26.6.2 arm64
-- PR / 发布：未创建、未发布（需授权）
+- PR / 发布：所有者 2026-09-08 授权后，本 commit 之后推送分支并创建 PR 合入 `main`；发布经 `.github/workflows/release.yml`（workflow_dispatch，main）执行，不做本地 `npm publish`；结果见发布后的 docs commit
 
 ## 2. 完成状态
 
-- G1-code：第 7 轮 accepted；本轮新增 2 个 live 修复待 Codex 复审（范围小：`src/client/types.ts` 6 个字段的 null 容忍；`src/internal/download.ts`+`artifacts.ts` 的文件名映射共享）。
-- G1-release：**尚未满足**。已完成：Codex review（第 7 轮）、真实账号/UV/Creative Lab/showcases/切片器/macOS+Linux 验证；未完成：Windows x64（无主机，not_run）、正式发布（未授权）、本轮两个修复的复审。
+- G1-code：第 7 轮 accepted；第 8 轮 accepted（本轮 2 个 live 修复 L01/L02 已关闭，范围小：`src/client/types.ts` 6 个字段的 null 容忍；`src/internal/download.ts`+`artifacts.ts` 的文件名映射共享）。
+- G1-release：**尚未满足（发布进行中）**。已完成：Codex review（第 7、8 轮 accepted）、真实账号/UV/Creative Lab/showcases/切片器/macOS+Linux 验证、所有者发布授权（2026-09-08）；未完成：正式发布与可追溯记录（PR 合并后经 release.yml 发布 0.3.0，随后记录）；Windows x64 由所有者决定本次不验证，保持 not_run。
 - mandatory 能力 35/35 已实现；`capability-matrix.json` 每项新增 `live_verification`（33 项 live passed / passed_after_live_fixes，CAP-014 showcases 为账号门控 403 记录，CAP-034 打包为 partial（Windows not_run））。
 - 离线测试：`pnpm test` 558/558，0 跳过。
 
