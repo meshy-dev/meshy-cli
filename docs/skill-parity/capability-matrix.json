@@ -2,7 +2,7 @@
   "schema_version": 1,
   "title": "Meshy CLI S1 capability matrix — implementation tracking",
   "date": "2026-09-08",
-  "status": "G1-code accepted (Codex round 7 on e567646, round 8 on 1d9f109 — live fixes L01/L02 closed, 0 findings); live verification on the owner's real account done 2026-09-08 — every mandatory capability exercised live except Windows install (not_run, skipped by the owner's decision) and enterprise showcases content (account-gated 403 recorded); release authorised 2026-09-08, publish via release.yml after the PR merge → G1-release recorded once the publish is verified",
+  "status": "G1-code accepted (Codex rounds 7/8); G1-release passed 2026-09-08 — meshy-cli 0.3.0 published (PR #5 merged to main, tag v0.3.0, release.yml); all mandatory capabilities live-verified except Windows install (not_run, owner's decision) and enterprise showcases content (account-gated 403 recorded)",
   "baseline": {
     "cli_sha": "fd94490916376e691efcea51324ac4326b459e1f",
     "skills_sha": "b9db44b5663e6e92d89828bf2e4fe1dc1b3f6610"
@@ -1952,7 +1952,7 @@
     "branch": "feat/skill-parity-s1",
     "head_at_start": "fd94490916376e691efcea51324ac4326b459e1f",
     "package_version_at_start": "0.2.0",
-    "updated_at": "2026-09-08T08:34:23.922875Z",
+    "updated_at": "2026-09-08T08:57:00.048622Z",
     "code_head": "1d9f10976b5f754502c81591c64c712e492188d1"
   },
   "review_rounds": [
@@ -2175,7 +2175,38 @@
     "authorised_by_owner_on": "2026-09-08",
     "integration": "feat/skill-parity-s1 → main via pull request (owner's decision); merge commit, as for the previous releases",
     "mechanism": ".github/workflows/release.yml (workflow_dispatch, run on main after the merge) publishes meshy-cli and the scoped alias @meshy-ai/cli at package.json version 0.3.0 with the repository's NPM_TOKEN; no local npm publish",
-    "windows_x64": "not_run — the owner decided on 2026-09-08 to skip it for this release (no host)",
-    "status": "pending — recorded with the published version, tag and registry digest in a docs commit after the publish is verified"
+    "windows_x64": "not_run — skipped for this release by the owner's decision (2026-09-08)",
+    "status": "published — G1-release passed (Codex rounds 7/8 accepted, live verification complete, version published and traceable); Windows x64 remains not_run",
+    "version": "0.3.0",
+    "published_at": "2026-09-08T08:57:00.048622Z",
+    "pull_request": "https://github.com/meshy-dev/meshy-cli/pull/5",
+    "merge_commit": "1d7ff01a48bda231fe65eb7af24b53e42daddf14",
+    "tag": {
+      "name": "v0.3.0",
+      "sha": "1d7ff01a48bda231fe65eb7af24b53e42daddf14"
+    },
+    "workflow_run": "https://github.com/meshy-dev/meshy-cli/actions/runs/34206856323",
+    "npm": {
+      "meshy-cli": {
+        "version": "0.3.0",
+        "dist_tag_latest": true,
+        "shasum": "e852b682ee74fb82fe201c78e0445556856d6b0b",
+        "integrity": "sha512-DOfw1Wo+TM5856QuONRPCfF1mqEGOg811uhDP3Hr0kL6mmPluVw4e2pp6nvyj2rK92uGwVVA2LAyOvrDDe2pUQ==",
+        "tarball_sha256": "4da91a2f8a0afe22a467d97c6787c6161c1d6c99eb98fd4b8dccc0a79b84ce53",
+        "file_count": 338,
+        "tarball_note": "the pre-release tarball packed locally at 1d9f109 (sha256 0d22647f…, 398 files) carried 60 stale dist/client/endpoints/* files left over from an earlier build; the published tarball comes from the clean CI build (prepublishOnly: clean + build) and has no such files — file lists compared, nothing required is missing, the registry install passed the smoke"
+      },
+      "@meshy-ai/cli": {
+        "version": "0.3.0",
+        "published": true,
+        "shasum": "d2addd3ea3cc9a0a16120c6b0509305e7ed2751a"
+      }
+    },
+    "installed_as_a_user": {
+      "command": "npm install -g meshy-cli@0.3.0",
+      "meshy --version": "0.3.0",
+      "smoke": "auth status (2 profiles, verified), balance 2479, resources 24/3/7, project list on ~/meshy-live — all ok:true on the registry install"
+    },
+    "github_release": "release 0.3.0 (tag v0.3.0)"
   }
 }

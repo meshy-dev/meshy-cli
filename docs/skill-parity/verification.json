@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "G1-code accepted by Codex rounds 7 (e567646) and 8 (1d9f109: live fixes L01/L02 closed); live verification against the owner's real account completed 2026-09-08; Windows x64 not_run (skipped by the owner's decision); release authorised 2026-09-08 and in progress via release.yml — G1-release is recorded only after the publish is verified",
+  "status": "G1-code accepted (Codex rounds 7 and 8); G1-release passed 2026-09-08: meshy-cli 0.3.0 published through release.yml from main (merge of PR #5), tag v0.3.0; live verification on the owner's real account complete; Windows x64 not_run by the owner's decision",
   "rules": "Every entry binds a command or test id to the code SHA it ran against. not_run is not passed. Entries are replaced when re-run on a newer HEAD.",
   "environment": {
     "os": "macOS 26.6.2 (Darwin 25.6.0) arm64",
@@ -936,7 +936,7 @@
     }
   ],
   "code_head": "1d9f10976b5f754502c81591c64c712e492188d1",
-  "recorded_at": "2026-09-08T08:34:23.922875Z",
+  "recorded_at": "2026-09-08T08:57:00.048622Z",
   "behavior_test_note": "Every T-id below is asserted by node:test files that run offline (loopback HTTP mocks, temp dirs). covered_offline_only marks ids whose live/OS/GUI part remains not_run. review_round_1…6 notes name the Codex finding and probe the file now covers; live_fix notes name the defect found in the real-account verification.",
   "package_smoke": {
     "tarball": "meshy-cli-0.3.0.tgz",
@@ -2450,7 +2450,38 @@
     "authorised_by_owner_on": "2026-09-08",
     "integration": "feat/skill-parity-s1 → main via pull request (owner's decision); merge commit, as for the previous releases",
     "mechanism": ".github/workflows/release.yml (workflow_dispatch, run on main after the merge) publishes meshy-cli and the scoped alias @meshy-ai/cli at package.json version 0.3.0 with the repository's NPM_TOKEN; no local npm publish",
-    "windows_x64": "not_run — the owner decided on 2026-09-08 to skip it for this release (no host)",
-    "status": "pending — recorded with the published version, tag and registry digest in a docs commit after the publish is verified"
+    "windows_x64": "not_run — skipped for this release by the owner's decision (2026-09-08)",
+    "status": "published — G1-release passed (Codex rounds 7/8 accepted, live verification complete, version published and traceable); Windows x64 remains not_run",
+    "version": "0.3.0",
+    "published_at": "2026-09-08T08:57:00.048622Z",
+    "pull_request": "https://github.com/meshy-dev/meshy-cli/pull/5",
+    "merge_commit": "1d7ff01a48bda231fe65eb7af24b53e42daddf14",
+    "tag": {
+      "name": "v0.3.0",
+      "sha": "1d7ff01a48bda231fe65eb7af24b53e42daddf14"
+    },
+    "workflow_run": "https://github.com/meshy-dev/meshy-cli/actions/runs/34206856323",
+    "npm": {
+      "meshy-cli": {
+        "version": "0.3.0",
+        "dist_tag_latest": true,
+        "shasum": "e852b682ee74fb82fe201c78e0445556856d6b0b",
+        "integrity": "sha512-DOfw1Wo+TM5856QuONRPCfF1mqEGOg811uhDP3Hr0kL6mmPluVw4e2pp6nvyj2rK92uGwVVA2LAyOvrDDe2pUQ==",
+        "tarball_sha256": "4da91a2f8a0afe22a467d97c6787c6161c1d6c99eb98fd4b8dccc0a79b84ce53",
+        "file_count": 338,
+        "tarball_note": "the pre-release tarball packed locally at 1d9f109 (sha256 0d22647f…, 398 files) carried 60 stale dist/client/endpoints/* files left over from an earlier build; the published tarball comes from the clean CI build (prepublishOnly: clean + build) and has no such files — file lists compared, nothing required is missing, the registry install passed the smoke"
+      },
+      "@meshy-ai/cli": {
+        "version": "0.3.0",
+        "published": true,
+        "shasum": "d2addd3ea3cc9a0a16120c6b0509305e7ed2751a"
+      }
+    },
+    "installed_as_a_user": {
+      "command": "npm install -g meshy-cli@0.3.0",
+      "meshy --version": "0.3.0",
+      "smoke": "auth status (2 profiles, verified), balance 2479, resources 24/3/7, project list on ~/meshy-live — all ok:true on the registry install"
+    },
+    "github_release": "release 0.3.0 (tag v0.3.0)"
   }
 }
