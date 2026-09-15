@@ -347,7 +347,7 @@ status report instead of JSON. Single-file outputs get a per-file
 task that is not yet SUCCEEDED yields `downloads.state: "not_ready"` with exit 0.
 
 ```bash
-meshy-cli text-to-image create --ai-model nano-banana --prompt "a leaf" -o assets/leaf.jpeg
+meshy-cli text-to-image create --ai-model nano-banana-2-lite --prompt "a leaf" -o assets/leaf.jpeg
 meshy-cli image-to-3d wait <id> -o out/robot/
 ```
 
