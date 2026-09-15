@@ -348,6 +348,7 @@ task that is not yet SUCCEEDED yields `downloads.state: "not_ready"` with exit 0
 
 ```bash
 meshy-cli text-to-image create --ai-model nano-banana-2-lite --prompt "a leaf" -o assets/leaf.jpeg
+meshy-cli text-to-image create --ai-model gpt-image-2-5-sunburst --aspect-ratio 3:2 --prompt "a leaf" -o assets/leaf-wide.png
 meshy-cli image-to-3d wait <id> -o out/robot/
 ```
 
