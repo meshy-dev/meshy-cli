@@ -179,10 +179,41 @@ test("callback server — success page on valid /callback with correct state", a
   const res = await fetch(`http://127.0.0.1:${port}/callback?code=mycode&state=${encodeURIComponent(state)}`);
   assert.equal(res.status, 200);
   const body = await res.text();
-  assert.ok(body.includes("Login successful"));
+  assert.ok(body.includes("Meshy CLI authorized"));
+  assert.ok(!body.includes("Login successful"), "token exchange has not completed yet");
+  assert.ok(!body.includes("mycode"), "authorization codes must not be reflected into the page");
+  assert.equal(res.headers.get("cache-control"), "no-store");
+  assert.equal(res.headers.get("referrer-policy"), "no-referrer");
   const result = await waitForCallback;
   assert.equal(result.code, "mycode");
   assert.equal(result.state, state);
+});
+
+test("callback page — Chinese UI follows the browser language", async () => {
+  const { port, waitForCallback } = await startCallbackServer(0, "language-state");
+  const res = await fetch(`http://127.0.0.1:${port}/callback?code=example&state=language-state`, {
+    headers: { "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8" },
+  });
+  const body = await res.text();
+  assert.match(body, /lang="zh"/);
+  assert.match(body, /已授权 Meshy CLI/);
+  assert.match(body, /请回到终端继续操作/);
+  await waitForCallback;
+});
+
+test("callback page — error details cannot inject markup or load third-party assets", async () => {
+  const { port, waitForCallback } = await startCallbackServer(0, "error-state");
+  const rejected = assert.rejects(waitForCallback);
+  const res = await hitCallback(port, {
+    error: "server_error",
+    error_description: '<img src="https://example.com" onerror="alert(1)">',
+  });
+  const body = await res.text();
+  assert.ok(body.includes("&lt;img"));
+  assert.ok(!body.includes("<img"));
+  assert.ok(!body.includes("<script"));
+  assert.match(res.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+  await rejected;
 });
 
 test("callback server — ?error=access_denied rejects with that error", async () => {
@@ -223,9 +254,9 @@ test("callback server — state tampering: wrong state → 400 response, promise
   assert.equal(res.status, 400, "state mismatch must return 400, not 200");
   const body = await res.text();
   // Must NOT show the success page.
-  assert.ok(!body.includes("Login successful"), "must not show success page on state mismatch");
+  assert.ok(!body.includes("Meshy CLI authorized"), "must not show success page on state mismatch");
   // Must show an error indication.
-  assert.ok(body.includes("state mismatch") || body.includes("Login failed"), "must show error on state mismatch");
+  assert.ok(body.includes("state mismatch") || body.includes("Unable to connect"), "must show error on state mismatch");
 
   await rejectionPromise;
 });
@@ -279,8 +310,8 @@ test("callback server — correct state but no code → 400, rejection, no succe
   );
   assert.equal(res.status, 400, "missing code must return 400");
   const body = await res.text();
-  assert.ok(!body.includes("Login successful"), "must not show success page when code is missing");
-  assert.ok(body.includes("Login failed") || body.includes("no authorization code"), "must show error page");
+  assert.ok(!body.includes("Meshy CLI authorized"), "must not show success page when code is missing");
+  assert.ok(body.includes("Unable to connect") || body.includes("no authorization code"), "must show error page");
 
   await rejectionPromise;
 });
@@ -304,8 +335,8 @@ test("callback server — correct state but empty code (&code=) → 400, rejecti
   );
   assert.equal(res.status, 400, "empty code must return 400");
   const body = await res.text();
-  assert.ok(!body.includes("Login successful"), "must not show success page when code is empty");
-  assert.ok(body.includes("Login failed") || body.includes("no authorization code"), "must show error page");
+  assert.ok(!body.includes("Meshy CLI authorized"), "must not show success page when code is empty");
+  assert.ok(body.includes("Unable to connect") || body.includes("no authorization code"), "must show error page");
 
   await rejectionPromise;
 });

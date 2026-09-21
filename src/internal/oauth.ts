@@ -19,6 +19,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { spawn } from "node:child_process";
 import { HintedError } from "./errors.js";
 import { USER_AGENT } from "./user-agent.js";
+import { renderCallbackPage } from "./oauth-page.js";
 
 // ---------------------------------------------------------------------------
 // PKCE helpers
@@ -66,20 +67,6 @@ export function buildAuthorizeUrl(params: BuildAuthorizeUrlParams): string {
 }
 
 // ---------------------------------------------------------------------------
-// HTML helpers
-// ---------------------------------------------------------------------------
-
-/** Escape characters that are special in HTML to prevent reflected XSS. */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-// ---------------------------------------------------------------------------
 // Loopback callback server
 // ---------------------------------------------------------------------------
 
@@ -95,27 +82,6 @@ export interface CallbackServer {
 }
 
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
-const SUCCESS_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Meshy — Login successful</title></head>
-<body>
-<h1>Login successful</h1>
-<p>You can close this tab and return to the terminal.</p>
-</body>
-</html>`;
-
-function errorHtml(msg: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Meshy — Login failed</title></head>
-<body>
-<h1>Login failed</h1>
-<p>${escapeHtml(msg)}</p>
-<p>Return to the terminal for details.</p>
-</body>
-</html>`;
-}
 
 /**
  * Starts a loopback HTTP server bound to 127.0.0.1 only.
@@ -165,6 +131,11 @@ export function startCallbackServer(
         return;
       }
 
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+      const language = req.headers["accept-language"];
+
       const code = url.searchParams.get("code") ?? undefined;
       const state = url.searchParams.get("state") ?? undefined;
       const error = url.searchParams.get("error") ?? undefined;
@@ -173,7 +144,7 @@ export function startCallbackServer(
       if (error) {
         const msg = errorDescription ?? error;
         res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(errorHtml(msg));
+        res.end(renderCallbackPage(error === "access_denied" ? "canceled" : "error", msg, language));
         settle(new HintedError({
           message: `Authorization denied: ${msg}`,
           code: "oauth_denied",
@@ -185,7 +156,7 @@ export function startCallbackServer(
       // State verification: reject mismatches before showing any success page.
       if (state !== expectedState) {
         res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(errorHtml("Login failed: state mismatch — you can close this tab and retry."));
+        res.end(renderCallbackPage("error", "OAuth state mismatch. Start a new login from your terminal.", language));
         settle(new HintedError({
           message: "OAuth state mismatch — possible CSRF attack. Run: meshy auth login",
           code: "oauth_state_mismatch",
@@ -200,7 +171,7 @@ export function startCallbackServer(
       // the user while the terminal fails with oauth_no_code.
       if (!code) {
         res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(errorHtml("Login failed: no authorization code received — you can close this tab and retry."));
+        res.end(renderCallbackPage("error", "No authorization code received. Start a new login from your terminal.", language));
         settle(new HintedError({
           message: "No authorization code received from the callback.",
           code: "oauth_no_code",
@@ -210,7 +181,8 @@ export function startCallbackServer(
       }
 
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(SUCCESS_HTML);
+      // Receiving a code precedes token exchange and credential persistence.
+      res.end(renderCallbackPage("authorized", "", language));
       settle({ code, state });
     });
 
