@@ -229,7 +229,12 @@ test("callback server — ?error=access_denied rejects with that error", async (
     },
   );
   // Now drive the callback with an error.
-  await fetch(`http://127.0.0.1:${port}/callback?error=access_denied&error_description=User+denied`);
+  const res = await fetch(`http://127.0.0.1:${port}/callback?error=access_denied&error_description=User+denied`);
+  const body = await res.text();
+  // access_denied is a deliberate cancel, not a failure: it gets its own page.
+  assert.ok(body.includes("Connection canceled"));
+  assert.ok(!body.includes("Unable to connect"));
+  assert.ok(!body.includes("User denied"), "canceled pages carry no error details");
   await rejectionPromise;
 });
 
