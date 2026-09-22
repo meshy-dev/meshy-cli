@@ -18,18 +18,25 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import { configDir } from "./credentials.js";
-import { VERSION } from "./version.js";
+import { PACKAGE_NAME, VERSION } from "./version.js";
+import { painterFor } from "./color.js";
 import type { OutputFormat } from "./output.js";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-export const REGISTRY_URL = "https://registry.npmjs.org/meshy-cli/latest";
+/**
+ * Both the registry lookup and the upgrade hint name the package this build
+ * was actually installed from. `meshy-cli` and its alias `@meshy-ai/cli` ship
+ * the same bins, and npm will not relink a bin owned by the other package —
+ * so a hardcoded name sends half the users into `EEXIST: file already exists`.
+ */
+export const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
 export const FETCH_TIMEOUT_MS = 15_000;
 export const MAX_RESPONSE_BYTES = 256 * 1024;
 export const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-export const UPDATE_COMMAND = "npm i -g meshy-cli@latest";
+export const UPDATE_COMMAND = `npm i -g ${PACKAGE_NAME}@latest`;
 
 /**
  * Hidden self-command used for the detached background refresh child.
@@ -196,7 +203,7 @@ export function buildNotice(latest: string, current: string = VERSION): UpdateNo
   return {
     current,
     latest,
-    message: `meshy-cli ${latest} available (current ${current}), run: ${UPDATE_COMMAND}`,
+    message: `${PACKAGE_NAME} ${latest} available (current ${current}), run: ${UPDATE_COMMAND}`,
     command: UPDATE_COMMAND,
   };
 }
@@ -338,7 +345,7 @@ export function printHumanUpdateHint(
 ): boolean {
   if (!notice) return false;
   if (!io.stdout.isTTY || !io.stderr.isTTY || !io.stdin.isTTY) return false;
-  io.stderr.write(`${notice.message}\n`);
+  io.stderr.write(`${painterFor(io.stderr)(notice.message, "dim")}\n`);
   return true;
 }
 

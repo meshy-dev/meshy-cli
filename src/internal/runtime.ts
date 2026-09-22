@@ -20,7 +20,7 @@ import { authRequiredError, UsageError } from "./errors.js";
 import { logger, setLogLevel } from "./logger.js";
 import { refreshTokens } from "./oauth.js";
 import type { LogLevel } from "./logger.js";
-import type { OutputFormat } from "./output.js";
+import { parseOutputFormat, type OutputFormat } from "./output.js";
 import type { OutputSchema } from "./result.js";
 
 export interface GlobalFlags {
@@ -29,6 +29,8 @@ export interface GlobalFlags {
   baseUrlV2?: string;
   baseUrlCreativeLab?: string;
   format: OutputFormat;
+  /** true when --format/--json was actually typed; false when format came from the TTY default. */
+  formatExplicit: boolean;
   json?: boolean;
   outputSchema?: OutputSchema;
   output?: string;
@@ -225,13 +227,18 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
     );
   }
   // --json is an alias for --format json; --json wins if both are set.
-  const format = opts.json ? "json" : normalizeFormat(opts.format);
+  // Untyped --format resolves against the TTY (see output.ts); remember that it
+  // was untyped, because a file write must stay JSON no matter what the
+  // terminal would have shown.
+  const formatExplicit = opts.json === true || opts.format !== undefined;
+  const format = opts.json ? "json" : parseOutputFormat(opts.format);
   return {
     apiKey: opts.apiKey,
     baseUrlV1: opts.baseUrlV1,
     baseUrlV2: opts.baseUrlV2,
     baseUrlCreativeLab: opts.baseUrlCreativeLab,
     format,
+    formatExplicit,
     json: opts.json,
     outputSchema: normalizeSchema(opts.outputSchema),
     output: opts.output,
@@ -266,12 +273,6 @@ function normalizeSchema(raw: string | undefined): OutputSchema | undefined {
   const v = raw.toLowerCase();
   if (v === "v1" || v === "legacy") return v;
   throw new UsageError(`invalid --output-schema '${raw}'. Expected: legacy | v1`);
-}
-
-function normalizeFormat(raw: string | undefined): OutputFormat {
-  const v = (raw ?? "json").toLowerCase();
-  if (v === "json" || v === "pretty" || v === "ndjson") return v;
-  throw new Error(`invalid --format '${raw}'. Expected: json | pretty | ndjson`);
 }
 
 function normalizeLogLevel(raw: string | undefined): LogLevel | undefined {

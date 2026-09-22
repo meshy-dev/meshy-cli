@@ -28,7 +28,10 @@ import {
   REFRESH_COMMAND,
   UPDATE_COMMAND,
 } from "../src/internal/update-notifier.js";
+import { PACKAGE_NAME } from "../src/internal/version.js";
 import { emit } from "../src/internal/output.js";
+
+const stripAnsi = (s: string): string => s.replace(/\u001b\[[0-9;]*m/g, "");
 import { formatReport } from "../src/internal/report.js";
 
 // ---------------------------------------------------------------------------
@@ -264,7 +267,7 @@ test("buildNotice — 0.2.0 > 0.1.0 → notice with exact message", () => {
   assert.equal(notice.current, "0.1.0");
   assert.equal(
     notice.message,
-    `meshy-cli 0.2.0 available (current 0.1.0), run: ${UPDATE_COMMAND}`,
+    `${PACKAGE_NAME} 0.2.0 available (current 0.1.0), run: ${UPDATE_COMMAND}`,
   );
   assert.equal(notice.command, UPDATE_COMMAND);
 });
@@ -630,7 +633,23 @@ test("printHumanUpdateHint — all three isTTY true → writes message + newline
   const result = printHumanUpdateHint(fakeNotice, io);
   assert.equal(result, true);
   assert.equal(written.length, 1);
-  assert.equal(written[0], `${fakeNotice.message}\n`);
+  // The hint is dimmed because this fake stderr claims to be a TTY; the text
+  // itself is what the contract is about.
+  assert.equal(stripAnsi(written[0] ?? ""), `${fakeNotice.message}\n`);
+  assert.match(written[0] ?? "", /\u001b\[2m/, "a TTY hint is dimmed");
+});
+
+test("printHumanUpdateHint — a non-TTY stderr is never painted", () => {
+  const written: string[] = [];
+  const io = {
+    stdout: { isTTY: true as boolean | undefined },
+    stderr: { isTTY: undefined as boolean | undefined, write: (s: string) => { written.push(s); return true; } },
+    stdin: { isTTY: true as boolean | undefined },
+  };
+  // stderr is not a TTY, so the hint is suppressed entirely — and if that rule
+  // ever loosens, whatever comes out must still be escape-free.
+  assert.equal(printHumanUpdateHint(fakeNotice, io), false);
+  for (const line of written) assert.doesNotMatch(line, /\u001b\[/);
 });
 
 test("printHumanUpdateHint — stdout not TTY → no write, false", () => {

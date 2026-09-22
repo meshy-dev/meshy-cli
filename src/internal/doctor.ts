@@ -91,7 +91,15 @@ export interface DoctorOutcome {
   apiFailure: DoctorApiFailure | null;
 }
 
-const REQUIRED_NODE_MAJOR = 24;
+/**
+ * Mirrors package.json#engines.node. The binding constraint is commander@15
+ * (>=22.12.0), not anything we write — keep the two in lockstep, because a
+ * floor that overstates the real one makes npm silently resolve `npm i -g
+ * meshy-cli` to an ancient version instead of refusing to install.
+ */
+const REQUIRED_NODE_MAJOR = 22;
+const REQUIRED_NODE_MINOR = 12;
+export const REQUIRED_NODE = `${REQUIRED_NODE_MAJOR}.${REQUIRED_NODE_MINOR}.0`;
 const CWD_ENV_CANDIDATES = [".env", ".env.local"] as const;
 /** Mirrors config.ts: an empty or placeholder key means "unset". */
 const PLACEHOLDER_KEYS = new Set(["", "YOUR_MESHY_API_KEY_HERE"]);
@@ -151,15 +159,20 @@ export async function runDoctorDetailed(opts: DoctorOptions): Promise<DoctorOutc
   if (typeof env["MESHY_API_KEY"] === "string") secrets.push(env["MESHY_API_KEY"].trim());
 
   // --- CLI and runtime -----------------------------------------------------
-  const nodeMajor = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
-  const nodeOk = Number.isFinite(nodeMajor) && nodeMajor >= REQUIRED_NODE_MAJOR;
+  const [rawMajor, rawMinor] = process.versions.node.split(".");
+  const nodeMajor = Number.parseInt(rawMajor ?? "", 10);
+  const nodeMinor = Number.parseInt(rawMinor ?? "", 10);
+  const nodeOk =
+    Number.isFinite(nodeMajor) &&
+    (nodeMajor > REQUIRED_NODE_MAJOR ||
+      (nodeMajor === REQUIRED_NODE_MAJOR && Number.isFinite(nodeMinor) && nodeMinor >= REQUIRED_NODE_MINOR));
   checks.push({ id: "cli", status: "ok", detail: `meshy-cli ${VERSION} on node ${process.version} (${process.platform} ${process.arch})` });
   checks.push({
     id: "node",
     status: nodeOk ? "ok" : "fail",
     detail: nodeOk
-      ? `node ${process.version} satisfies the required >=${REQUIRED_NODE_MAJOR}`
-      : `node ${process.version} is below the required >=${REQUIRED_NODE_MAJOR}; install Node ${REQUIRED_NODE_MAJOR} or newer`,
+      ? `node ${process.version} satisfies the required >=${REQUIRED_NODE}`
+      : `node ${process.version} is below the required >=${REQUIRED_NODE}; install Node ${REQUIRED_NODE} or newer`,
   });
 
   // --- Base URLs (same precedence as config.ts, resolved without a credential) ---

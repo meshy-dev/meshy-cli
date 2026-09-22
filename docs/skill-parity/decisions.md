@@ -734,3 +734,101 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   by content type. `tests/live-verification.test.ts` (L02) covers both products;
   the same tasks re-downloaded live produce `lamp.stl`/`base.stl` (byte-identical
   to the mis-named files) and `model.obj.zip`.
+
+## D-061 The supported Node floor is 22.12, and it is one number, not three
+
+- `engines.node` was raised from `>=20` to `>=24` in `7edf056` ("chore: upgrade
+  Node and dependencies") as a side effect of a dependency bump, not because any
+  code needed Node 24. Audited on 2026-09-22: the only runtime gate in the tree
+  was `REQUIRED_NODE_MAJOR = 24` in `doctor.ts`; `@types/node@^22` typechecks
+  clean and the full suite is 563/563 on Node 22.22.0. The real floor is the
+  strictest dependency, `commander@15` at `>=22.12.0`.
+- The overstated floor was not a warning, it was a silent downgrade. npm resolves
+  an unpinned install to the newest version whose `engines` the current runtime
+  satisfies, so `npm i -g meshy-cli` on Node 22 installed **0.1.3** — the last
+  version declaring `>=20` — with no warning at all. Reproduced against the live
+  registry. Users then read `meshy --version` as 0.1.3 and reported the CLI as
+  stale; agents read `engines` and reported it as incompatible.
+- `engines.node`, `.node-version`, the CI `check` job and `doctor`'s floor are now
+  all 22 / 22.12.0, and `tests/version.test.ts` pins `engines.node` to the value
+  `doctor` enforces so the two cannot drift again. The smoke matrix is
+  `[22, 24, 26]`: the floor, the current release line, and the next one.
+- Reviewer check: `engines.node` must equal the strictest `engines.node` among
+  `dependencies` — raise it only when a dependency or a used API forces it, and
+  publish a release at the same time, because every version left behind the floor
+  is what npm will hand to users below it.
+
+## D-062 Everything user-facing that names the npm package reads it from package.json
+
+- The same tree is published twice, as `meshy-cli` and — after `npm pkg set name`
+  in `release.yml` — as `@meshy-ai/cli`. Both declare the same `meshy` and
+  `meshy-cli` bins, and npm refuses to relink a bin owned by another package.
+- The update notifier hardcoded `npm i -g meshy-cli@latest`, so an `@meshy-ai/cli`
+  user who followed its advice got `EEXIST: file already exists` on
+  `<prefix>/bin/meshy-cli` and no upgrade. Observed 2026-09-22.
+- `version.ts` now exports `PACKAGE_NAME` alongside `VERSION` from the same
+  package.json read, and the notifier derives `REGISTRY_URL`, `UPDATE_COMMAND`
+  and its message from it — the alias checks and upgrades itself. Both scoped URL
+  forms (`@meshy-ai/cli/latest` and `@meshy-ai%2Fcli/latest`) return 200.
+- Not fixed in code, because it cannot be: installing both packages still
+  collides. README says install one, and how to switch. Retiring the alias is a
+  publishing decision, not a code change.
+
+## D-063 `--format` follows the destination: pretty on a TTY, json everywhere else
+
+- Reported 2026-09-22: `meshy balance` typed at a terminal answers with
+  `{ "balance": 2357 }` spread over three lines. Surveyed the CLIs on the same machine — `gh release
+  list`, `npm view`, `kubectl config get-contexts`, `docker` all render a human
+  shape by default and keep the machine shape behind `--json` / `-o json` /
+  `--format`. `aws` is the counterexample, and it is configurable. A CLI whose
+  default face is raw JSON braces is the outlier, not the norm.
+- The fix is the default, not the contract. `--format` untyped now resolves to
+  `pretty` when `process.stdout.isTTY` and `json` otherwise. Every agent, script,
+  pipe, redirect, `$(...)` and CI run reaches the CLI through something that is
+  not a TTY, so the bytes they read are unchanged; `--format json` / `--json`
+  still force it, and SKILL.md already told agents to pass it.
+- Two traps this had to clear before it was safe:
+  - commander carried `.default("json")` on the option, which made "not typed"
+    indistinguishable from `--format json`. The default is gone from the option
+    and lives in `parseOutputFormat`; `runtime.ts`'s duplicate `normalizeFormat`
+    was deleted rather than taught the same rule twice.
+  - legacy `-o <file>` renders through `emit()` with the same format, so a
+    TTY-derived `pretty` would have silently landed in a file every caller reads
+    back as JSON. `GlobalFlags.formatExplicit` records whether `--format` was
+    actually typed; an untyped format writes JSON to a file whatever the
+    terminal would have shown. `--save-json` was never affected — it has its own
+    writer. Both branches are covered in `tests/output.test.ts`.
+- Side effect, and the point: the update notifier's two channels finally
+  separate. `attachUpdateNotice` already skipped `pretty`, so a human now gets
+  one stderr line instead of a `_notice` blob inside their output *and* the line;
+  a pipe still carries `_notice` in the JSON.
+- Ceiling: `renderPretty` is a recursive `key: value` dump. Right for `balance`
+  and `doctor`, thin for a 30-field task. Reach for a real table renderer when
+  someone complains about a specific command, not before.
+- Reviewer check: anything that writes to a file or is consumed by a machine
+  must not read `flags.format` without also honouring `flags.formatExplicit`.
+
+## D-064 Colour is a property of the stream, and the machine formats never have it
+
+- Follows D-063: once `pretty` is what a person actually sees, the output should
+  look like the CLIs it sits next to. Added in `src/internal/color.ts`, ~50 lines
+  and no dependency — four SGR codes do not justify one.
+- The decision table, in order: `FORCE_COLOR` (on, unless `0`), then `NO_COLOR`
+  (off), then `TERM=dumb` (off), then whether the stream is a TTY. Both env vars
+  are the cross-ecosystem conventions and users expect them to work here too.
+- Painted against the stream the text is going to, never a global flag:
+  - stdout, `pretty` only — `meshy doctor` in a terminal;
+  - stderr for the `error:` / `hint:` lines and the update hint, so
+    `meshy ... | jq` still shows a red error while `2> log` stays clean;
+  - `json` / `ndjson` take the painter and ignore it, pinned by a test — this is
+    the one that would silently corrupt every agent reading stdout;
+  - anything written to a file renders unpainted, because `--format pretty -o
+    notes.txt` must not put control codes on disk. `render()` therefore defaults
+    to the plain painter and only the two stdout call sites opt in.
+- Palette, deliberately small: keys dim, `null` dim, and whole-value state words
+  (`ok`/`SUCCEEDED`/`true` green, `FAILED`/`error`/`false` red,
+  `PENDING`/`skipped`/`IN_PROGRESS` yellow). Matched on the entire value, case
+  insensitively, so a prompt reading "a failed robot" is never repainted.
+- Reviewer check: a new writer must pass the painter for *its own* destination.
+  `painterFor(process.stdout)` in something that writes to stderr or a file is
+  the bug this table exists to prevent.

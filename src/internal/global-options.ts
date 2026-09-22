@@ -23,7 +23,12 @@ const FACTORIES: OptionFactory[] = [
       "--base-url-creative-lab <url>",
       "override the Creative Lab base URL (default: <v1 origin>/openapi/creative-lab)",
     ),
-  () => new Option("--format <fmt>", "output format").choices(["json", "pretty", "ndjson"]),
+  () =>
+    new Option("--format <fmt>", "output format (default: pretty on a terminal, json when piped)").choices([
+      "json",
+      "pretty",
+      "ndjson",
+    ]),
   () => new Option("--json", "output as JSON (alias for --format json)"),
   () =>
     new Option(
@@ -67,7 +72,8 @@ const FACTORIES: OptionFactory[] = [
 export function registerRootGlobalOptions(root: Command): void {
   for (const factory of FACTORIES) {
     const opt = factory();
-    if (opt.long === "--format") opt.default("json");
+    // No default here on purpose: readGlobalFlags must be able to tell "not
+    // typed" from "--format json", because only the former follows the TTY.
     if (opt.long === "--verbose") opt.default(false);
     root.addOption(opt);
   }

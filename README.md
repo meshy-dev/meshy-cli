@@ -12,7 +12,7 @@ The flag surface is deliberately curated rather than a 1:1 mirror of the API: de
 
 ## Install
 
-Requires Node 24+. No Python, no other runtime.
+Requires Node 22.12+ (the active LTS line). No Python, no other runtime.
 
 ```bash
 npm i -g meshy-cli       # installs `meshy-cli` and `meshy`
@@ -23,7 +23,22 @@ meshy doctor             # local diagnosis: versions, credential sources, base U
 The same build is also published under the scoped alias
 [`@meshy-ai/cli`](https://www.npmjs.com/package/@meshy-ai/cli)
 (`npm i -g @meshy-ai/cli`) — identical contents, pick whichever name you
-remember; don't install both.
+remember.
+
+**Install one, not both.** The two packages declare the same `meshy` and
+`meshy-cli` binaries, and npm refuses to relink a binary owned by the other
+package, so installing the second one fails with `EEXIST: file already exists`.
+To switch, uninstall the one you have first:
+
+```bash
+npm uninstall -g @meshy-ai/cli && npm i -g meshy-cli
+```
+
+Versions 0.2.0–0.3.1 declared `engines.node: >=24` by mistake. npm silently
+resolves an install to the newest version whose `engines` your runtime
+satisfies, so `npm i -g meshy-cli` on Node 22 quietly installed **0.1.3** with
+no warning. If `meshy --version` reports 0.1.x, that is why — reinstall now
+that the floor is correct.
 
 ### Development
 
@@ -466,10 +481,11 @@ message before any task is created. GLB-only fields (`uv-unwrap`, `rigging`
 | `--base-url-v1 <url>` / `--base-url-v2 <url>` | Override endpoints (staging/proxy) |
 | `--base-url-creative-lab <url>` | Override the Creative Lab base (default: `<v1 origin>/openapi/creative-lab`) |
 | `--output-schema legacy\|v1` | Stdout data model (existing commands default to `legacy`; new commands are `v1`) |
-| `--format json\|pretty\|ndjson` | Stdout rendering (default `json`) |
+| `--format json\|pretty\|ndjson` | Stdout rendering. Defaults to `pretty` when stdout is a terminal and `json` everywhere else — piped, redirected, or spawned as a subprocess, which is every agent, script and CI run. `--json` is shorthand for `--format json`. `-o <file>` keeps writing JSON unless `--format` is explicit |
 | `-o, --output <path>` | Download artifacts to a file/directory (task commands); output file for `mesh prepare-print` |
 | `--workspace <dir>` | Confine every written file to this directory: `download`, `-o` on task verbs and `make` (report-only tasks included), `--save-json`, `--project`/project folders and the history index (skipped with `index_dirty` when its root would fall outside), `mesh prepare-print` outputs and their copied materials — checked on real paths before anything, even a directory, is created. The boundary is frozen when the command starts (real path and directory identity): a workspace or project replaced by a symlink while a request is in flight is refused, never followed |
 | `--no-update-check` | Skip the background npm version check in this process |
+| `NO_COLOR` / `FORCE_COLOR` (env) | Colour is on only when the stream is a terminal. `NO_COLOR` turns it off, `FORCE_COLOR` forces it on (`FORCE_COLOR=0` off), `TERM=dumb` disables it. `json` and `ndjson` are never coloured, and neither is anything written to a file |
 | `-v, --verbose` | Debug logging to stderr |
 | `--log-level <level>` | `debug \| info \| warn \| error \| silent` |
 

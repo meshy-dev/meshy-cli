@@ -32,7 +32,7 @@ const DOTENV_SECRET = "msy_dotenv_secret_value_123";
 const FILE_SECRET = "msy_keyfile_secret_value_321";
 
 function flagsOf(extra: Partial<GlobalFlags> = {}): GlobalFlags {
-  return { format: "json", updateCheck: false, verbose: false, ...extra };
+  return { format: "json", formatExplicit: true, updateCheck: false, verbose: false, ...extra };
 }
 
 function tmp(prefix = "meshy-doctor-"): string {

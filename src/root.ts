@@ -130,7 +130,7 @@ GLOBAL FLAGS (accepted at any position in the command line):
     --base-url-v1 <url>      override MESHY_BASE_URL_V1
     --base-url-v2 <url>      override MESHY_BASE_URL_V2
     --base-url-creative-lab <url>  override the Creative Lab base (default: <v1 origin>/openapi/creative-lab)
-    --format <fmt>           json (default) | pretty | ndjson
+    --format <fmt>           pretty on a terminal, json when piped | json | pretty | ndjson
     --output-schema <s>      legacy (default for existing commands) | v1 (stable envelope; new commands)
     --output, -o <path>      download task artifacts to a file or directory,
                              write meta.json alongside, and replace stdout
