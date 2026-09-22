@@ -485,6 +485,7 @@ message before any task is created. GLB-only fields (`uv-unwrap`, `rigging`
 | `-o, --output <path>` | Download artifacts to a file/directory (task commands); output file for `mesh prepare-print` |
 | `--workspace <dir>` | Confine every written file to this directory: `download`, `-o` on task verbs and `make` (report-only tasks included), `--save-json`, `--project`/project folders and the history index (skipped with `index_dirty` when its root would fall outside), `mesh prepare-print` outputs and their copied materials — checked on real paths before anything, even a directory, is created. The boundary is frozen when the command starts (real path and directory identity): a workspace or project replaced by a symlink while a request is in flight is refused, never followed |
 | `--no-update-check` | Skip the background npm version check in this process |
+| `NO_COLOR` / `FORCE_COLOR` (env) | Colour is on only when the stream is a terminal. `NO_COLOR` turns it off, `FORCE_COLOR` forces it on (`FORCE_COLOR=0` off), `TERM=dumb` disables it. `json` and `ndjson` are never coloured, and neither is anything written to a file |
 | `-v, --verbose` | Debug logging to stderr |
 | `--log-level <level>` | `debug \| info \| warn \| error \| silent` |
 

@@ -13,6 +13,7 @@
 import { CommanderError } from "commander";
 import { MeshyApiError } from "../client/errors.js";
 import { emit, type OutputFormat } from "./output.js";
+import { painterFor } from "./color.js";
 
 export const EXIT_CODES = {
   OK: 0,
@@ -348,9 +349,12 @@ function base(
 /** Legacy stderr + payload reporter (unchanged shape for 0.2.0 consumers). */
 export function reportError(err: unknown, format: OutputFormat): void {
   const payload = toErrorPayload(err);
-  process.stderr.write(`error: ${payload.message}\n`);
+  // Painted against stderr, not stdout: `meshy ... | jq` still shows a red
+  // error line in the terminal, and `2> log` gets clean text.
+  const paint = painterFor(process.stderr);
+  process.stderr.write(`${paint("error:", "red")} ${payload.message}\n`);
   if (typeof payload["hint"] === "string") {
-    process.stderr.write(`hint: ${payload["hint"] as string}\n`);
+    process.stderr.write(`${paint("hint:", "yellow")} ${payload["hint"] as string}\n`);
   }
   if (format !== "pretty") {
     try {

@@ -807,3 +807,28 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   someone complains about a specific command, not before.
 - Reviewer check: anything that writes to a file or is consumed by a machine
   must not read `flags.format` without also honouring `flags.formatExplicit`.
+
+## D-064 Colour is a property of the stream, and the machine formats never have it
+
+- Follows D-063: once `pretty` is what a person actually sees, the output should
+  look like the CLIs it sits next to. Added in `src/internal/color.ts`, ~50 lines
+  and no dependency — four SGR codes do not justify one.
+- The decision table, in order: `FORCE_COLOR` (on, unless `0`), then `NO_COLOR`
+  (off), then `TERM=dumb` (off), then whether the stream is a TTY. Both env vars
+  are the cross-ecosystem conventions and users expect them to work here too.
+- Painted against the stream the text is going to, never a global flag:
+  - stdout, `pretty` only — `meshy doctor` in a terminal;
+  - stderr for the `error:` / `hint:` lines and the update hint, so
+    `meshy ... | jq` still shows a red error while `2> log` stays clean;
+  - `json` / `ndjson` take the painter and ignore it, pinned by a test — this is
+    the one that would silently corrupt every agent reading stdout;
+  - anything written to a file renders unpainted, because `--format pretty -o
+    notes.txt` must not put control codes on disk. `render()` therefore defaults
+    to the plain painter and only the two stdout call sites opt in.
+- Palette, deliberately small: keys dim, `null` dim, and whole-value state words
+  (`ok`/`SUCCEEDED`/`true` green, `FAILED`/`error`/`false` red,
+  `PENDING`/`skipped`/`IN_PROGRESS` yellow). Matched on the entire value, case
+  insensitively, so a prompt reading "a failed robot" is never repainted.
+- Reviewer check: a new writer must pass the painter for *its own* destination.
+  `painterFor(process.stdout)` in something that writes to stderr or a file is
+  the bug this table exists to prevent.

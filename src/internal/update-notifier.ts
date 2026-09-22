@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import { configDir } from "./credentials.js";
 import { PACKAGE_NAME, VERSION } from "./version.js";
+import { painterFor } from "./color.js";
 import type { OutputFormat } from "./output.js";
 
 // ---------------------------------------------------------------------------
@@ -344,7 +345,7 @@ export function printHumanUpdateHint(
 ): boolean {
   if (!notice) return false;
   if (!io.stdout.isTTY || !io.stderr.isTTY || !io.stdin.isTTY) return false;
-  io.stderr.write(`${notice.message}\n`);
+  io.stderr.write(`${painterFor(io.stderr)(notice.message, "dim")}\n`);
   return true;
 }
 

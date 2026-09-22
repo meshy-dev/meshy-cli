@@ -26,7 +26,8 @@ Add `--output-schema v1 --format json` to every command you parse. `--format` is
 not optional politeness: untyped, it renders `pretty` for a human at a terminal
 and `json` everywhere else. You will almost always be on the `json` side — a
 subprocess pipe is not a TTY — but say it and the shape is yours regardless of
-how you are spawned. stdout is then
+how you are spawned. `json` and `ndjson` never carry terminal colour codes, so
+you never need to strip escapes. stdout is then
 exactly one JSON object with six keys — `schema_version, command, ok, result,
 error, warnings` — and nothing else; progress goes to stderr. `ok` is whether the
 CLI operation completed; `result.task.status` is the server's task state (a `get`

@@ -123,3 +123,16 @@ test("emitResult — an explicit --format pretty is honoured for -o", async () =
   await emitResult(opened("pretty", true), { balance: 7 }, { balance: 7 }, { legacyFile: file });
   assert.equal(readFileSync(file, "utf8"), "balance: 7\n");
 });
+
+/**
+ * A file is not a terminal. `--format pretty -o notes.txt` must land readable
+ * text on disk, never control codes — the bug you only notice a week later in
+ * a diff.
+ */
+test("emit — a file never receives colour, even from a painted terminal", () => {
+  const file = join(mkdtempSync(join(tmpdir(), "meshy-cli-color-"))," out.txt".trim());
+  emit({ status: "ok" }, { format: "pretty", file });
+  const written = readFileSync(file, "utf8");
+  assert.equal(written, "status: ok\n");
+  assert.doesNotMatch(written, /\u001b\[/);
+});
