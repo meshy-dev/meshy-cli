@@ -773,3 +773,37 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Not fixed in code, because it cannot be: installing both packages still
   collides. README says install one, and how to switch. Retiring the alias is a
   publishing decision, not a code change.
+
+## D-063 `--format` follows the destination: pretty on a TTY, json everywhere else
+
+- Reported 2026-09-22: `meshy balance` typed at a terminal answers with
+  `{ "balance": 2357 }` spread over three lines. Surveyed the CLIs on the same machine — `gh release
+  list`, `npm view`, `kubectl config get-contexts`, `docker` all render a human
+  shape by default and keep the machine shape behind `--json` / `-o json` /
+  `--format`. `aws` is the counterexample, and it is configurable. A CLI whose
+  default face is raw JSON braces is the outlier, not the norm.
+- The fix is the default, not the contract. `--format` untyped now resolves to
+  `pretty` when `process.stdout.isTTY` and `json` otherwise. Every agent, script,
+  pipe, redirect, `$(...)` and CI run reaches the CLI through something that is
+  not a TTY, so the bytes they read are unchanged; `--format json` / `--json`
+  still force it, and SKILL.md already told agents to pass it.
+- Two traps this had to clear before it was safe:
+  - commander carried `.default("json")` on the option, which made "not typed"
+    indistinguishable from `--format json`. The default is gone from the option
+    and lives in `parseOutputFormat`; `runtime.ts`'s duplicate `normalizeFormat`
+    was deleted rather than taught the same rule twice.
+  - legacy `-o <file>` renders through `emit()` with the same format, so a
+    TTY-derived `pretty` would have silently landed in a file every caller reads
+    back as JSON. `GlobalFlags.formatExplicit` records whether `--format` was
+    actually typed; an untyped format writes JSON to a file whatever the
+    terminal would have shown. `--save-json` was never affected — it has its own
+    writer. Both branches are covered in `tests/output.test.ts`.
+- Side effect, and the point: the update notifier's two channels finally
+  separate. `attachUpdateNotice` already skipped `pretty`, so a human now gets
+  one stderr line instead of a `_notice` blob inside their output *and* the line;
+  a pipe still carries `_notice` in the JSON.
+- Ceiling: `renderPretty` is a recursive `key: value` dump. Right for `balance`
+  and `doctor`, thin for a 30-field task. Reach for a real table renderer when
+  someone complains about a specific command, not before.
+- Reviewer check: anything that writes to a file or is consumed by a machine
+  must not read `flags.format` without also honouring `flags.formatExplicit`.

@@ -11,7 +11,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { emit, parseOutputFormat } from "../src/internal/output.js";
+import { defaultOutputFormat, emit, parseOutputFormat, renderPretty } from "../src/internal/output.js";
+import { emitResult, type OpenedCommand } from "../src/internal/command-helpers.js";
+import type { GlobalFlags } from "../src/internal/runtime.js";
 
 function captureStdout(fn: () => void): string {
   const chunks: string[] = [];
@@ -72,9 +74,52 @@ test("parseOutputFormat — accepts the three canonical values", () => {
   assert.equal(parseOutputFormat("json"), "json");
   assert.equal(parseOutputFormat("pretty"), "pretty");
   assert.equal(parseOutputFormat("NDJSON"), "ndjson");
+  // Untyped follows the TTY; this runner's stdout is a pipe.
   assert.equal(parseOutputFormat(undefined), "json");
+});
+
+/**
+ * The machine contract is "a pipe gets JSON", not "the default is JSON". Every
+ * agent, script and CI run reaches the CLI through a pipe or a subprocess, so
+ * only a person at a terminal ever sees the other branch.
+ */
+test("defaultOutputFormat — pretty on a TTY, json everywhere else", () => {
+  assert.equal(defaultOutputFormat(true), "pretty");
+  assert.equal(defaultOutputFormat(false), "json");
+  assert.equal(defaultOutputFormat(), "json", "the test runner's stdout is a pipe");
+});
+
+test("renderPretty — an empty collection stays on the key's line", () => {
+  assert.equal(renderPretty({ warnings: [], meta: {} }), "warnings: []\nmeta: {}");
+  assert.equal(renderPretty({ warnings: ["a"] }), "warnings:\n  - a");
 });
 
 test("parseOutputFormat — rejects garbage", () => {
   assert.throws(() => parseOutputFormat("yaml"), /invalid --format/);
+});
+
+// ---------------------------------------------------------------------------
+// Legacy `-o <file>` under the TTY default
+// ---------------------------------------------------------------------------
+
+function opened(format: "json" | "pretty", formatExplicit: boolean): OpenedCommand {
+  const flags = { format, formatExplicit, updateCheck: false, verbose: false } as GlobalFlags;
+  return { command: "balance", schema: "legacy", format, flags };
+}
+
+/**
+ * `-o <file>` writes the payload to disk instead of stdout. A TTY-derived
+ * `pretty` describes the terminal, not the file, and callers have always read
+ * that file back as JSON — so an untyped --format must not leak into it.
+ */
+test("emitResult — untyped --format on a TTY still writes JSON to -o", async () => {
+  const file = join(mkdtempSync(join(tmpdir(), "meshy-cli-ofile-")), "out.json");
+  await emitResult(opened("pretty", false), { balance: 7 }, { balance: 7 }, { legacyFile: file });
+  assert.equal(readFileSync(file, "utf8"), '{\n  "balance": 7\n}\n');
+});
+
+test("emitResult — an explicit --format pretty is honoured for -o", async () => {
+  const file = join(mkdtempSync(join(tmpdir(), "meshy-cli-ofile-")), "out.txt");
+  await emitResult(opened("pretty", true), { balance: 7 }, { balance: 7 }, { legacyFile: file });
+  assert.equal(readFileSync(file, "utf8"), "balance: 7\n");
 });

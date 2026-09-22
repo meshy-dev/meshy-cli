@@ -481,7 +481,7 @@ message before any task is created. GLB-only fields (`uv-unwrap`, `rigging`
 | `--base-url-v1 <url>` / `--base-url-v2 <url>` | Override endpoints (staging/proxy) |
 | `--base-url-creative-lab <url>` | Override the Creative Lab base (default: `<v1 origin>/openapi/creative-lab`) |
 | `--output-schema legacy\|v1` | Stdout data model (existing commands default to `legacy`; new commands are `v1`) |
-| `--format json\|pretty\|ndjson` | Stdout rendering (default `json`) |
+| `--format json\|pretty\|ndjson` | Stdout rendering. Defaults to `pretty` when stdout is a terminal and `json` everywhere else — piped, redirected, or spawned as a subprocess, which is every agent, script and CI run. `--json` is shorthand for `--format json`. `-o <file>` keeps writing JSON unless `--format` is explicit |
 | `-o, --output <path>` | Download artifacts to a file/directory (task commands); output file for `mesh prepare-print` |
 | `--workspace <dir>` | Confine every written file to this directory: `download`, `-o` on task verbs and `make` (report-only tasks included), `--save-json`, `--project`/project folders and the history index (skipped with `index_dirty` when its root would fall outside), `mesh prepare-print` outputs and their copied materials — checked on real paths before anything, even a directory, is created. The boundary is frozen when the command starts (real path and directory identity): a workspace or project replaced by a symlink while a request is in flight is refused, never followed |
 | `--no-update-check` | Skip the background npm version check in this process |

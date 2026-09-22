@@ -45,7 +45,12 @@ export async function emitResult(
     await emitEnvelope(okEnvelope(opened.command, v1Result, opts.warnings ?? []), format);
     return;
   }
-  emit(legacyValue, { format, file: opts.legacyFile });
+  // Legacy `-o <file>` writes the payload to disk instead of stdout. The TTY
+  // default describes a terminal, not a file, so an untyped --format must not
+  // leak `pretty` into what callers have always read back as JSON.
+  const fileFormat =
+    opts.legacyFile && !opened.flags.formatExplicit && opts.format === undefined ? "json" : format;
+  emit(legacyValue, { format: fileFormat, file: opts.legacyFile });
 }
 
 /** v1: `-o` is reserved for assets; JSON goes through --save-json. */

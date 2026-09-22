@@ -1,6 +1,13 @@
 /**
- * Output rendering. Keep stdout machine-parseable by default; `pretty` is
- * opt-in for human eyes.
+ * Output rendering.
+ *
+ * `--format` defaults to the shape the destination can actually use: `pretty`
+ * when stdout is a TTY (a human typed the command), `json` otherwise — piped,
+ * redirected, or spawned as a subprocess, which covers every agent, script and
+ * CI run. This is the `gh` / `npm` / `kubectl` convention; printing raw JSON
+ * braces at a person is the `aws` one. Nothing about the machine contract
+ * moves: a pipe still gets exactly the same bytes as before, and `--format
+ * json` / `--json` still force it.
  *
  * Legacy path (`emit`): bare payloads, optionally decorated with
  * `_notice.update` when a newer meshy-cli version is available. See
@@ -88,15 +95,30 @@ export function renderPretty(value: unknown, indent = 0): string {
   return entries
     .map(([k, v]) => {
       if (v !== null && typeof v === "object") {
-        return `${pad}${k}:\n${renderPretty(v, indent + 1)}`;
+        // An empty array/object reads as `warnings: []`, not a dangling key
+        // with `[]` on the next line. Only matters now that pretty is what a
+        // person sees by default.
+        const nested = renderPretty(v, indent + 1);
+        if (nested.trim() === "[]" || nested.trim() === "{}") return `${pad}${k}: ${nested.trim()}`;
+        return `${pad}${k}:\n${nested}`;
       }
       return `${pad}${k}: ${v === null || v === undefined ? "-" : String(v)}`;
     })
     .join("\n");
 }
 
+/**
+ * The format to use when `--format` was not given. A TTY means a person is
+ * reading; anything else is a pipe, a file or a subprocess, and must keep
+ * getting JSON.
+ */
+export function defaultOutputFormat(isTTY: boolean = Boolean(process.stdout.isTTY)): OutputFormat {
+  return isTTY ? "pretty" : "json";
+}
+
 export function parseOutputFormat(raw: string | undefined): OutputFormat {
-  const v = (raw ?? "json").toLowerCase();
+  if (raw === undefined) return defaultOutputFormat();
+  const v = raw.toLowerCase();
   if (v === "json" || v === "pretty" || v === "ndjson") return v;
   throw new Error(`invalid --format '${raw}'. Expected: json | pretty | ndjson`);
 }
