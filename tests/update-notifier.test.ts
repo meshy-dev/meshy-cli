@@ -28,6 +28,7 @@ import {
   REFRESH_COMMAND,
   UPDATE_COMMAND,
 } from "../src/internal/update-notifier.js";
+import { PACKAGE_NAME } from "../src/internal/version.js";
 import { emit } from "../src/internal/output.js";
 import { formatReport } from "../src/internal/report.js";
 
@@ -264,7 +265,7 @@ test("buildNotice — 0.2.0 > 0.1.0 → notice with exact message", () => {
   assert.equal(notice.current, "0.1.0");
   assert.equal(
     notice.message,
-    `meshy-cli 0.2.0 available (current 0.1.0), run: ${UPDATE_COMMAND}`,
+    `${PACKAGE_NAME} 0.2.0 available (current 0.1.0), run: ${UPDATE_COMMAND}`,
   );
   assert.equal(notice.command, UPDATE_COMMAND);
 });

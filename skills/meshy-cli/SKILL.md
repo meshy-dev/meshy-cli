@@ -2,7 +2,7 @@
 name: meshy-cli
 description: "Generate 3D models, motion clips, 2D images and Creative Lab print products with the Meshy API through the meshy-cli command — text-to-3D, image-to-3D, text-to-motion, remesh, UV unwrap, rigging, animation, retexture, printability, selective downloads, project folders, face checks, OBJ print preparation and slicer launch. Use for any Meshy asset or 3D-printing request."
 license: MIT
-compatibility: Requires meshy-cli on PATH (Node 24+, no Python) and a stored credential, MESHY_API_KEY or --api-key-file for API commands; network access to api.meshy.ai. Local helpers work offline.
+compatibility: Requires meshy-cli on PATH (Node 22.12+, no Python) and a stored credential, MESHY_API_KEY or --api-key-file for API commands; network access to api.meshy.ai. Local helpers work offline.
 metadata:
   version: "1.1.0"
   cli-help: "meshy --help"

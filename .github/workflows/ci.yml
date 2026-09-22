@@ -21,8 +21,10 @@ permissions:
   contents: read
 
 jobs:
-  # Build on the minimum supported LTS runtime. The smoke matrix also covers
-  # the current release line so forward-compatibility regressions surface early.
+  # Build and test on the minimum supported LTS runtime — the floor declared in
+  # package.json#engines, not the newest thing that happens to work. The smoke
+  # matrix also covers the current release line so forward-compatibility
+  # regressions surface early.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -30,7 +32,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 22
 
       # The enterprise Actions policy only permits GitHub-owned Marketplace
       # actions. Corepack reads the pinned pnpm version from package.json.
@@ -74,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [24, 26]
+        node: [22, 24, 26]
     steps:
       - uses: actions/download-artifact@v8
         with:

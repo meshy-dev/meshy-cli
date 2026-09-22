@@ -12,7 +12,7 @@ The flag surface is deliberately curated rather than a 1:1 mirror of the API: de
 
 ## Install
 
-Requires Node 24+. No Python, no other runtime.
+Requires Node 22.12+ (the active LTS line). No Python, no other runtime.
 
 ```bash
 npm i -g meshy-cli       # installs `meshy-cli` and `meshy`
@@ -23,7 +23,22 @@ meshy doctor             # local diagnosis: versions, credential sources, base U
 The same build is also published under the scoped alias
 [`@meshy-ai/cli`](https://www.npmjs.com/package/@meshy-ai/cli)
 (`npm i -g @meshy-ai/cli`) — identical contents, pick whichever name you
-remember; don't install both.
+remember.
+
+**Install one, not both.** The two packages declare the same `meshy` and
+`meshy-cli` binaries, and npm refuses to relink a binary owned by the other
+package, so installing the second one fails with `EEXIST: file already exists`.
+To switch, uninstall the one you have first:
+
+```bash
+npm uninstall -g @meshy-ai/cli && npm i -g meshy-cli
+```
+
+Versions 0.2.0–0.3.1 declared `engines.node: >=24` by mistake. npm silently
+resolves an install to the newest version whose `engines` your runtime
+satisfies, so `npm i -g meshy-cli` on Node 22 quietly installed **0.1.3** with
+no warning. If `meshy --version` reports 0.1.x, that is why — reinstall now
+that the floor is correct.
 
 ### Development
 

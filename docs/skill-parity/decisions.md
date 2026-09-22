@@ -734,3 +734,42 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   by content type. `tests/live-verification.test.ts` (L02) covers both products;
   the same tasks re-downloaded live produce `lamp.stl`/`base.stl` (byte-identical
   to the mis-named files) and `model.obj.zip`.
+
+## D-061 The supported Node floor is 22.12, and it is one number, not three
+
+- `engines.node` was raised from `>=20` to `>=24` in `7edf056` ("chore: upgrade
+  Node and dependencies") as a side effect of a dependency bump, not because any
+  code needed Node 24. Audited on 2026-09-22: the only runtime gate in the tree
+  was `REQUIRED_NODE_MAJOR = 24` in `doctor.ts`; `@types/node@^22` typechecks
+  clean and the full suite is 563/563 on Node 22.22.0. The real floor is the
+  strictest dependency, `commander@15` at `>=22.12.0`.
+- The overstated floor was not a warning, it was a silent downgrade. npm resolves
+  an unpinned install to the newest version whose `engines` the current runtime
+  satisfies, so `npm i -g meshy-cli` on Node 22 installed **0.1.3** — the last
+  version declaring `>=20` — with no warning at all. Reproduced against the live
+  registry. Users then read `meshy --version` as 0.1.3 and reported the CLI as
+  stale; agents read `engines` and reported it as incompatible.
+- `engines.node`, `.node-version`, the CI `check` job and `doctor`'s floor are now
+  all 22 / 22.12.0, and `tests/version.test.ts` pins `engines.node` to the value
+  `doctor` enforces so the two cannot drift again. The smoke matrix is
+  `[22, 24, 26]`: the floor, the current release line, and the next one.
+- Reviewer check: `engines.node` must equal the strictest `engines.node` among
+  `dependencies` — raise it only when a dependency or a used API forces it, and
+  publish a release at the same time, because every version left behind the floor
+  is what npm will hand to users below it.
+
+## D-062 Everything user-facing that names the npm package reads it from package.json
+
+- The same tree is published twice, as `meshy-cli` and — after `npm pkg set name`
+  in `release.yml` — as `@meshy-ai/cli`. Both declare the same `meshy` and
+  `meshy-cli` bins, and npm refuses to relink a bin owned by another package.
+- The update notifier hardcoded `npm i -g meshy-cli@latest`, so an `@meshy-ai/cli`
+  user who followed its advice got `EEXIST: file already exists` on
+  `<prefix>/bin/meshy-cli` and no upgrade. Observed 2026-09-22.
+- `version.ts` now exports `PACKAGE_NAME` alongside `VERSION` from the same
+  package.json read, and the notifier derives `REGISTRY_URL`, `UPDATE_COMMAND`
+  and its message from it — the alias checks and upgrades itself. Both scoped URL
+  forms (`@meshy-ai/cli/latest` and `@meshy-ai%2Fcli/latest`) return 200.
+- Not fixed in code, because it cannot be: installing both packages still
+  collides. README says install one, and how to switch. Retiring the alias is a
+  publishing decision, not a code change.
