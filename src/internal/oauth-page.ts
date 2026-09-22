@@ -47,15 +47,15 @@ export function renderCallbackPage(status: CallbackPageStatus, message = "", acc
 <title>Meshy — ${title}</title>
 <style>
 *{box-sizing:border-box}html{color-scheme:dark}body{margin:0;background:#0e0e0e;color:#dedede;font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{position:relative;isolation:isolate;min-height:100svh;display:grid;place-items:center;padding:40px 20px;background:radial-gradient(ellipse 85% 65% at 50% 0%,#c5f95526,transparent 75%),radial-gradient(ellipse 440px 380px at 50% 42%,#c5f95508,transparent)}
-main::before{content:"";position:absolute;z-index:-1;inset:0;pointer-events:none;opacity:.4;background-image:linear-gradient(to right,#3f3f3f 1px,transparent 1px),linear-gradient(to bottom,#3f3f3f 1px,transparent 1px);background-position:center top;background-size:56px 56px;-webkit-mask-image:linear-gradient(to bottom,black,transparent 85%);mask-image:linear-gradient(to bottom,black,transparent 85%)}
+main{position:relative;isolation:isolate;min-height:100svh;display:grid;place-items:center;padding:40px 20px;background:radial-gradient(ellipse 60% 42% at 50% -8%,#c5f95526,transparent 70%),radial-gradient(ellipse 560px 460px at 50% 40%,#c5f9550e,transparent 70%)}
+main::before{content:"";position:absolute;z-index:-1;inset:0;pointer-events:none;opacity:.55;background-image:linear-gradient(to right,#3f3f3f 1px,transparent 1px),linear-gradient(to bottom,#3f3f3f 1px,transparent 1px);background-position:center top;background-size:56px 56px;-webkit-mask-image:radial-gradient(ellipse 75% 70% at 50% 32%,black,transparent 78%);mask-image:radial-gradient(ellipse 75% 70% at 50% 32%,black,transparent 78%)}
 .flow{width:100%;max-width:440px}.brand{display:flex;justify-content:center;margin-bottom:32px}.brand svg{height:56px;width:auto}
-.surface{border:1px solid #303030;border-radius:28px;background:radial-gradient(ellipse 90% 260px at 50% 0%,#c5f9550b,transparent),#1e1e1e;padding:36px;text-align:center;box-shadow:0 24px 80px #00000040}
+.surface{border:1px solid #303030;border-radius:28px;background:radial-gradient(ellipse 90% 260px at 50% 0%,#c5f9550b,transparent),#1e1e1e;padding:36px;text-align:center;box-shadow:inset 0 1px 0 #ffffff0f,0 24px 80px #00000040}
 .symbol{display:grid;place-items:center;width:56px;height:56px;margin:0 auto;color:#c5f955;border:1px solid #c5f95533;border-radius:18px;background:#c5f9550d}.symbol svg{width:30px;height:30px}
 [data-status="error"] .symbol{color:#f55959;border-color:#664343;background:#292222}[data-status="canceled"] .symbol{color:#9b9b9b;border-color:#3f3f3f;background:#262626}
 h1{margin:24px 0 12px;color:white;font-size:24px;font-weight:600;line-height:1.3;letter-spacing:-.025em;text-wrap:balance}p{margin:0;color:#9b9b9b;text-wrap:pretty}
 .back{display:inline-block;margin-top:28px;color:#9b9b9b;text-underline-offset:4px}.back:hover{color:white}:focus-visible{outline:2px solid #c5f955;outline-offset:4px}
-details{margin-top:24px;text-align:left;color:#9b9b9b;font-size:12px}summary{cursor:pointer;text-align:center}.detail{margin-top:12px;overflow-wrap:anywhere}code{display:block;margin-top:24px;padding:12px;border-radius:12px;background:#181818;color:#dedede;font-size:14px}
+details{margin-top:24px;text-align:left;color:#9b9b9b;font-size:12px}summary{cursor:pointer;text-align:center;list-style:none}summary::-webkit-details-marker{display:none}summary:hover{color:#dedede}summary::after{content:"";display:inline-block;width:5px;height:5px;margin-left:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateY(-2px) rotate(45deg);transition:transform 150ms ease}details[open] summary::after{transform:translateY(1px) rotate(225deg)}.detail{margin-top:12px;overflow-wrap:anywhere}code{display:block;margin-top:24px;padding:12px;border-radius:12px;background:#181818;color:#dedede;font-size:14px}
 @media(max-width:480px){.surface{padding:32px 24px}}
 </style>
 </head>
