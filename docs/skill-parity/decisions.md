@@ -804,7 +804,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   a pipe still carries `_notice` in the JSON.
 - Ceiling: `renderPretty` is a recursive `key: value` dump. Right for `balance`
   and `doctor`, thin for a 30-field task. Reach for a real table renderer when
-  someone complains about a specific command, not before.
+  someone complains about a specific command, not before. (Raised by D-066:
+  someone complained about `meshy make`.)
 - Reviewer check: anything that writes to a file or is consumed by a machine
   must not read `flags.format` without also honouring `flags.formatExplicit`.
 
@@ -832,3 +833,91 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Reviewer check: a new writer must pass the painter for *its own* destination.
   `painterFor(process.stdout)` in something that writes to stderr or a file is
   the bug this table exists to prevent.
+
+## D-065 A typed `--output-schema v1` means JSON, even on a TTY
+
+- The principle ENG-3488 settles on: an agent gets structured JSON, a person
+  gets a readable view. The TTY default (D-063) covers almost every agent,
+  because a subprocess pipe is not a terminal. It misses agents that run in a
+  pseudo-terminal, which would now see the human view.
+- The gap was real. SKILL.md's rule says "add `--output-schema v1 --format
+  json`", but most of its examples carry only `--output-schema v1`. With
+  `pretty` becoming a view that drops fields (D-066), copying one of those
+  examples inside a PTY would hand an agent text it cannot parse.
+- The rule, in `resolveFormat` (`runtime.ts`), in this order:
+  - `--json` → json;
+  - a typed `--format` → that format;
+  - untyped, with a typed `--output-schema v1` → json;
+  - otherwise → the TTY default.
+- No person types a schema version, so typing it identifies a machine.
+  `formatExplicit` stays false, so the `-o` rule from D-063 is unchanged.
+  Commands that are v1 by default (`doctor`, `download`, …) do not count: only
+  the typed flag does.
+- The other direction: recovery commands are written for agents and carry
+  `--output-schema v1`. A person copying one would now get braces. So in
+  `pretty` the `hint:` line goes through `forHumans()`, which drops
+  `--output-schema v1` and `--format json|ndjson`. The views read the same in
+  both schemas, so the flags only get in the way. The envelope's
+  `recovery.command` is untouched.
+
+## D-066 `pretty` is a view per command; progress is a line per stream
+
+- Reported 2026-09-23 (ENG-3488): `meshy make "a lovely baby husky"` printed
+  two stderr lines, stayed silent for seven minutes, then dumped 13 `key: value`
+  lines. Five of them were 450-character signed URLs and two were epoch-ms
+  timestamps. It read like a log. `gh`, `vercel`, `docker` and `kubectl` all
+  separate an I/O layer (TTY, colour, progress) from per-command views; this
+  CLI had the first half (D-063/D-064) and not the second.
+- `src/internal/views.ts` holds the views: pure functions of
+  `(command, value, painter)`, dispatched on the dotted command name from the
+  command context. The command call sites did not change: `emit` /
+  `emitEnvelope` send `pretty` through `renderView`, and json/ndjson never reach
+  it.
+- Legacy needed no special case. Tasks are normalised through `toTaskView`, so
+  a legacy summary and a v1 result of the same command render identically
+  (pinned in `tests/human.test.ts`). Legacy's JSON bytes are untouched. Whether
+  the default schema should become v1 is a separate, breaking decision.
+- What a view shows: status, the full task id (people copy it), time, credits
+  only when the server reported them (`null` is unknown, never "0"), and a
+  one-line asset summary. URLs are never shown; `--json` carries them.
+  - `make` without `-o` ends with a dim `tip:` holding the exact
+    `meshy download …` command for this task, since re-running `make` would
+    bill again.
+  - `make` does not download by default, deliberately.
+  - `make` shows the chain's estimate, not the last step's `consumed_credits`,
+    because the latter would read as the total.
+- The v1 envelope keys are for machines, so `pretty` hides them.
+  - `warnings` become `warning:` lines on stderr.
+  - A v1 error prints only its `error:` / `hint:` lines, now painted.
+  - The hint falls back to `recovery.command` when there is none, so an
+    interrupted `make` says how to resume.
+- Progress (`src/internal/progress.ts`) has one mode per destination:
+  - live on a terminal: `\r` redraw, spinner, clock, width-truncated, frozen as
+    ✓ / ✗;
+  - plain lines elsewhere: one per status change instead of one per poll. Now
+    also shown for legacy `wait` and for `make`'s polls, which used to print
+    nothing;
+  - nothing under ndjson. Before this, `make` wrote step lines even under
+    ndjson.
+  - Downloads get a live-only spinner that is erased on completion, because
+    the view lists the saved files.
+  - `clearActiveProgress()` runs before log lines, and `stopActiveProgress()`
+    before SIGINT and error output, so no half-drawn line is left behind.
+- `auth` now opens a command context like every other command, so its
+  results get views (`✓ Logged in to Meshy`, the balance in credits, `~` paths)
+  instead of `status: logged_in / credential: … / balance: balance: n`.
+  The browser and device logins show a live-only spinner while they wait on the
+  person. The JSON shapes are unchanged (auth stays bare JSON), and so is
+  `Enter code … at …`.
+- Errors raised before any context existed (unknown flag, typo'd command, and
+  until now every auth failure) resolved an untyped `--format` to json even on
+  a TTY. They now follow the same `resolveFormat` rule as success. Commander's
+  own copy of the error line is suppressed (`outputError`), because the unified
+  exit already prints it; each error used to appear twice on stderr.
+- Unchanged, and still pinned: json/ndjson bytes, file output unpainted, the
+  `-o` JSON rule, the legacy `-o` report (`report.ts`) outside `pretty`, and the
+  `Enter code … at …` device-login line meshy-3d-agent matches.
+- Reviewer check: a new command gets a readable result from the fallback for
+  free. Add a view in `views.ts` only when its payload has URLs, timestamps or a
+  list shape. A view must return `null` for a payload it does not recognise,
+  never a guess.

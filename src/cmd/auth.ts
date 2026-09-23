@@ -56,7 +56,9 @@ import {
   startCallbackServer,
 } from "../internal/oauth.js";
 import { emit } from "../internal/output.js";
-import { readGlobalFlags, refreshOAuthCredentialIfNeeded, type GlobalFlags } from "../internal/runtime.js";
+import { refreshOAuthCredentialIfNeeded, type GlobalFlags } from "../internal/runtime.js";
+import { openCommand } from "../internal/command-helpers.js";
+import { withSpinner } from "../internal/progress.js";
 
 /** OOB redirect URI for manual flow (RFC 8252 §4.5 / RFC 6749 §4.1.2). */
 const OOB_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob";
@@ -193,7 +195,7 @@ const loginCommand = new Command("login")
       },
       thisCmd: Command,
     ) => {
-      const flags = readGlobalFlags(thisCmd);
+      const flags = openCommand(thisCmd, "auth.login", "legacy").flags;
 
       // --with-key path: validate and store an existing API key.
       if (opts.withKey !== undefined && opts.withKey.trim() === "") {
@@ -305,11 +307,13 @@ const loginCommand = new Command("login")
           resumeScope = undefined;
         }
 
-        const tok = await pollDeviceToken(resumeBaseUrlV1, resumeDeviceCode, {
-          interval: resumeInterval,
-          expiresIn: 600, // fallback; deadline overrides
-          deadline: resumeDeadline,
-        });
+        const tok = await withSpinner(flags.format, "Waiting for you to approve the login in the browser", () =>
+          pollDeviceToken(resumeBaseUrlV1, resumeDeviceCode, {
+            interval: resumeInterval,
+            expiresIn: 600, // fallback; deadline overrides
+            deadline: resumeDeadline,
+          }),
+        );
 
         if (hasCachedFlow && resumeScope !== undefined) {
           ensureRequestedScopesGranted(resumeScope, tok.scope);
@@ -402,10 +406,12 @@ const loginCommand = new Command("login")
         }
 
         // Poll until approved.
-        const tok = await pollDeviceToken(baseUrlV1, deviceResp.device_code, {
-          interval: deviceResp.interval,
-          expiresIn: deviceResp.expires_in,
-        });
+        const tok = await withSpinner(flags.format, "Waiting for you to approve the login in the browser", () =>
+          pollDeviceToken(baseUrlV1, deviceResp.device_code, {
+            interval: deviceResp.interval,
+            expiresIn: deviceResp.expires_in,
+          }),
+        );
 
         ensureRequestedScopesGranted("", tok.scope);
         await finishLogin(flags, { profile: opts.profile, verify: opts.verify }, tok);
@@ -577,10 +583,10 @@ async function runLoopbackFlow(
 
     await openBrowser(authorizeUrl);
     process.stderr.write(
-      `If the browser didn't open, visit this URL:\n${authorizeUrl}\n`,
+      `Opening your browser to sign in to Meshy. If it didn't open, visit this URL:\n${authorizeUrl}\n\n`,
     );
 
-    const callbackResult = await waitForCallback;
+    const callbackResult = await withSpinner(flags.format, "Waiting for you to approve the login in the browser (Ctrl-C to cancel)", () => waitForCallback);
 
     if (!callbackResult.code) {
       throw new HintedError({
@@ -611,7 +617,7 @@ const statusCommand = new Command("status")
   .description("Show which credential is in effect, where it came from, and whether it works")
   .option("--offline", "skip the balance call")
   .action(async (opts: { offline?: boolean }, thisCmd: Command) => {
-    const flags = readGlobalFlags(thisCmd);
+    const flags = openCommand(thisCmd, "auth.status", "legacy").flags;
     const file = resolveFile(flags);
     const stored = safeReadProfiles(file);
 
@@ -692,7 +698,7 @@ const logoutCommand = new Command("logout")
   .option("--profile <name>", "profile to remove (default: the active one)")
   .option("--all", "delete the whole credentials file for this environment")
   .action((opts: { profile?: string; all?: boolean }, thisCmd: Command) => {
-    const flags = readGlobalFlags(thisCmd);
+    const flags = openCommand(thisCmd, "auth.logout", "legacy").flags;
     const file = resolveFile(flags);
 
     if (opts.all) {
@@ -724,7 +730,7 @@ const useCommand = new Command("use")
   .description("Switch the active profile")
   .argument("<profile>", "profile name")
   .action((profile: string, _opts: unknown, thisCmd: Command) => {
-    const flags = readGlobalFlags(thisCmd);
+    const flags = openCommand(thisCmd, "auth.use", "legacy").flags;
     const file = resolveFile(flags);
     const known = safeReadProfiles(file);
     if (!known.names.includes(profile)) {
@@ -744,7 +750,7 @@ const useCommand = new Command("use")
 const listCommand = new Command("list")
   .description("List stored profiles for this environment")
   .action((_opts: unknown, thisCmd: Command) => {
-    const flags = readGlobalFlags(thisCmd);
+    const flags = openCommand(thisCmd, "auth.list", "legacy").flags;
     const file = resolveFile(flags);
     const state = readCredentials(file);
     const profiles = Object.entries(state?.profiles ?? {}).map(([name, profile]) => ({

@@ -3,6 +3,8 @@
  * so `meshy-cli ... | jq ...` stays clean.
  */
 
+import { clearActiveProgress } from "./progress.js";
+
 export type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
@@ -30,6 +32,7 @@ function write(level: LogLevel, msg: string, extra?: unknown): void {
     extra === undefined
       ? `[${time}] ${level.toUpperCase()} ${msg}\n`
       : `[${time}] ${level.toUpperCase()} ${msg} ${safeJson(extra)}\n`;
+  clearActiveProgress(); // a live progress line would otherwise run into this one
   process.stderr.write(line);
 }
 

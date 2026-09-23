@@ -49,7 +49,7 @@ export const REFRESH_COMMAND = "__refresh-update-cache";
 const NO_UPDATE_VAR = "MESHY_CLI_NO_UPDATE_NOTIFIER";
 
 /** CI environment variables — any non-empty value triggers skip. */
-const CI_VARS = ["CI", "GITHUB_ACTIONS", "BUILD_NUMBER", "RUN_ID"] as const;
+export const CI_VARS = ["CI", "GITHUB_ACTIONS", "BUILD_NUMBER", "RUN_ID"] as const;
 
 // ---------------------------------------------------------------------------
 // Types

@@ -38,12 +38,15 @@ import { normalizeMediaPayload } from "./file-input.js";
 import { logger } from "./logger.js";
 import type { MaterialLinkReport } from "./material-links.js";
 import { mergeNestedObjects, mergePayload, parseJsonFlag } from "./payload.js";
+import { painterFor } from "./color.js";
+import { taskCard } from "./views.js";
 import { emitEnvelope, emitStreamEvent, emit } from "./output.js";
 import { parseTimeoutSeconds, pollUntilTerminal, type PollResult } from "./poll.js";
+import { createProgress, withSpinner, type Progress } from "./progress.js";
 import { printReport } from "./report.js";
 import { errorEnvelope, okEnvelope, warning, type StreamEventEnvelope } from "./result.js";
 import { buildRuntime, type Runtime } from "./runtime.js";
-import { getUpdateNotice } from "./update-notifier.js";
+import { getUpdateNotice, printHumanUpdateHint } from "./update-notifier.js";
 import { streamTask } from "./stream.js";
 import { toTaskView, type TaskView } from "./task-view.js";
 import {
@@ -902,7 +905,9 @@ async function maybeDownloadV1(
   if (!output) return NOT_REQUESTED();
   if (task.status !== "SUCCEEDED") return { state: "not_ready", files: [], metadata_path: null };
   try {
-    const { files, metadataPath, materialLinks } = await downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspaceRoot, signal: abortSignal() });
+    const { files, metadataPath, materialLinks } = await withSpinner(opened.format, "Downloading assets", () =>
+      downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspaceRoot, signal: abortSignal() }),
+    );
     if (materialLinks) warnings.push(...materialLinks.warnings);
     return {
       state: "completed",
@@ -960,6 +965,8 @@ async function waitAndReport(
   // A holder (not a bare `let`) so the callback's assignment is visible to the
   // catch block without TypeScript narrowing it away.
   const seen: { last: { task: Task; raw: unknown } | null; polls: number } = { last: null, polls: 0 };
+  const progress = createProgress(opened.format);
+  progress.start({ label: `${descriptor.id} ${taskId}`, resource: descriptor.id });
   let poll: PollResult;
   try {
     poll = await pollUntilTerminal(endpoint, taskId, {
@@ -970,12 +977,11 @@ async function waitAndReport(
       onTick: (task, raw) => {
         seen.last = { task, raw };
         seen.polls += 1;
-        if (opened.schema === "v1" && opened.format !== "ndjson") {
-          process.stderr.write(`[${descriptor.id}] ${task.status}${typeof task.progress === "number" ? ` ${task.progress}%` : ""}\n`);
-        }
+        progress.tick(task.status, task.progress);
       },
     });
   } catch (err) {
+    progress.stop();
     if (wasInterrupted() || abortSignal().aborted) {
       throw interruptedError(descriptor, taskId, seen.last, submission, opts, opened);
     }
@@ -995,6 +1001,7 @@ async function waitAndReport(
   const elapsed = (performance.now() - started) / 1000;
   const { task, raw, timedOut, aborted } = poll;
   const waitInfo = { timed_out: timedOut, elapsed_seconds: Number(elapsed.toFixed(2)), polls: poll.polls };
+  endProgress(progress, task, timedOut, aborted);
 
   if (aborted) throw interruptedError(descriptor, taskId, task ? { task, raw } : seen.last, submission, opts, opened);
 
@@ -1117,6 +1124,8 @@ async function streamAndReport(
   let sequence = 0;
   const submission: SubmissionInfo = { state: "accepted", operation_id: null };
   const warnings: Warning[] = [];
+  const progress = createProgress(opened.format);
+  progress.start({ label: `${descriptor.id} ${taskId}`, resource: descriptor.id });
 
   const outcome = await streamTask(endpoint, taskId, {
     timeoutMs: timeoutSeconds * 1000,
@@ -1126,6 +1135,7 @@ async function streamAndReport(
       warnings.push(warning("unknown_sse_event", `ignored SSE event '${ev.event}'`));
     },
     onTask: async (task, raw) => {
+      progress.tick(task.status, task.progress);
       if (opened.schema === "v1" && ndjson) {
         sequence += 1;
         const event: StreamEventEnvelope = {
@@ -1134,11 +1144,10 @@ async function streamAndReport(
           sequence,
         };
         await emitStreamEvent(event);
-      } else if (opened.schema === "v1") {
-        process.stderr.write(`[${descriptor.id}] ${task.status}${typeof task.progress === "number" ? ` ${task.progress}%` : ""}\n`);
       }
     },
   });
+  endProgress(progress, outcome.task, outcome.reason === "timeout", outcome.reason !== "terminal" && outcome.reason !== "timeout");
 
   const streamInfo = { events: outcome.events, ended: outcome.reason, elapsed_seconds: Number((outcome.elapsedMs / 1000).toFixed(2)) };
   const ctx: TaskContext = { descriptor, taskId, task: outcome.task, raw: outcome.raw, submission, includeRaw, extra: { stream: streamInfo, task_id: taskId } };
@@ -1262,9 +1271,16 @@ async function emitLegacyOutcome(
   const output = runtime.flags.output;
   const succeeded = !timedOut && task.status === "SUCCEEDED";
 
+  const pretty = runtime.flags.format === "pretty";
   if (output) {
     if (succeeded) {
-      const { savedFiles, metadataPath } = await downloadArtifacts(task, output, resourceName, { root: runtime.flags.workspaceRoot, signal: abortSignal() });
+      const { savedFiles, metadataPath } = await withSpinner(runtime.flags.format, "Downloading assets", () =>
+        downloadArtifacts(task, output, resourceName, { root: runtime.flags.workspaceRoot, signal: abortSignal() }),
+      );
+      if (pretty) {
+        printTaskCard(task, savedFiles);
+        return;
+      }
       const successReport: Parameters<typeof printReport>[0] = {
         status: "SUCCESS",
         taskId: task.id,
@@ -1287,7 +1303,8 @@ async function emitLegacyOutcome(
     else if (task.status) report.error = `task status: ${task.status}`;
     const failNotice = getUpdateNotice();
     if (failNotice) report._notice = failNotice;
-    printReport(report);
+    if (pretty) printTaskCard(task, []);
+    else printReport(report);
     if (timedOut) process.exitCode = 8;
     else if (mode.query && !isTerminalStatus(task.status)) process.exitCode = 0;
     else process.exitCode = 1;
@@ -1309,6 +1326,20 @@ async function emitLegacyOutcome(
 }
 
 /** Kept for make.ts (legacy path). */
+/** The `-o` report for a person: the task card with the files it saved, the update hint on stderr. */
+function printTaskCard(task: Task, saved: string[]): void {
+  process.stdout.write(`${taskCard(toTaskView(task), painterFor(process.stdout), { saved }).join("\n")}\n`);
+  printHumanUpdateHint(getUpdateNotice(), process);
+}
+
+/** Freeze the progress line with how the wait or stream ended. */
+function endProgress(progress: Progress, task: Task | null, timedOut: boolean, abandoned: boolean): void {
+  if (abandoned) progress.stop();
+  else if (timedOut) progress.finish("timeout");
+  else if (task?.status === "SUCCEEDED") progress.finish("ok");
+  else progress.finish("failed", task?.status ?? "no status received");
+}
+
 export async function emitTerminalOutcome(
   task: Task,
   timedOut: boolean,

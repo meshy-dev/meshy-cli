@@ -63,3 +63,11 @@ test("render — json and ndjson ignore the painter entirely", () => {
     assert.deepEqual(JSON.parse(out), { status: "ok", nested: { v: true } });
   }
 });
+
+test("brand: Meshy lime as xterm-256 colour 191, the exact #C5F955 on true-colour terminals", async () => {
+  const { painterFor } = await import("../src/internal/color.js");
+  const tty = { isTTY: true };
+  assert.equal(painterFor(tty, { TERM: "xterm-256color" })("#", "brand"), "\u001b[38;5;191m#\u001b[0m");
+  assert.equal(painterFor(tty, { TERM: "xterm-256color", COLORTERM: "truecolor" })("#", "brand"), "\u001b[38;2;197;249;85m#\u001b[0m");
+  assert.equal(painterFor(tty, { COLORTERM: "truecolor", NO_COLOR: "1" })("#", "brand"), "#", "NO_COLOR still wins");
+});

@@ -25,11 +25,14 @@ network; `meshy doctor --check-api` makes one free balance call.
 Add `--output-schema v1 --format json` to every command you parse. `--format` is
 not optional politeness: untyped, it renders `pretty` for a human at a terminal
 and `json` everywhere else. You will almost always be on the `json` side — a
-subprocess pipe is not a TTY — but say it and the shape is yours regardless of
-how you are spawned. `json` and `ndjson` never carry terminal colour codes, so
+subprocess pipe is not a TTY — and a typed `--output-schema v1` alone already
+means JSON even in a pseudo-terminal, but say both and the shape is yours
+regardless of how you are spawned. `pretty` is a human view that drops fields,
+so never parse it. `json` and `ndjson` never carry terminal colour codes, so
 you never need to strip escapes. stdout is then
 exactly one JSON object with six keys — `schema_version, command, ok, result,
-error, warnings` — and nothing else; progress goes to stderr. `ok` is whether the
+error, warnings` — and nothing else. Progress goes to stderr as plain lines
+(none under `ndjson`); it is for people, so read ids from stdout, not from it. `ok` is whether the
 CLI operation completed; `result.task.status` is the server's task state (a `get`
 of a FAILED task is `ok:true`). Fields the server did not send are `null` —
 never treat a `null` `face_count` or `consumed_credits` as 0. `error.code` and

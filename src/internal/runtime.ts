@@ -20,7 +20,7 @@ import { authRequiredError, UsageError } from "./errors.js";
 import { logger, setLogLevel } from "./logger.js";
 import { refreshTokens } from "./oauth.js";
 import type { LogLevel } from "./logger.js";
-import { parseOutputFormat, type OutputFormat } from "./output.js";
+import { defaultOutputFormat, parseOutputFormat, type OutputFormat } from "./output.js";
 import type { OutputSchema } from "./result.js";
 
 export interface GlobalFlags {
@@ -231,7 +231,7 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
   // was untyped, because a file write must stay JSON no matter what the
   // terminal would have shown.
   const formatExplicit = opts.json === true || opts.format !== undefined;
-  const format = opts.json ? "json" : parseOutputFormat(opts.format);
+  const format = resolveFormat(opts);
   return {
     apiKey: opts.apiKey,
     baseUrlV1: opts.baseUrlV1,
@@ -249,6 +249,23 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
     verbose: Boolean(opts.verbose),
     logLevel: normalizeLogLevel(opts.logLevel),
   };
+}
+
+/**
+ * `--json` wins; a typed `--format` is honoured; untyped follows the TTY.
+ *
+ * D-065: an untyped format with a typed `--output-schema v1` is JSON even on a
+ * TTY. No person types a schema version — that is a machine asking for the
+ * envelope (an agent in a pseudo-terminal, or copying a skill example). It
+ * leaves formatExplicit false, so `-o` keeps its own rule.
+ */
+export function resolveFormat(
+  opts: { format?: string; json?: boolean; outputSchema?: string },
+  isTTY: boolean = Boolean(process.stdout.isTTY),
+): OutputFormat {
+  if (opts.json) return "json";
+  if (opts.format === undefined) return opts.outputSchema?.toLowerCase() === "v1" ? "json" : defaultOutputFormat(isTTY);
+  return parseOutputFormat(opts.format);
 }
 
 /**

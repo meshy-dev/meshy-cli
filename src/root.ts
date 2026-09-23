@@ -222,8 +222,11 @@ export function buildRootCommand(): Command {
   // unified exit in index.ts instead of Commander's own process.exit(1), so
   // every command in the tree throws CommanderError. addCommand() does not
   // inherit this setting, hence the walk.
+  // The same exit is the only place an error is printed: Commander's own
+  // `error: …` line would otherwise appear twice (its copy, then ours).
   walkCommands(program, (cmd) => {
     cmd.exitOverride();
+    cmd.configureOutput({ outputError: () => {} });
   });
 
   return program;

@@ -21,6 +21,8 @@
 import { writeFileSync } from "node:fs";
 import { attachUpdateNotice, getUpdateNotice, printHumanUpdateHint } from "./update-notifier.js";
 import { painterFor, plain, type Painter } from "./color.js";
+import { currentCommand } from "./context.js";
+import { renderView } from "./views.js";
 import type { StreamEventEnvelope, V1Envelope } from "./result.js";
 
 export type OutputFormat = "json" | "pretty" | "ndjson";
@@ -33,7 +35,8 @@ export interface OutputOptions {
 export function emit(value: unknown, opts: OutputOptions): void {
   const notice = getUpdateNotice();
   const decorated = attachUpdateNotice(value, opts.format, notice);
-  const text = render(decorated, opts.format, opts.file ? plain : painterFor(process.stdout));
+  const paint = opts.file ? plain : painterFor(process.stdout);
+  const text = opts.format === "pretty" ? pretty(decorated, paint) : render(decorated, opts.format, paint);
   if (opts.file) {
     writeFileSync(opts.file, text.endsWith("\n") ? text : `${text}\n`, "utf8");
   } else {
@@ -61,9 +64,24 @@ export function writeStdout(text: string): Promise<void> {
 
 /** Print one v1 envelope in the requested rendering. */
 export async function emitEnvelope(envelope: V1Envelope, format: OutputFormat): Promise<void> {
-  const text = render(envelope, format, painterFor(process.stdout));
+  const paint = painterFor(process.stdout);
+  const text = format === "pretty" ? pretty(envelope, paint) : render(envelope, format, paint);
   await writeStdout(`${text}\n`);
+  // A person reads warnings as prose; the envelope keeps them for machines.
+  if (format === "pretty") printWarnings(envelope.warnings);
   printHumanUpdateHint(getUpdateNotice(), process);
+}
+
+/** `warning: …` lines on stderr, painted for stderr. */
+export function printWarnings(warnings: ReadonlyArray<{ message: string }>): void {
+  const paint = painterFor(process.stderr);
+  for (const w of warnings) process.stderr.write(`${paint("warning:", "yellow")} ${w.message}\n`);
+}
+
+/** The per-command human view (views.ts) for the command that is running. */
+function pretty(value: unknown, paint: Painter): string {
+  const ctx = currentCommand();
+  return renderView(ctx?.command, value, paint, ctx?.view);
 }
 
 /** Print one stream event (ndjson only; json/pretty callers print the final envelope instead). */
@@ -72,6 +90,9 @@ export async function emitStreamEvent(event: StreamEventEnvelope): Promise<void>
 }
 
 /**
+ * The raw renderings. `pretty` here is the generic dump; what a person sees
+ * goes through the per-command views in views.ts (emit / emitEnvelope).
+ *
  * `paint` defaults to plain: a caller that does not say where the text is going
  * gets no escapes. Only the stdout paths opt in — a file must never receive
  * them, or `--format pretty -o notes.txt` writes control codes to disk.
