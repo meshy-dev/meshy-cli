@@ -617,7 +617,8 @@ test("R10/F10 stream -o downloads the assets in ndjson, json and pretty; a downl
         const env = parseSingleJson(r.stdout) as { result: { downloads: { state: string } } };
         assert.equal(env.result.downloads.state, "completed");
       } else {
-        assert.match(r.stdout, /state: completed/);
+        // pretty is the human view: the saved file, not the manifest dump.
+        assert.match(r.stdout, /^Saved\s+\S*pretty\.glb$/m);
       }
     }
     // Download failure: exactly one outcome line, ok:false, task kept, exit code of the failure.

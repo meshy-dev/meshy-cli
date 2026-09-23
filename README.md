@@ -195,8 +195,9 @@ meshy-cli api POST /text-to-3d --data '{"mode":"preview","prompt":"a cactus"}'
 
 Existing commands keep their 0.2.0 output (`legacy`) unless told otherwise; the
 commands added in this release always speak `v1`. Pass `--output-schema v1` to
-get one envelope with six fixed keys on stdout, in `json` (default), `pretty`
-or `ndjson`:
+get one envelope with six fixed keys on stdout, in `json` or `ndjson`. A typed
+`--output-schema v1` means JSON even on a terminal, since no person types a
+schema version; add `--format pretty` to see the human view instead:
 
 ```json
 {
@@ -232,6 +233,39 @@ one JSON document (`ndjson` streams emit one line per event plus a final
              "recovery": { "action": "reconcile", "automatic": false, "command": "meshy text-to-3d list …" } },
   "warnings": [] }
 ```
+
+### What a person sees at a terminal
+
+`pretty`, the default on a TTY, is a view designed per command, not a dump of the
+payload. Every command shows the same view whichever `--output-schema` produced it:
+
+```text
+✓ [1/2] text-to-3d preview (geometry)  1m 27s  01a0c94c-…
+✓ [2/2] text-to-3d refine (textures)   5m 36s  01a0c94d-…
+
+✓ SUCCEEDED  text-to-3d-refine
+Task     01a0c94d-eaba-710e-b5b7-da5b2f620c95
+Created  2026-09-23 14:02
+Took     7m 03s
+Credits  ~30 (estimate for the whole chain)
+Assets   glb, fbx · textures: base_color, metallic, normal, roughness · thumbnail
+
+tip: download it now:  meshy download --resource text-to-3d --task-id 01a0c94d-… --all --output-dir ./a-lovely-baby-husky
+     or add -o <dir> to make to save files automatically
+```
+
+- **Progress** goes to stderr. On a terminal it is one line redrawn in place:
+  spinner, status, clock. When a step ends the line is frozen as a ✓ / ✗ line.
+  Anywhere else (a pipe, CI, `2> log`) it is one plain line per status change.
+  With `--format ndjson` there is none.
+- **Results** show what a person acts on: status, the full task id, time,
+  credits (only when the server reported them), and a summary of the assets.
+  Signed URLs and raw timestamps are not shown; `--json` has every field.
+  `list` is a table. Warnings are `warning:` lines on stderr. Errors are
+  `error:` / `hint:` lines on stderr, and the hint is always a command a person
+  can run.
+- Commands without a dedicated view print their `result` as `key: value`, with
+  local times and URLs stripped of their query strings.
 
 ### Create, wait, stream and money
 

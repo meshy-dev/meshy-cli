@@ -376,7 +376,9 @@ test("N05/R2-F03 stream: save-json conflict, project failure and download failur
       assert.equal(env.result.task_id, "round2-task");
       const pretty = await runCli(["text-to-3d", "stream", "round2-task", ...V1, "--format", "pretty", ...extra], { env: api.env(), cwd: dir });
       assert.equal(pretty.code, exitCode, `${label} pretty: ${pretty.stderr}`);
-      assert.equal((pretty.stdout.match(/^ok: false$/gm) ?? []).length, 1, `${label} pretty: one result`);
+      // pretty: a person gets the error on stderr, and stdout carries no envelope.
+      assert.equal(pretty.stdout, "", `${label} pretty: no envelope on stdout`);
+      assert.equal((pretty.stderr.match(/^error: /gm) ?? []).length, 1, `${label} pretty: one error line`);
     }
     assert.equal(readFileSync(occupied, "utf8"), "do not overwrite");
   } finally {

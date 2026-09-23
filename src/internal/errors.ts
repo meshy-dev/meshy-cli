@@ -14,6 +14,7 @@ import { CommanderError } from "commander";
 import { MeshyApiError } from "../client/errors.js";
 import { emit, type OutputFormat } from "./output.js";
 import { painterFor } from "./color.js";
+import { humanHint } from "./views.js";
 
 export const EXIT_CODES = {
   OK: 0,
@@ -353,9 +354,13 @@ export function reportError(err: unknown, format: OutputFormat): void {
   // error line in the terminal, and `2> log` gets clean text.
   const paint = painterFor(process.stderr);
   process.stderr.write(`${paint("error:", "red")} ${payload.message}\n`);
-  if (typeof payload["hint"] === "string") {
-    process.stderr.write(`${paint("hint:", "yellow")} ${payload["hint"] as string}\n`);
-  }
+  // A person also gets a way forward when there is no hint (make's interrupt,
+  // a poll that lost the network). Machines read it from the payload.
+  const hint =
+    format === "pretty"
+      ? humanHint(payload["hint"], err instanceof CliError ? err.recovery?.command : undefined, payload["result"])
+      : typeof payload["hint"] === "string" ? (payload["hint"] as string) : undefined;
+  if (hint) process.stderr.write(`${paint("hint:", "yellow")} ${hint}\n`);
   if (format !== "pretty") {
     try {
       emit(payload, { format });

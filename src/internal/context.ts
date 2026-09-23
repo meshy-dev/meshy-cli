@@ -9,6 +9,7 @@
  * stream, download) observe `signal` and convert an abort into exit 130.
  */
 
+import type { ViewFacts } from "./views.js";
 import type { OutputFormat } from "./output.js";
 import type { OutputSchema } from "./result.js";
 
@@ -16,6 +17,8 @@ export interface CommandContext {
   command: string;
   schema: OutputSchema;
   format: OutputFormat;
+  /** Facts only the `pretty` view shows; never part of json/ndjson. */
+  view?: ViewFacts;
 }
 
 let current: CommandContext | null = null;
@@ -29,6 +32,11 @@ export function beginCommand(ctx: CommandContext): CommandContext {
 
 export function currentCommand(): CommandContext | null {
   return current;
+}
+
+/** Hand the human view something the payload does not carry (make: the prompt, the whole chain's time). */
+export function noteForView(facts: ViewFacts): void {
+  if (current) current.view = { ...current.view, ...facts };
 }
 
 export function abortSignal(): AbortSignal {

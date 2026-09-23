@@ -14,7 +14,7 @@
  * No dependency: four SGR codes do not justify one.
  */
 
-export type Style = "dim" | "bold" | "red" | "green" | "yellow" | "cyan";
+export type Style = "dim" | "bold" | "red" | "green" | "yellow" | "cyan" | "brand";
 
 const CODES: Record<Style, string> = {
   dim: "2",
@@ -23,7 +23,18 @@ const CODES: Record<Style, string> = {
   green: "32",
   yellow: "33",
   cyan: "36",
+  // Meshy lime (design system `accent-base`, #C5F955) as xterm-256 colour 191,
+  // the nearest cube entry; true-colour terminals get the exact hex below.
+  brand: "38;5;191",
 };
+
+/** The exact brand hex, for terminals that announce 24-bit colour. */
+const BRAND_TRUECOLOR = "38;2;197;249;85";
+
+function trueColor(env: ColorEnv): boolean {
+  const c = env["COLORTERM"]?.toLowerCase();
+  return c === "truecolor" || c === "24bit";
+}
 
 export interface ColorEnv {
   NO_COLOR?: string;
@@ -56,9 +67,13 @@ export const plain: Painter = (text) => text;
 export const painted: Painter = (text, style) =>
   text === "" ? text : `\u001b[${CODES[style]}m${text}\u001b[0m`;
 
+const paintedTrueColor: Painter = (text, style) =>
+  style === "brand" && text !== "" ? `\u001b[${BRAND_TRUECOLOR}m${text}\u001b[0m` : painted(text, style);
+
 export function painterFor(
   stream: { isTTY?: boolean } = process.stdout,
   env: ColorEnv = process.env,
 ): Painter {
-  return colorEnabled(stream, env) ? painted : plain;
+  if (!colorEnabled(stream, env)) return plain;
+  return trueColor(env) ? paintedTrueColor : painted;
 }

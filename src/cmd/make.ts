@@ -28,7 +28,8 @@
  */
 
 import { Command, Option } from "commander";
-import { abortSignal, wasInterrupted } from "../internal/context.js";
+import { basename } from "node:path";
+import { abortSignal, noteForView, wasInterrupted } from "../internal/context.js";
 import { CliError, HintedError, UsageError } from "../internal/errors.js";
 import { parseInt10 } from "../internal/flags.js";
 import { normalizeMediaPayload } from "../internal/file-input.js";
@@ -38,6 +39,7 @@ import { emit, emitEnvelope } from "../internal/output.js";
 import { emitResult, openCommand, type OpenedCommand } from "../internal/command-helpers.js";
 import { downloadArtifacts } from "../internal/download.js";
 import { parseTimeoutSeconds, pollUntilTerminal, type PollResult } from "../internal/poll.js";
+import { createProgress, withSpinner, type Progress } from "../internal/progress.js";
 import { PRICING_DOCS } from "../internal/pricing.js";
 import { okEnvelope, warning, type Warning } from "../internal/result.js";
 import { buildRuntime, type Runtime } from "../internal/runtime.js";
@@ -147,6 +149,12 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
   if (runtime.flags.output) preflightOutputPath(runtime.flags.output, runtime.flags.workspaceRoot);
   const executed: ExecutedStep[] = [];
   const warnings: Warning[] = [];
+  const progress = createProgress(opened.format);
+  const chainStarted = performance.now();
+  noteForView({
+    name: plan.route === "text" ? plan.input : basename(plan.input).replace(/\.[^.]+$/, ""),
+    estimatedCredits: plan.estimatedCredits,
+  });
 
   /** Task id of the last step that reached SUCCEEDED — what a resume hangs off. */
   let completedTaskId = "";
@@ -166,7 +174,7 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
     });
     const { taskId, operationId } = submitted;
     warnings.push(...submitted.warnings);
-    announceStart(plan, step, taskId);
+    progress.start({ label: `[${step.index}/${plan.steps.length}] ${step.label}`, resource: step.resource, taskId });
     executed.push({ step: step.index, resource: step.resource, action: step.action, task_id: taskId, status: null, operation_id: operationId });
     const submission = { state: "accepted", operation_id: operationId, task_id: taskId };
 
@@ -213,8 +221,10 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
         intervalMs: runtime.config.pollIntervalMs,
         requestTimeoutMs: runtime.config.readTimeoutMs,
         signal: abortSignal(),
+        onTick: (t) => progress.tick(t.status, t.progress),
       });
     } catch (err) {
+      progress.stop();
       const context = {
         route: plan.route,
         executed,
@@ -238,7 +248,8 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
     const { task, raw, timedOut, aborted } = poll;
     const elapsed = (performance.now() - started) / 1000;
     executed[executed.length - 1]!.status = task?.status ?? null;
-    announceOutcome(task, timedOut, elapsed);
+    if (aborted) progress.stop();
+    else announceOutcome(progress, task, timedOut);
 
     if (aborted) {
       throw new CliError({
@@ -262,6 +273,7 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
     }
 
     if (step.index === plan.steps.length) {
+      noteForView({ totalSeconds: (performance.now() - chainStarted) / 1000 });
       await finalOutcome(opened, runtime, plan, step, task, raw, elapsed, executed, warnings);
       return;
     }
@@ -341,7 +353,10 @@ async function finalOutcome(
   let downloads = base.downloads as Record<string, unknown>;
   if (runtime.flags.output) {
     try {
-      const { files, metadataPath, materialLinks } = await downloadArtifacts(task, runtime.flags.output, step.resource, { root: runtime.flags.workspaceRoot, signal: abortSignal() });
+      const output = runtime.flags.output;
+      const { files, metadataPath, materialLinks } = await withSpinner(opened.format, "Downloading assets", () =>
+        downloadArtifacts(task, output, step.resource, { root: runtime.flags.workspaceRoot, signal: abortSignal() }),
+      );
       if (materialLinks) warnings.push(...materialLinks.warnings);
       downloads = { state: "completed", files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })), metadata_path: metadataPath, material_links: materialLinks };
     } catch (err) {
@@ -497,13 +512,10 @@ function describeChain(plan: MakePlan): string {
 }
 
 /** Progress goes to stderr so stdout stays the machine-readable channel. */
-function announceStart(plan: MakePlan, step: MakeStep, taskId: string): void {
-  process.stderr.write(`[${step.index}/${plan.steps.length}] ${step.label}  ${taskId}\n`);
-}
-
-function announceOutcome(task: Task | null, timedOut: boolean, elapsed: number): void {
-  const mark = timedOut ? "timed out" : task ? (task.status === "SUCCEEDED" ? "ok" : task.status) : "no status received";
-  process.stderr.write(`      ${mark} in ${elapsed.toFixed(0)}s\n`);
+function announceOutcome(progress: Progress, task: Task | null, timedOut: boolean): void {
+  if (timedOut) progress.finish("timeout");
+  else if (task?.status === "SUCCEEDED") progress.finish("ok");
+  else progress.finish("failed", task?.status ?? "no status received");
 }
 
 export { warning as _makeWarning };

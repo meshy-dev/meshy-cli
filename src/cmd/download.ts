@@ -21,6 +21,7 @@ import { enumerateAssets, selectAssets, SelectionError, type Asset, type AssetKi
 import { emitResult, openCommand, saveRawJson, type OpenedCommand } from "../internal/command-helpers.js";
 import { abortSignal } from "../internal/context.js";
 import { downloadAssets, type DownloadedFile } from "../internal/download.js";
+import { withSpinner } from "../internal/progress.js";
 import { CliError, UsageError, type Warning } from "../internal/errors.js";
 import { freezeRoot, realpathLenient, resolveWithinRoot, safeSegment, type AuthorisedRoot } from "../internal/paths.js";
 import { warning } from "../internal/result.js";
@@ -235,7 +236,7 @@ export const downloadCommand = new Command("download")
     const files: DownloadedFile[] = [];
     let result;
     try {
-      result = await downloadAssets(toDownload, {
+      result = await withSpinner(opened.format, `Downloading ${toDownload.length === 1 ? "1 file" : `${toDownload.length} files`}`, () => downloadAssets(toDownload, {
         targetFile: outputFile ? resolvePath(outputFile) : undefined,
         targetDir: outputFile ? undefined : dir,
         overwrite: Boolean(opts.overwrite),
@@ -243,7 +244,7 @@ export const downloadCommand = new Command("download")
         signal: abortSignal(),
         refreshUrls,
         onFile: (f) => files.push(f),
-      });
+      }));
     } catch (err) {
       if (err instanceof CliError) {
         const expired = err.httpStatus === 401 || err.httpStatus === 403 || err.httpStatus === 410;

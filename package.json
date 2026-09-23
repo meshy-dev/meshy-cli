@@ -1,6 +1,6 @@
 {
   "name": "meshy-cli",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Official command-line interface for the Meshy AI API — text-to-3D, image-to-3D, text-to-motion, remesh, UV unwrap, rigging, animate, retexture, 2D images, multi-color print, Creative Lab, balance — plus selective downloads, project folders, face checks, OBJ print preparation and slicer launch.",
   "license": "MIT",
   "type": "module",

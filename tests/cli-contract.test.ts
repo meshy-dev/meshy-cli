@@ -85,8 +85,8 @@ test("T-002 v1 success: balance emits one six-key envelope; pretty and ndjson sh
 
     const pretty = await runCli(["balance", "--format", "pretty", "--output-schema", "v1"], { env: api.env() });
     assert.equal(pretty.code, 0);
-    assert.match(pretty.stdout, /^schema_version: meshy\.cli\/v1$/m);
-    assert.match(pretty.stdout, /balance: 42/);
+    // pretty is the human view: the balance, not the envelope.
+    assert.equal(pretty.stdout, "Balance  42 credits\n");
   } finally {
     await api.close();
   }

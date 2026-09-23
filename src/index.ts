@@ -15,8 +15,12 @@ import type { Command } from "commander";
 import { buildRootCommand, V1_ONLY_COMMANDS, LOCAL_COMMANDS } from "./root.js";
 import { currentCommand, markInterrupted, wasInterrupted } from "./internal/context.js";
 import { exitCodeFor, isCommanderInformational, reportError, CliError } from "./internal/errors.js";
-import { emitEnvelope, writeStdout, type OutputFormat } from "./internal/output.js";
+import { painterFor } from "./internal/color.js";
+import { emitEnvelope, printWarnings, writeStdout, type OutputFormat } from "./internal/output.js";
+import { humanHint } from "./internal/views.js";
+import { stopActiveProgress } from "./internal/progress.js";
 import { errorEnvelope, type OutputSchema } from "./internal/result.js";
+import { resolveFormat } from "./internal/runtime.js";
 import { refreshCache, shouldSkip } from "./internal/update-notifier.js";
 
 async function main(): Promise<number> {
@@ -64,6 +68,7 @@ function installSignalHandlers(): void {
     count += 1;
     if (count === 1) {
       markInterrupted();
+      stopActiveProgress();
       process.stderr.write("\ninterrupted — finishing local bookkeeping; press Ctrl-C again to force exit\n");
       return;
     }
@@ -72,9 +77,10 @@ function installSignalHandlers(): void {
 }
 
 async function reportFailure(program: Command, argv: string[], err: unknown): Promise<number> {
+  stopActiveProgress();
   const ctx = currentCommand();
   const schema: OutputSchema = ctx?.schema ?? resolveSchemaHeuristically(program, argv);
-  const format: OutputFormat = ctx?.format ?? resolveErrorFormat(program);
+  const format: OutputFormat = ctx?.format ?? resolveErrorFormat(program, argv);
   // A SIGINT that surfaced as some other failure is still reported as
   // interrupted — but whatever the command already knew (task id, submission,
   // files written so far, recovery command) travels with it.
@@ -94,8 +100,16 @@ async function reportFailure(program: Command, argv: string[], err: unknown): Pr
   if (schema === "v1") {
     const command = ctx?.command ?? commandNameFromArgv(program, argv);
     const { envelope, exitCode } = errorEnvelope(command, interruptedErr);
-    process.stderr.write(`error: ${envelope.error?.message ?? "unknown error"}\n`);
-    if (envelope.error?.hint) process.stderr.write(`hint: ${envelope.error.hint}\n`);
+    const paint = painterFor(process.stderr);
+    process.stderr.write(`${paint("error:", "red")} ${envelope.error?.message ?? "unknown error"}\n`);
+    const hint = format === "pretty" ? humanHint(envelope.error?.hint, envelope.error?.recovery?.command, envelope.result) : envelope.error?.hint;
+    if (hint) process.stderr.write(`${paint("hint:", "yellow")} ${hint}\n`);
+    // A person at a terminal has the message and the hint; the envelope is for
+    // machines, which never get `pretty` unless they ask for it.
+    if (format === "pretty") {
+      printWarnings(envelope.warnings);
+      return exitCode;
+    }
     try {
       await emitEnvelope(envelope, format);
     } catch {
@@ -128,13 +142,20 @@ async function reportFailure(program: Command, argv: string[], err: unknown): Pr
  * the user passed it) — scanning only root opts would miss
  * `meshy --format pretty auth login --json`.
  */
-function resolveErrorFormat(program: Command): OutputFormat {
+function resolveErrorFormat(program: Command, argv: string[]): OutputFormat {
   const anyJson = (cmd: Command): boolean =>
     Boolean(cmd.opts()["json"]) || cmd.commands.some(anyJson);
   if (anyJson(program)) return "json";
   const raw = program.opts()["format"];
-  const v = (typeof raw === "string" ? raw : "json").toLowerCase();
-  return v === "pretty" || v === "ndjson" ? v : "json";
+  if (typeof raw === "string") {
+    const v = raw.toLowerCase();
+    return v === "pretty" || v === "ndjson" ? v : "json";
+  }
+  // Untyped: the same rule as the success path — a person at a terminal who
+  // mistyped a flag reads a sentence, not a JSON object (D-063, D-065).
+  const i = argv.indexOf("--output-schema");
+  const typedV1 = argv.includes("--output-schema=v1") || (i >= 0 && argv[i + 1]?.toLowerCase() === "v1");
+  return resolveFormat({ outputSchema: typedV1 ? "v1" : undefined });
 }
 
 /**
