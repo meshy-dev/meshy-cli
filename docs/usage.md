@@ -31,7 +31,7 @@ meshy-cli --api-key msy_... balance             # or per-call
 meshy balance --api-key-file ./keys.env         # dotenv-style file; only MESHY_API_KEY is read
 ```
 
-Get a key at <https://www.meshy.ai/settings/api>.
+Get a key at <https://www.meshy.ai/developers/keys>.
 
 **Resolution order:** `--api-key` › `MESHY_API_KEY` › `--api-key-file` › the active stored profile.
 The environment variable stays ahead of the stored credential on purpose, so a

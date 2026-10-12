@@ -30,7 +30,7 @@ meshy auth status
 ```
 
 In CI, set `MESHY_API_KEY` instead; it wins over a stored login. Get a key at
-<https://www.meshy.ai/settings/api>.
+<https://www.meshy.ai/developers/keys>.
 
 ## Quick start
 
