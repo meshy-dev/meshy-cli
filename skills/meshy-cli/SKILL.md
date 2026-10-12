@@ -147,9 +147,10 @@ These are API rules, not preferences — ignoring them produces failed tasks:
   texturing, or re-`retexture` afterwards.
 - **`uv-unwrap` takes one source** (`--input-task-id` or `--model-url`, GLB only).
 - **`multi-image-to-3d` is beta**; use `image-to-3d` unless multi-view input was
-  explicitly asked for. Its default runs a two-stage multi-view model; pass
-  `--geometry-resolution 2k` (Ultra on Meshy 7.1, +5 credits) when the result
-  must match the web app's multi-view.
+  explicitly asked for. Its default runs a two-stage multi-view model;
+  `--geometry-resolution 2k` turns on the multi-view Ultra pass (+5 credits),
+  the same geometry setting as the web app's Ultra 2K. The Ultra model follows
+  `ai_model`: add `--data '{"ai_model":"meshy-7.1"}'` to pin Meshy 7.1.
 - `image-to-3d` defaults to an untextured draft mesh; `--should-texture true`
   (what `make` uses) produces a textured model in one task.
 - **The model set is not the same on every endpoint.** The image-driven

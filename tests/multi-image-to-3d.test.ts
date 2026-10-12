@@ -2,10 +2,11 @@
  * multi-image-to-3d's geometry pass, asserted on the wire: a loopback API
  * records the create POST, so the test checks what the server receives.
  *
- * Without geometry_resolution the endpoint runs the two-stage multi-view model
- * even for "latest" or "meshy-7.1"; "2k" is the Ultra pass the web app's
- * multi-view runs by default, and "4k" is refused server-side for this
- * endpoint (single-image only).
+ * Unless Ultra is on (geometry_resolution "2k", or the legacy ultra_mode
+ * boolean when the enum is absent), the endpoint runs a two-stage multi-view
+ * model even for "latest" or "meshy-7.1"; with Ultra on, ai_model picks the
+ * Ultra model. "4k" is refused server-side for this endpoint (single-image
+ * only). The CLI exposes the enum; ai_model and ultra_mode ride --data.
  */
 
 import test from "node:test";
@@ -72,6 +73,36 @@ test("multi-image-to-3d refuses --geometry-resolution 4k before the wire", async
     assert.equal(r.code, 2, r.stdout + r.stderr);
     assert.match(r.stderr + r.stdout, /standard.*2k/);
     assert.equal(api.requests.length, 0, "no POST for a value the server refuses");
+  });
+});
+
+test("multi-image-to-3d leaves the Ultra model and the legacy ultra_mode to --data, untouched", async () => {
+  await withApi(async (api) => {
+    // Pinning the Ultra model: ai_model rides --data next to the flag.
+    const pinned = await create(api, "--geometry-resolution", "2k", "--data", '{"ai_model":"meshy-7.1"}');
+    assert.equal(pinned.code, 0, pinned.stderr);
+    const pinnedBody = api.requests[0]!.json as Record<string, unknown>;
+    assert.equal(pinnedBody["ai_model"], "meshy-7.1");
+    assert.equal(pinnedBody["geometry_resolution"], "2k");
+
+    // A legacy ultra_mode is passed through as sent: the CLI never adds a
+    // geometry_resolution that would override it.
+    const legacy = await create(api, "--data", '{"ultra_mode":true}');
+    assert.equal(legacy.code, 0, legacy.stderr);
+    const legacyBody = api.requests[1]!.json as Record<string, unknown>;
+    assert.equal(legacyBody["ultra_mode"], true);
+    assert.ok(!("geometry_resolution" in legacyBody));
+  });
+});
+
+test("multi-image-to-3d sends 2k together with a textured run", async () => {
+  await withApi(async (api) => {
+    const r = await create(api, "--should-texture", "true", "--geometry-resolution", "2k");
+    assert.equal(r.code, 0, r.stderr);
+    const body = api.requests[0]!.json as Record<string, unknown>;
+    assert.equal(body["should_texture"], true);
+    assert.equal(body["geometry_resolution"], "2k");
+    assert.equal(body["texture_resolution"], "4k", "texturing defaults still apply");
   });
 });
 
