@@ -98,13 +98,16 @@ test("the mode is the model: no model flag on the 3D generation commands", () =>
 });
 
 test("the Meshy 7 surface: ultra-mode is single-image only, multi-view is retexture only", () => {
-  // ultra_mode exists on /image-to-3d and nowhere else — the API silently
-  // ignores it on multi-image-to-3d, which is worse than rejecting it, so the
-  // flag must not appear there and invite the assumption that it worked.
+  // --ultra-mode stays on image-to-3d alone. multi-image-to-3d takes the
+  // geometry_resolution enum instead (it supersedes the ultra_mode boolean
+  // server-side), limited to standard/2k because the server refuses 4k there.
   assert.ok(createFlags("image-to-3d").has("--ultra-mode"), "image-to-3d is missing --ultra-mode");
   for (const resource of ["text-to-3d", "multi-image-to-3d", "retexture"]) {
     assert.ok(!createFlags(resource).has("--ultra-mode"), `${resource} should not have --ultra-mode`);
   }
+  const geometry = sub(sub(root, "multi-image-to-3d"), "create").options.find((o) => o.long === "--geometry-resolution");
+  assert.ok(geometry, "multi-image-to-3d is missing --geometry-resolution");
+  assert.deepEqual(geometry.argChoices, ["standard", "2k"]);
   // multiview_image_urls is retexture's third style input, not a generation flag.
   assert.ok(
     createFlags("retexture").has("--multiview-image-urls"),

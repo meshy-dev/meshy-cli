@@ -1,9 +1,13 @@
 /**
  * multi-image-to-3d — https://docs.meshy.ai/en/api/multi-image-to-3d
  *
- * No model flag, same as the other 3D generation commands: the server default
- * "latest" applies, which is meshy-7 here. Note ultra_mode does NOT exist on
- * this endpoint (the API silently ignores it) — it is single-image only.
+ * No model flag, same as the other 3D generation commands. On this endpoint the
+ * geometry pass picks the model, not ai_model: without geometry_resolution (or
+ * with "standard") the server runs a two-stage multi-view model, even for
+ * "latest" or an explicit "meshy-7.1"; "2k" runs the Ultra pass on Meshy 7.1
+ * (+5 credits), which is what the web app's multi-view uses by default. "4k" is
+ * single-image only — the server refuses it here. geometry_resolution
+ * supersedes the legacy ultra_mode boolean, so only the enum is exposed.
  */
 
 import { Option } from "commander";
@@ -16,8 +20,9 @@ const spec: ResourceCommandSpec = {
   description:
     "Generate a 3D model from 1-4 viewpoint images of a single object. Beta and unstable — " +
     "prefer image-to-3d unless multi-view input is explicitly required. Each input must be a " +
-    "separate single-view image, never one grid/collage. Topology/polycount are not tunable " +
-    "here — chain `remesh` afterwards",
+    "separate single-view image, never one grid/collage. Pass --geometry-resolution 2k to " +
+    "match the web app's multi-view result. Topology/polycount are not tunable here — chain " +
+    "`remesh` afterwards",
   create: {
     description: "Create a multi-image-to-3d task",
     configure(cmd) {
@@ -30,6 +35,12 @@ const spec: ResourceCommandSpec = {
         .option(
           "--input-task-id <id>",
           "alternative to --image-urls: a SUCCEEDED text-to-image or image-to-image task (e.g. multi-view output) whose images become the source views",
+        )
+        .addOption(
+          new Option(
+            "--geometry-resolution <res>",
+            "geometry pass: standard (default; two-stage multi-view model) | 2k (Ultra pass on Meshy 7.1, billed on top of the mesh; the web app's multi-view default)",
+          ).choices(["standard", "2k"]),
         )
         .option(
           "--should-texture <bool>",
@@ -77,6 +88,7 @@ const spec: ResourceCommandSpec = {
       return {
         image_urls: urls,
         input_task_id: opts.inputTaskId,
+        geometry_resolution: opts.geometryResolution,
         should_texture: opts.shouldTexture,
         enable_pbr: opts.enablePbr,
         texture_prompt: opts.texturePrompt,
@@ -89,7 +101,8 @@ const spec: ResourceCommandSpec = {
       // Draft-first, matching image-to-3d: white mesh by default, texturing
       // is its own step; texture knobs ride only when texturing is on (the
       // API rejects them otherwise), then game-ready values apply. No model
-      // choice — the server default (latest = meshy-7) applies.
+      // choice and no geometry default: the server's standard pass applies,
+      // and Ultra (2k) rides only when asked for — it bills extra.
       const texturing = opts.shouldTexture === true;
       return {
         should_texture: false,

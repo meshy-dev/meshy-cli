@@ -112,6 +112,10 @@ meshy-cli text-to-motion create --prompt "a character waving" --duration 3
 # smart topology: component-aware low-poly with a native polycount
 meshy-cli image-to-3d create --image-url cat.png --model-type smart-topology --target-polycount 10000
 
+# multi-view → 3D: the default is the two-stage multi-view model; 2k adds the
+# Ultra pass on Meshy 7.1 (+5 credits), which is what the web app's multi-view runs
+meshy-cli multi-image-to-3d create --image-urls front.png,side.png,back.png --geometry-resolution 2k
+
 # fire-and-forget (--async): exactly one POST, returns the task_id, query later
 TASK=$(meshy-cli text-to-image create --prompt "mountain landscape" --async --output-schema v1 | jq -r .result.submission.task_id)
 meshy-cli text-to-image get  "$TASK" --output-schema v1
