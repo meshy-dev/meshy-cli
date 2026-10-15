@@ -210,6 +210,14 @@ Each difference names the legacy behaviour, the CLI behaviour, and the evidence.
 | smart-topology polycount default with `--ai-model meshy-t2.5` | — | none sent (the API's 15,000); meshy-t2 still gets 10,000 | D-078 |
 | a Smart Topology `ai_model` without smart-topology, or smart-topology with `topology: "quad"` (through `--data`) | sent, refused by the API | refused locally (exit 2) | D-078 |
 
+### 3.10 Unreleased: Smart Topology defaults to T2.5
+
+`image-to-3d` and `text-to-3d` preview now send `ai_model: "meshy-t2.5"`
+when `--model-type smart-topology` has no explicit model. The default face
+count is the API's 15,000 (allowed range 100–30,000). To keep T2 and its CLI
+10,000 default, pass `--ai-model meshy-t2`. Models supplied through `--data`
+receive the same conditional defaults as flags. See D-079.
+
 New global flags: `--output-schema`, `--api-key-file`, `--workspace`, `--no-update-check`,
 `--base-url-creative-lab`. New per-command flags on task verbs: `--save-json`,
 `--include-raw`, `--project`, `--stage`, `--operation-id`, `--stop-after-first` (make),

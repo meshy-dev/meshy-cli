@@ -4,7 +4,7 @@
  * The mode picks the model:
  *   - standard → meshy-7.1 (server default "latest") — full-detail
  *     generation; polycount is remesh's job afterwards.
- *   - smart-topology → meshy-t2 (server default), or meshy-t2.5 with
+ *   - smart-topology → meshy-t2.5 (CLI default), or meshy-t2 with
  *     --ai-model — component-aware low-poly with a native
  *     --target-polycount; the budget pick for game-ready geometry.
  *
@@ -17,7 +17,7 @@ import { Option } from "commander";
 import { parseBool, parseCsv, parseInt10 } from "../internal/flags.js";
 import { UsageError } from "../internal/errors.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
-import { checkSmartTopology, defaultPolycount, SMART_TOPOLOGY_MODELS } from "../internal/smart-topology.js";
+import { prepareSmartTopologyPayload, SMART_TOPOLOGY_MODELS } from "../internal/smart-topology.js";
 
 const spec: ResourceCommandSpec = {
   name: "image-to-3d",
@@ -39,13 +39,13 @@ const spec: ResourceCommandSpec = {
         .addOption(
           new Option(
             "--model-type <kind>",
-            "standard (default; meshy-7.1 full-detail generation) | smart-topology (component-aware low-poly: clean topology, separated parts; meshy-t2, or --ai-model meshy-t2.5)",
+            "standard (default; meshy-7.1 full-detail generation) | smart-topology (component-aware low-poly: clean topology, separated parts; meshy-t2.5 by default)",
           ).choices(["standard", "smart-topology"]),
         )
         .addOption(
           new Option(
             "--ai-model <model>",
-            "smart-topology only: meshy-t2 (the API's choice when omitted) | meshy-t2.5 (polycount up to 30000)",
+            "smart-topology only: meshy-t2.5 (default; polycount up to 30000) | meshy-t2",
           ).choices([...SMART_TOPOLOGY_MODELS]),
         )
         .option(
@@ -159,10 +159,9 @@ const spec: ResourceCommandSpec = {
       // texturing is its own step, and the API rejects texture knobs on
       // untextured runs, so they ride only when texturing is on — then the
       // game-ready defaults apply: full PBR map set, 4k base color. The
-      // model follows the mode (standard → meshy-7.1, smart-topology →
-      // meshy-t2, both server defaults) unless --ai-model picks meshy-t2.5.
-      // meshy-t2 gets the rigging-friendly 10k polycount; meshy-t2.5 keeps
-      // the API's 15k (D-078). The Ultra pass stays off
+      // standard follows the server's meshy-7.1 default. Smart Topology's
+      // model and polycount defaults are applied after payload merging.
+      // The Ultra pass stays off
       // unless asked for: it bills extra. GLB-only output — omitting target_formats
       // makes the API produce every format.
       const texturing = opts.shouldTexture === true;
@@ -170,12 +169,11 @@ const spec: ResourceCommandSpec = {
         should_texture: false,
         enable_pbr: texturing ? true : undefined,
         texture_resolution: texturing ? "4k" : undefined,
-        target_polycount: defaultPolycount(opts),
         target_formats: ["glb"],
       };
     },
     validatePayload(payload) {
-      checkSmartTopology(payload);
+      prepareSmartTopologyPayload(payload);
       // Smart topology has neither knob; v1 answers 400 for either (it does not ignore them).
       if (payload.model_type === "smart-topology") {
         for (const [flag, key] of [["--remove-lighting", "remove_lighting"], ["--image-enhancement", "image_enhancement"]] as const) {

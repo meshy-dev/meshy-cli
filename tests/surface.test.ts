@@ -91,6 +91,7 @@ test("the mode picks the model: --ai-model on 3D generation offers the Smart Top
   for (const resource of ["text-to-3d", "image-to-3d"]) {
     const model = sub(sub(root, resource), "create").options.find((o) => o.long === "--ai-model");
     assert.deepEqual(model?.argChoices, ["meshy-t2", "meshy-t2.5"], resource);
+    assert.match(model?.description ?? "", /meshy-t2\.5 \(default/, resource);
   }
   assert.ok(!createFlags("multi-image-to-3d").has("--ai-model"), "multi-image-to-3d has --ai-model");
   const modeType = sub(sub(root, "text-to-3d"), "create").options.find((o) => o.long === "--model-type");

@@ -49,11 +49,11 @@
   ],
   "smart_topology": {
     "applies_to": ["image-to-3d", "text-to-3d (preview)"],
-    "request": { "model_type": "smart-topology (required for these models)", "ai_model": { "enum": ["meshy-t2", "meshy-t2.5"], "default": "omitted: the API picks meshy-t2", "cli_flag": "--ai-model" }, "topology": "triangle only; quad is refused" },
+    "request": { "model_type": "smart-topology (required for these models)", "ai_model": { "enum": ["meshy-t2", "meshy-t2.5"], "default": "CLI sends meshy-t2.5; API omission still picks meshy-t2", "cli_flag": "--ai-model" }, "topology": "triangle only; quad is refused" },
     "target_polycount": { "meshy-t2": { "range": "[100,15000]", "api_default": 4000, "cli_default": 10000 }, "meshy-t2.5": { "range": "[100,30000]", "api_default": 15000, "cli_default": "omitted (the API's 15000)" } },
     "credits": "both models: 5 mesh only; image-to-3d with 2K or 4K textures 15, with 8K textures 20",
     "refine": "a text-to-3d refine of a meshy-t2.5 preview works like one of a meshy-t2 preview",
-    "decision": "D-078"
+    "decision": "D-079"
   },
   "creative_lab_products": {
     "figure": {

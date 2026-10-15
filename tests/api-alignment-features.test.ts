@@ -303,13 +303,13 @@ test("generation: --geometry-resolution on text-to-3d preview and image-to-3d; t
     assert.equal(st.code, 0, st.stderr);
     assert.equal(body(api, 1)["model_type"], "smart-topology");
     assert.equal(body(api, 1)["target_polycount"], 8000);
-    assert.ok(!("ai_model" in body(api, 1)), "the server picks meshy-t2 for smart-topology");
+    assert.equal(body(api, 1)["ai_model"], "meshy-t2.5");
     const i = await runCli(["image-to-3d", "create", "--image-url", "https://example.invalid/a.png", "--geometry-resolution", "2k", "--async", "--data", "{}"], { env: api.env() });
     assert.equal(i.code, 2, "the preflight of an unreachable URL fails before the POST");
     for (const args of [
       ["text-to-3d", "create", "--mode", "preview", "--prompt", "x", "--model-type", "smart-topology", "--geometry-resolution", "2k"],
       ["text-to-3d", "create", "--mode", "preview", "--prompt", "x", "--target-polycount", "500"],
-      ["text-to-3d", "create", "--mode", "preview", "--prompt", "x", "--model-type", "smart-topology", "--target-polycount", "20000"],
+      ["text-to-3d", "create", "--mode", "preview", "--prompt", "x", "--model-type", "smart-topology", "--target-polycount", "30001"],
       ["text-to-3d", "create", "--mode", "refine", "--preview-task-id", "p", "--geometry-resolution", "2k"],
       ["image-to-3d", "create", "--input-task-id", "img", "--ultra-mode", "true", "--geometry-resolution", "2k"],
       ["image-to-3d", "create", "--input-task-id", "img", "--model-type", "smart-topology", "--geometry-resolution", "4k"],
@@ -323,10 +323,11 @@ test("generation: --geometry-resolution on text-to-3d preview and image-to-3d; t
     const geo = await runCli(["image-to-3d", "create", "--input-task-id", "img", "--geometry-resolution", "2k", "--async"], { env: api.env() });
     assert.equal(geo.code, 0, geo.stderr);
     assert.equal(body(api, 3)["geometry_resolution"], "2k");
-    // Smart topology defaults alike on both commands: 10000 unless asked.
+    // Smart topology defaults to T2.5 and leaves its 15k polycount to the API.
     const stDefault = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "a robot", "--model-type", "smart-topology", "--async"], { env: api.env() });
     assert.equal(stDefault.code, 0, stDefault.stderr);
-    assert.equal(body(api, 4)["target_polycount"], 10_000);
+    assert.equal(body(api, 4)["ai_model"], "meshy-t2.5");
+    assert.ok(!("target_polycount" in body(api, 4)));
   });
 });
 
@@ -352,11 +353,35 @@ test("smart topology meshy-t2.5: --ai-model on image-to-3d and text-to-3d previe
     assert.equal((req.json as Record<string, unknown>)["target_polycount"], 30_000);
     // Without --target-polycount meshy-t2.5 keeps the API's default (15000); meshy-t2 still gets 10000.
     for (const base of [img, txt]) {
+      req = await ok([...base]);
+      assert.equal((req.json as Record<string, unknown>)["ai_model"], "meshy-t2.5");
+      assert.ok(!("target_polycount" in (req.json as object)));
+      req = await ok([...base, "--target-polycount", "30000"]);
+      assert.equal((req.json as Record<string, unknown>)["ai_model"], "meshy-t2.5");
+      assert.equal((req.json as Record<string, unknown>)["target_polycount"], 30_000);
       req = await ok([...base, "--ai-model", "meshy-t2.5"]);
       assert.ok(!("target_polycount" in (req.json as object)), `${base[0]}: meshy-t2.5 polycount is left to the API`);
       req = await ok([...base, "--ai-model", "meshy-t2"]);
       assert.equal((req.json as Record<string, unknown>)["ai_model"], "meshy-t2");
       assert.equal((req.json as Record<string, unknown>)["target_polycount"], 10_000);
+      // Explicit JSON models and polycounts override the conditional defaults.
+      req = await ok([...base, "--data", '{"ai_model":"meshy-t2"}']);
+      assert.equal((req.json as Record<string, unknown>)["ai_model"], "meshy-t2");
+      assert.equal((req.json as Record<string, unknown>)["target_polycount"], 10_000);
+      req = await ok([...base, "--data", '{"ai_model":"meshy-t2","target_polycount":8000}']);
+      assert.equal((req.json as Record<string, unknown>)["target_polycount"], 8_000);
+      req = await ok([...base, "--data", '{"ai_model":"meshy-t2"}', "--ai-model", "meshy-t2.5"]);
+      assert.equal((req.json as Record<string, unknown>)["ai_model"], "meshy-t2.5");
+      assert.ok(!("target_polycount" in (req.json as object)));
+    }
+    // Raw JSON and flag-based model_type use the same defaults.
+    for (const base of [img.slice(0, -2), txt.slice(0, -2)]) {
+      req = await ok([...base, "--data", '{"model_type":"smart-topology"}']);
+      assert.equal((req.json as Record<string, unknown>)["ai_model"], "meshy-t2.5");
+      assert.ok(!("target_polycount" in (req.json as object)));
+      req = await ok([...base]);
+      assert.ok(!("ai_model" in (req.json as object)), "standard mode keeps the server's model default");
+      assert.ok(!("target_polycount" in (req.json as object)));
     }
     // A model_type sent through --data counts as smart-topology.
     req = await ok(["image-to-3d", "create", "--input-task-id", "img", "--data", '{"model_type":"smart-topology"}', "--ai-model", "meshy-t2.5"]);
@@ -364,9 +389,10 @@ test("smart topology meshy-t2.5: --ai-model on image-to-3d and text-to-3d previe
     const posts = api.requests.length;
 
     for (const args of [
-      [...img, "--target-polycount", "30000"],
+      [...img, "--target-polycount", "30001"],
       [...img, "--ai-model", "meshy-t2", "--target-polycount", "30000"],
-      [...txt, "--target-polycount", "30000"],
+      [...txt, "--target-polycount", "30001"],
+      [...img, "--data", '{"ai_model":"meshy-t2","target_polycount":30000}'],
       [...img, "--ai-model", "meshy-t2.5", "--target-polycount", "30001"],
       [...txt, "--ai-model", "meshy-t2.5", "--target-polycount", "99"],
       ["image-to-3d", "create", "--input-task-id", "img", "--ai-model", "meshy-t2.5"],

@@ -1102,3 +1102,20 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Credits are meshy-t2's: 5 for a mesh only; image-to-3d with 2K or 4K textures
   15, with 8K textures 20. A text-to-3d refine of a meshy-t2.5 preview works
   like one of a meshy-t2 preview.
+
+## D-079 Smart Topology defaults to Meshy T2.5
+
+- Supersedes the omitted-model and flag-only polycount defaults in D-076 / D-078.
+  On image-to-3d and text-to-3d preview, `model_type: "smart-topology"` now
+  sends `ai_model: "meshy-t2.5"` when no model was supplied. This aligns the
+  CLI with 3D Agent's Smart Topology generation.
+- Conditional defaults run after defaults, raw JSON and flags have merged,
+  so `--data` and flags select models consistently. Explicit model and
+  polycount values survive; flags continue to take precedence over JSON.
+- T2.5 leaves `target_polycount` omitted for the API's 15,000 default and
+  accepts 100–30,000. Explicit `meshy-t2` retains the CLI's 10,000 default
+  and 100–15,000 range. Standard generation and standalone refine retain
+  their existing model defaults.
+- Keep the public API's canonical model ID `meshy-t2.5`; the CLI does not
+  introduce a renamed alias. Public API model names need not follow billing
+  SKU conventions from the image-generation endpoints.

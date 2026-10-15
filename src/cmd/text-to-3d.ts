@@ -8,7 +8,7 @@
  * remesh's job (except smart topology's native polycount), resizing is
  * resize's job, deprecated parameters (symmetry_mode, lowpoly, ultra_mode)
  * are gone, and the mode picks the model: standard runs the server default
- * "latest" (Meshy 7.1), smart-topology runs meshy-t2, or meshy-t2.5 with
+ * "latest" (Meshy 7.1), smart-topology runs meshy-t2.5, or meshy-t2 with
  * --ai-model. The `--data` escape hatch still reaches anything the API accepts.
  */
 
@@ -16,7 +16,7 @@ import { Option } from "commander";
 import { parseBool, parseCsv, parseInt10 } from "../internal/flags.js";
 import { UsageError } from "../internal/errors.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
-import { checkSmartTopology, defaultPolycount, SMART_TOPOLOGY_MODELS } from "../internal/smart-topology.js";
+import { prepareSmartTopologyPayload, SMART_TOPOLOGY_MODELS } from "../internal/smart-topology.js";
 
 const spec: ResourceCommandSpec = {
   name: "text-to-3d",
@@ -45,13 +45,13 @@ const spec: ResourceCommandSpec = {
         .addOption(
           new Option(
             "--model-type <kind>",
-            "preview only. standard (default; full-detail generation) | smart-topology (clean triangle topology, separated parts, native --target-polycount; meshy-t2, or --ai-model meshy-t2.5)",
+            "preview only. standard (default; full-detail generation) | smart-topology (clean triangle topology, separated parts, native --target-polycount; meshy-t2.5 by default)",
           ).choices(["standard", "smart-topology"]),
         )
         .addOption(
           new Option(
             "--ai-model <model>",
-            "preview, smart-topology only: meshy-t2 (the API's choice when omitted) | meshy-t2.5 (polycount up to 30000)",
+            "preview, smart-topology only: meshy-t2.5 (default; polycount up to 30000) | meshy-t2",
           ).choices([...SMART_TOPOLOGY_MODELS]),
         )
         .option(
@@ -130,16 +130,15 @@ const spec: ResourceCommandSpec = {
       // removed on meshy-6/7) apply otherwise. `make` still asks for 4k: it
       // made the preview itself, on latest.
       // GLB-only output — omitting target_formats makes the API produce
-      // every format. Smart topology defaults like image-to-3d: 10k on
-      // meshy-t2, the API's 15k on meshy-t2.5 (D-078).
+      // every format. Smart Topology's model and polycount defaults are
+      // applied after payload merging, as on image-to-3d.
       const refine = opts.mode === "refine";
       return {
         enable_pbr: refine ? true : undefined,
-        target_polycount: defaultPolycount(opts),
         target_formats: ["glb"],
       };
     },
-    validatePayload: checkSmartTopology,
+    validatePayload: prepareSmartTopologyPayload,
   },
   endpointOf: (c) => c.textTo3d,
 };
