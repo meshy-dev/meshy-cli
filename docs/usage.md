@@ -458,6 +458,7 @@ URI is accepted when its bytes are a GLB.
 | `MESHY_READ_TIMEOUT_MS` | `120000` — covers headers *and* body |
 | `MESHY_POLL_INTERVAL_MS` | `3000` |
 | `MESHY_LOG_LEVEL` | `warn` |
+| `MESHY_CLI_CLIENT` | unset — a tool that runs meshy-cli for its users names itself here (for example `meshy-dcc/0.2.2 (blender)`); appended to the User-Agent of every request |
 | `MESHY_CLI_NO_UPDATE_NOTIFIER` | unset — any non-empty value disables update checks; CI envs (`CI`, `GITHUB_ACTIONS`, `BUILD_NUMBER`, `RUN_ID`) auto-skip |
 
 ## Update notifications
