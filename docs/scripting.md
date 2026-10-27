@@ -10,10 +10,8 @@ stdout is only the result. Never parse `pretty`: it is a view that drops fields.
 ## Stable machine output: the envelope
 
 Every command prints one envelope with six fixed keys on stdout, in `json` or
-`ndjson` — there is no other data model. (`--output-schema v1`, which older
-examples carry, is accepted as a no-op and still means JSON even on a terminal;
-`--output-schema legacy` was removed in 0.5.0 and is refused.) Add `--format
-pretty` to see the human view instead:
+`ndjson` — there is no other data model. Add `--format pretty` to see the
+human view instead:
 
 ```json
 {
@@ -99,12 +97,13 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   in every output format, and in `ndjson` the final `outcome` line carries the
   download manifest.
 - `-o` on `get`/`wait`/`stream`/`make` saves the primary files of a SUCCEEDED
-  task: the model formats it produced, the thumbnail and images, and the rig or
-  animation result in GLB. `result.downloads.files` is a per-file manifest
-  (key, path, bytes, sha256, status). `result.downloads.skipped` lists
+  task: the model formats it produced, the primary thumbnail, images and
+  reports, and the rig or animation result in GLB. `result.downloads.files` is a
+  per-file manifest (stable `key` as `meshy download --asset` takes it, real
+  `path`, bytes, sha256, status). `result.downloads.skipped` lists
   `{key, reason}` for what stayed on the server: `embedded_textures`,
-  `bundled_animation`, `alternate_format`, `pre_remesh_variant`, and
-  `not_selected` for a file path. `--all-assets` saves everything, but needs a
+  `bundled_animation`, `alternate_format`, `pre_remesh_variant`,
+  `extra_thumbnail`, and `not_selected` for a file path. `--all-assets` saves everything, but needs a
   directory. A file path (`-o car.glb`) writes the one asset of that format.
   Between pipeline steps, pass the task id (`--input-task-id`, `--rig-task-id`)
   instead of downloading. When the second asset fails, the state is `partial`, the files

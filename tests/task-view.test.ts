@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { extractTaskObject, toTaskView } from "../src/internal/task-view.js";
 import { requireTaskResource } from "../src/client/resource-registry.js";
 
-const rigFixture = JSON.parse(readFileSync(new URL("./fixtures/skill-parity/task-rigging.synthetic.json", import.meta.url), "utf8")) as Record<string, unknown>;
+const rigFixture = JSON.parse(readFileSync(new URL("./fixtures/task-rigging.synthetic.json", import.meta.url), "utf8")) as Record<string, unknown>;
 
 test("face_count and consumed_credits: 0 is 0, null is null, missing is null", () => {
   const base = { id: "t", status: "SUCCEEDED" };

@@ -1,4 +1,4 @@
-# Skill-parity S1 — design decisions
+# meshy-cli — design decisions
 
 Each entry records a choice that is not derivable from the code alone, the evidence
 behind it, and what a reviewer should check. IDs are stable; append, do not renumber.
@@ -13,6 +13,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   Commander, Zod, node:test + tsx, no lint script) are followed.
 
 ## D-002 `--output-schema v1` is a root-parsed global flag
+
+*Superseded: D-080 made v1 the only schema; D-082 removed the flag.*
 
 - Commander parses options declared on the root command wherever they appear in argv
   (positional options are disabled), so `meshy text-to-3d get ID --output-schema v1`
@@ -50,6 +52,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Default sync behaviour is unchanged (text: preview → refine; image: textured).
 
 ## D-006 Registry-driven resources; `rigging list` enabled
+
+*Partly superseded by D-082: `endpoint-contracts.json` is gone; the registry is the only description.*
 
 - `src/client/resource-registry.ts` is the single source for command paths, API
   base, relative path, supported verbs, billing and media fields. `docs/skill-parity/
@@ -178,6 +182,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   A `pretest` script runs `tsc` so `pnpm test` always exercises the current sources.
 
 ## D-021 Project store
+
+*Partly superseded by D-082: files without `schema_version: 2` are refused, not migrated.*
 
 - `metadata.json` gains `schema_version: 2` plus `resource`, `endpoint`,
   `parent_task_id`, `status`, `task_json`, `operation_id` per task; legacy files
@@ -475,6 +481,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-046 Legacy-schema post-processing runs in the task's context
 
+*Superseded by D-080 (one schema).*
+
 - R3-F02: only the v1 `maybeDownloadV1` wrapped download failures in the task
   context; the legacy reporter (`-o` on a default-schema `create`, `wait`, `get`,
   `stream`, `make`) let the raw error escape, so a paid create whose asset host
@@ -708,7 +716,7 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   `started_at`, `finished_at` and `expires_at` now accept null and absence alike
   and normalise both to 0, the value the v2 endpoints already use; the v1 task
   view keeps showing a timestamp that has not happened as `null`. The body
-  captured live is `tests/fixtures/skill-parity/creative-lab-lamp-prototype.in-progress.json`
+  captured live is `tests/fixtures/creative-lab-lamp-prototype.in-progress.json`
   and `tests/live-verification.test.ts` (L01) replays it through the schema and
   through `creative-lab lamp prototype get`/`wait`. Verified live afterwards: a
   keychain prototype created and waited on immediately polled through three
@@ -716,6 +724,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   build completed.
 
 ## D-060 The legacy `-o` layout names Creative Lab parts and bundles like `meshy download`
+
+*Superseded by D-082: `-o` is built on `meshy download`'s enumeration, so there is one naming.*
 
 - Live verification (real account, 2026-09-08): the task verbs' `-o` downloader
   (`downloadArtifacts`, the 0.2.0 layout) derived every `model_urls` file name
@@ -833,6 +843,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   the bug this table exists to prevent.
 
 ## D-065 A typed `--output-schema v1` means JSON, even on a TTY
+
+*Superseded by D-082: the flag is gone.*
 
 - The principle ENG-3488 settles on: an agent gets structured JSON, a person
   gets a readable view. The TTY default (D-063) covers almost every agent,
@@ -1122,6 +1134,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-080 The v1 envelope is the only output schema
 
+*Partly superseded by D-082: the `--output-schema` no-op is gone too.*
+
 - Supersedes the two-schema split in D-002 and the per-command defaults it
   listed: since 0.5.0 every command — the task resources, `make`, `balance`,
   `delete`, `api`, `resources`, the `auth` verbs included — prints one
@@ -1149,6 +1163,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   without the flag) and assert the same envelope in both arms.
 
 ## D-081 `-o` saves the primary files; `--all-assets` saves everything
+
+*Partly superseded by D-082: keys and file names are now the `meshy download` ones.*
 
 - `-o <dir>` used to write every URL of the task. On a model → remesh → rig →
   animate chain that was about 250 MB: each GLB's texture maps were saved again
@@ -1178,4 +1194,51 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   download (task create/get/wait/stream, `make`). The description no longer
   claims a "status report" on stdout, which has been the envelope since 0.5.0
   (D-080).
+
+## D-082 No compatibility layers: one schema flag-free, one asset model, one metadata version
+
+- The CLI is 0.x with a small user base, so 0.6.0 drops what only existed for
+  0.2.0 callers and the retired Python skill instead of carrying it.
+- `--output-schema` is an unknown option (it was a hidden no-op since 0.5.0),
+  and D-065's "a typed schema means JSON" rule goes with it. `forHumans()`
+  strips only `--format json|ndjson` from hints.
+- `--ultra-mode` is gone; `--geometry-resolution 2k` is the Ultra pass. A raw
+  `ultra_mode` still rides `--data`.
+- `-o` is built on the selective downloader: `downloadTaskAssets` takes the
+  assets from `enumerateAssets`, picks `selectDefaultAssets` (the D-081 rules,
+  plus per-view/alpha thumbnails left out when a primary one exists) and writes
+  them with `downloadAssets`. As a result:
+  - `downloads.files[].key` and `downloads.skipped[].key` are the stable keys
+    (`model.glb`, `texture.0.base_color`, `result.basic_animations.walking_glb_url`);
+  - paths are real paths;
+  - file names are the asset names (`rigged_character.glb`, `walking_glb.glb`);
+  - models are content-checked;
+  - a report task writes the report itself.
+
+  A file path takes the asset of that format, or a sole image it can transcode;
+  any other mismatch is refused instead of renamed. `LEGACY_KEY_ALIASES` and the
+  0.2.0 key patterns are gone: `meshy download --asset` takes stable keys only.
+- `project` reads `schema_version: 2` only. A Python-helper `metadata.json` is
+  refused rather than migrated, and `migrated_from_legacy`, `legacy_format` and
+  the `metadata_migrated` warning are removed.
+- Pretty views render v1 results only (no bare task bodies, array list bodies or
+  top-level `elapsed_seconds`).
+- Removed as dead code:
+  - `channelOfTextureKey`, `RESOURCE_NAMES`, `TASK_RESOURCE_IDS`,
+    `TOP_LEVEL_TASK_RESOURCE_IDS`, `taskResourceByCommandPath`
+  - `CREATIVE_LAB_SINGLE_PRODUCTS`, `CREATIVE_LAB_STAGE_NAMES`,
+    `UV_UNWRAP_FACE_CEILING`
+  - `getLogLevel`, `runDoctor`
+  - the camelCase `resolveImageFields`/`resolveModelFields` API
+  - unused type aliases
+  - `HttpFetch` (balance uses `requestJson` like every endpoint)
+  - the lamp prototype `text` guard
+
+  `noUnusedLocals` is on so that leftovers fail the build.
+- `legacyEndpoint` is renamed `endpoint`. `docs/skill-parity/` (the parity
+  tracking against the retired skill) is deleted; this log moved to
+  `docs/decisions.md` and the fixtures to `tests/fixtures/`.
+- Tests that ran each case with and without `--output-schema` run it once. The
+  tests that only checked 0.2.0 shapes, legacy key aliases or the
+  `endpoint-contracts.json` mirror are deleted.
 

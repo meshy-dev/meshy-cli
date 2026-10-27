@@ -19,8 +19,7 @@ meshy doctor             # checks the environment, no network
 The same build is published as [`@meshy-ai/cli`](https://www.npmjs.com/package/@meshy-ai/cli).
 **Install one, not both**: they share the `meshy` binary and npm refuses the
 second with `EEXIST` (`npm uninstall -g @meshy-ai/cli && npm i -g meshy-cli` to
-switch). If `meshy --version` reports 0.1.x on Node 22, reinstall: 0.2.0–0.3.1
-declared `node >=24` by mistake, and npm silently picked 0.1.3 instead.
+switch).
 
 ## Log in
 

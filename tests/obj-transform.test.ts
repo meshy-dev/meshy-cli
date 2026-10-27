@@ -1,6 +1,6 @@
 /**
  * OBJ print preparation (T-083..T-087) against the independent fixture oracle
- * tests/fixtures/skill-parity/box-height-80.expected.json. Nothing here derives
+ * tests/fixtures/box-height-80.expected.json. Nothing here derives
  * an expected value from the implementation under test.
  */
 
@@ -13,7 +13,7 @@ import { prepareObjForPrint, defaultOutputPath, formatObjNumber, textureReferenc
 import { CliError, UsageError } from "../src/internal/errors.js";
 import { tmpDir } from "./helpers/cli.js";
 
-const FIXTURES = fileURLToPath(new URL("./fixtures/skill-parity/", import.meta.url));
+const FIXTURES = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const ORACLE = JSON.parse(readFileSync(join(FIXTURES, "box-height-80.expected.json"), "utf8")) as {
   height_mm: number;
   scale: number;

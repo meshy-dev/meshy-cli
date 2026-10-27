@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { TaskSchema } from "../src/client/types.js";
 import { jsonReply, parseSingleJson, runCli, startMockApi } from "./helpers/cli.js";
 
-const FIXTURE = join(import.meta.dirname, "fixtures", "skill-parity", "creative-lab-lamp-prototype.in-progress.json");
+const FIXTURE = join(import.meta.dirname, "fixtures", "creative-lab-lamp-prototype.in-progress.json");
 const inProgress = JSON.parse(readFileSync(FIXTURE, "utf8")) as Record<string, unknown>;
 
 test("L01 a Creative Lab task body with finished_at: null (captured live while IN_PROGRESS) parses; null timestamps and counts read as 0, the v2 zero form is unchanged", () => {

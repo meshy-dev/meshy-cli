@@ -56,7 +56,7 @@ test("T-049 parser: identical events for every chunk size, LF/CR/CRLF, multi-lin
 });
 
 test("parser: the synthetic error fixture yields one error event with status_code 404", () => {
-  const fixture = readFileSync(new URL("./fixtures/skill-parity/task-error.synthetic.sse", import.meta.url));
+  const fixture = readFileSync(new URL("./fixtures/task-error.synthetic.sse", import.meta.url));
   for (const size of [1, 4, 16, fixture.length]) {
     const parser = createSseParser();
     const out: SseEvent[] = [];
@@ -142,7 +142,7 @@ test("T-050 terminal message closes the connection promptly and yields exactly o
 });
 
 test("T-051 error event after HTTP 200 maps to not_found; non-JSON and wrong content-type are protocol errors", async () => {
-  const errFixture = readFileSync(new URL("./fixtures/skill-parity/task-error.synthetic.sse", import.meta.url), "utf8");
+  const errFixture = readFileSync(new URL("./fixtures/task-error.synthetic.sse", import.meta.url), "utf8");
   const s1 = await serve({ script: [{ delay: 5, chunk: errFixture.slice(0, 40) }, { delay: 20, chunk: errFixture.slice(40) }] });
   try {
     const out = await streamTask(s1.endpoint, "t", { timeoutMs: 5000, idleTimeoutMs: 2000 });

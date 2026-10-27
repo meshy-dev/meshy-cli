@@ -320,7 +320,7 @@ test("T-053 stream: ndjson emits task events + one outcome; json emits one envel
     }
     if (req.path === "/openapi/v2/text-to-3d/missing/stream") {
       res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(readFileSync(new URL("./fixtures/skill-parity/task-error.synthetic.sse", import.meta.url)));
+      res.end(readFileSync(new URL("./fixtures/task-error.synthetic.sse", import.meta.url)));
       return;
     }
     return jsonReply(res, 404, { message: "nope" });

@@ -9,7 +9,7 @@ import { enumerateAssets, resolveAssetKey, selectAssets, selectDefaultAssets, Se
 import { requireTaskResource } from "../src/client/resource-registry.js";
 import { extractTaskObject, toTaskView } from "../src/internal/task-view.js";
 
-const rig = JSON.parse(readFileSync(new URL("./fixtures/skill-parity/task-rigging.synthetic.json", import.meta.url), "utf8")) as Record<string, unknown>;
+const rig = JSON.parse(readFileSync(new URL("./fixtures/task-rigging.synthetic.json", import.meta.url), "utf8")) as Record<string, unknown>;
 
 test("T-060 rigging: rig + nested walking/running animations are enumerated with role keys", () => {
   const e = enumerateAssets(rig, requireTaskResource("rigging"));

@@ -24,7 +24,7 @@ import type { V1Envelope } from "../src/internal/result.js";
 import { toTaskView } from "../src/internal/task-view.js";
 import { jsonReply, parseSingleJson, runCli, startMockApi } from "./helpers/cli.js";
 
-const FIXTURE_URL = new URL("./fixtures/skill-parity/task-rigging.synthetic.json", import.meta.url);
+const FIXTURE_URL = new URL("./fixtures/task-rigging.synthetic.json", import.meta.url);
 const FIXTURE_PATH = fileURLToPath(FIXTURE_URL);
 const fixture = JSON.parse(readFileSync(FIXTURE_URL, "utf8")) as Record<string, unknown>;
 const FIXTURE_FACES = 250_000;
