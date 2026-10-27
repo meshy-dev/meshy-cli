@@ -76,11 +76,13 @@ resource; `meshy <resource> --help` documents each one, and
 ## For scripts and agents
 
 stdout is the result and nothing else; progress and messages go to stderr.
-Piped, redirected or run by an agent, the output is JSON automatically. Ask for
-the stable envelope explicitly and the shape never depends on how you are run:
+Every command prints one `meshy.cli/v1` envelope — `schema_version, command,
+ok, result, error, warnings` — and piped, redirected or run by an agent the
+rendering is JSON automatically. Say `--format json` and the shape never
+depends on how you are run:
 
 ```bash
-meshy text-to-3d create --mode preview --prompt "a cactus" --async --output-schema v1 --format json \
+meshy text-to-3d create --mode preview --prompt "a cactus" --async --format json \
   | jq -r .result.submission.task_id
 ```
 

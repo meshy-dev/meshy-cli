@@ -329,8 +329,8 @@ export async function openInSlicer(file: string, slicerNameOrId: string, opts: O
       message: unsupported
         ? `${descriptor.name} cannot be detected on ${platform}: ${unsupported.reason}`
         : `${descriptor.name} is not installed in a known location on ${platform}`,
-      hint: "meshy slicer detect --output-schema v1",
-      recovery: { action: "run_hint", automatic: false, command: "meshy slicer detect --output-schema v1" },
+      hint: "meshy slicer detect",
+      recovery: { action: "run_hint", automatic: false, command: "meshy slicer detect" },
       details: { checked },
     });
   }

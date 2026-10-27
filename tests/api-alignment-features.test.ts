@@ -281,14 +281,14 @@ test("images: --remove-background on both; image-to-image takes --input-task-id 
   });
 });
 
-test("balance: monthly / permanent credits and the reset time are reported (v1 and legacy)", async () => {
+test("balance: monthly / permanent credits and the reset time are reported (with and without --output-schema v1)", async () => {
   const reply = { balance: 1500, monthly_credits: 1000, permanent_credits: 500, monthly_resets_at: 1_793_404_800_000 };
   await withApi((_req, res) => jsonReply(res, 200, reply), async (api) => {
     const v1 = await runCli(["balance", "--output-schema", "v1"], { env: api.env() });
     assert.equal(v1.code, 0, v1.stderr);
     assert.deepEqual((parseSingleJson(v1.stdout) as { result: unknown }).result, { ...reply, saved_json: null });
-    const legacy = await runCli(["balance"], { env: api.env() });
-    assert.deepEqual(parseSingleJson(legacy.stdout), reply);
+    const bare = await runCli(["balance"], { env: api.env() });
+    assert.deepEqual((parseSingleJson(bare.stdout) as { result: unknown }).result, { ...reply, saved_json: null }, "the envelope is the only shape; the flag is a no-op");
     const pretty = await runCli(["balance", "--format", "pretty"], { env: api.env() });
     assert.match(pretty.stdout, /1,000 monthly, resets 2026-10-31 · 500 permanent/);
   });

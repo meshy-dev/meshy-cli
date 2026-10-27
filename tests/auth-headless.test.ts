@@ -27,6 +27,11 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname as pathDirname } from "node:path";
 
+/** The `result` of the v1 envelope every command prints on stdout. */
+function envelopeResult(stdout: string): Record<string, unknown> {
+  return (JSON.parse(stdout) as { result: Record<string, unknown> }).result;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = pathDirname(__filename);
 const repoRoot = join(__dirname, "..");
@@ -165,7 +170,7 @@ test(
 
       assert.equal(result.exitCode, 0, `expected exit 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
-      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(result.stdout);
       assert.equal(parsed["status"], "logged_in");
       assert.equal(parsed["kind"], "oauth");
 
@@ -234,7 +239,7 @@ test(
       );
 
       assert.equal(result.exitCode, 0, `expected exit 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
-      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(result.stdout);
       assert.equal(parsed["status"], "logged_in");
     } finally {
       await stub.close();
@@ -410,7 +415,7 @@ test(
 
       // Credentials should be written.
       assert.ok(existsSync(credFile), "credentials file should exist");
-      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(result.stdout);
       assert.equal(parsed["status"], "logged_in");
     } finally {
       await stub.close();
@@ -461,7 +466,7 @@ test(
       assert.equal(result.exitCode, 0, `expected exit 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`);
 
       // stdout should be the device_flow_started JSON.
-      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(result.stdout);
       assert.equal(parsed["status"], "device_flow_started");
       assert.ok(typeof parsed["flow_id"] === "string" && (parsed["flow_id"] as string).length > 0);
       assert.ok(typeof parsed["user_code"] === "string");
@@ -539,7 +544,7 @@ test(
       );
 
       assert.equal(stage1.exitCode, 0, `stage 1 failed\nstdout: ${stage1.stdout}\nstderr: ${stage1.stderr}`);
-      const stage1Parsed = JSON.parse(stage1.stdout) as Record<string, unknown>;
+      const stage1Parsed = envelopeResult(stage1.stdout);
       const flowId = stage1Parsed["flow_id"] as string;
       assert.ok(flowId, "flow_id should be present");
 
@@ -556,7 +561,7 @@ test(
       );
 
       assert.equal(stage2.exitCode, 0, `stage 2 failed\nstdout: ${stage2.stdout}\nstderr: ${stage2.stderr}`);
-      const stage2Parsed = JSON.parse(stage2.stdout) as Record<string, unknown>;
+      const stage2Parsed = envelopeResult(stage2.stdout);
       assert.equal(stage2Parsed["status"], "logged_in");
 
       // Credentials should be written.
@@ -662,7 +667,7 @@ test(
         `stderr should mention cache miss, got: ${result.stderr}`,
       );
 
-      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(result.stdout);
       assert.equal(parsed["status"], "logged_in");
     } finally {
       await stub.close();
@@ -786,7 +791,7 @@ test(
         `stderr should mention fallback/browser, got: ${stderr}`,
       );
 
-      const parsed = JSON.parse(stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(stdout);
       assert.equal(parsed["status"], "logged_in");
     } finally {
       await stub.close();
@@ -898,7 +903,7 @@ test(
         `stderr should mention headless detection, got: ${result.stderr}`,
       );
 
-      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(result.stdout);
       assert.equal(parsed["status"], "logged_in");
     } finally {
       await stub.close();
@@ -1030,7 +1035,7 @@ test(
     } catch {
       assert.fail(`stdout must be valid JSON when --json is set, got: ${result.stdout}`);
     }
-    assert.ok(typeof parsed["message"] === "string", "error payload must have a message field");
+    assert.ok(typeof (parsed["error"] as Record<string, unknown>)["message"] === "string", "error envelope must carry error.message");
   },
 );
 
@@ -1117,6 +1122,6 @@ test(
     } catch {
       assert.fail(`stdout must be valid JSON when --json is set, got: ${result.stdout}`);
     }
-    assert.ok(typeof parsed["message"] === "string", "error payload must have a message field");
+    assert.ok(typeof (parsed["error"] as Record<string, unknown>)["message"] === "string", "error envelope must carry error.message");
   },
 );

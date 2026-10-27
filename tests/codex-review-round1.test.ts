@@ -166,12 +166,13 @@ test("R03/F07 wait: a GET that answers after the deadline is a timeout (exit 8) 
     assert.equal(out.result.wait.polls, 0);
     assert.match(out.error.recovery.command, /wait review-task/);
     assert.ok(elapsed < 3000, `the command did not wait for the late body (${elapsed} ms)`);
-    // Legacy schema: same decision, legacy shape.
-    const legacy = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0.05"], { env: api.env() });
-    assert.equal(legacy.code, 8, legacy.stderr);
-    const lp = parseSingleJson(legacy.stdout) as Record<string, unknown>;
-    assert.equal(lp["id"], "review-task");
-    assert.equal(lp["timed_out"], true);
+    // Without the flag: the same decision, the same envelope.
+    const bare = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0.05"], { env: api.env() });
+    assert.equal(bare.code, 8, bare.stderr);
+    const lp = parseSingleJson(bare.stdout) as { error: { code: string }; result: { task_id: string; wait: { timed_out: boolean } } };
+    assert.equal(lp.error.code, "timed_out");
+    assert.equal(lp.result.task_id, "review-task");
+    assert.equal(lp.result.wait.timed_out, true);
   } finally {
     await api.close();
   }
@@ -330,15 +331,16 @@ test("R06/F01 sync create: a 503 while polling keeps the created id, submission 
     assert.equal(out.result.wait.last_poll_error.http_status, 503);
     assert.equal(api.requests.filter((q) => q.method === "POST").length, 1);
     assert.ok(api.requests.filter((q) => q.method === "GET").length >= 2, "the 503 was retried");
-    // The same for a bare `wait`, and for the legacy schema.
+    // The same for a bare `wait`, and without the flag.
     const w = await runCli(["text-to-3d", "wait", "some-task", "--timeout", "1", "--output-schema", "v1"], { env: api.env() });
     assert.equal(w.code, 8, w.stderr);
     assert.equal((parseSingleJson(w.stdout) as { result: { task_id: string } }).result.task_id, "some-task");
-    const legacy = await runCli([...CREATE.filter((a) => a !== "--async" && a !== "--output-schema" && a !== "v1"), "--timeout", "1"], { env: api.env() });
-    assert.equal(legacy.code, 8, legacy.stderr);
-    const lp = parseSingleJson(legacy.stdout) as { id: string; timed_out: boolean };
-    assert.equal(lp.id, "accepted-before-get-error");
-    assert.equal(lp.timed_out, true);
+    const bare = await runCli([...CREATE.filter((a) => a !== "--async" && a !== "--output-schema" && a !== "v1"), "--timeout", "1"], { env: api.env() });
+    assert.equal(bare.code, 8, bare.stderr);
+    const lp = parseSingleJson(bare.stdout) as { error: { code: string }; result: { task_id: string; wait: { timed_out: boolean } } };
+    assert.equal(lp.error.code, "timed_out");
+    assert.equal(lp.result.task_id, "accepted-before-get-error");
+    assert.equal(lp.result.wait.timed_out, true);
   } finally {
     await api.close();
   }

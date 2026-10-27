@@ -17,6 +17,11 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname as pathDirname } from "node:path";
 
+/** The `result` of the v1 envelope every command prints on stdout. */
+function envelopeResult(stdout: string): Record<string, unknown> {
+  return (JSON.parse(stdout) as { result: Record<string, unknown> }).result;
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = pathDirname(__filename);
 const repoRoot = join(__dirname, "..");
@@ -366,7 +371,7 @@ test(
         `expected exit 0\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
       );
 
-      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(result.stdout);
 
       // Must report authenticated and verified.
       assert.equal(parsed["authenticated"], true, "must be authenticated");
@@ -550,7 +555,7 @@ test(
         3,
         `expected exit 3, got ${result.exitCode}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
       );
-      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(result.stdout);
       assert.equal(parsed["verified"], false, "must be verified:false");
       assert.equal(
         parsed["hint"],
@@ -590,7 +595,7 @@ test(
         3,
         `expected exit 3, got ${result.exitCode}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`,
       );
-      const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(result.stdout);
       assert.equal(parsed["verified"], false, "must be verified:false");
       assert.match(
         String(parsed["hint"]),

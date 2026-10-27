@@ -7,7 +7,7 @@
  */
 
 import { Command, Option } from "commander";
-import { emitResult, openCommand, rejectOutputFlagForV1, saveRawJson } from "../internal/command-helpers.js";
+import { emitResult, openCommand, rejectOutputFlag, saveRawJson } from "../internal/command-helpers.js";
 import { UsageError } from "../internal/errors.js";
 import { parseJsonFlag } from "../internal/payload.js";
 import { buildRuntime } from "../internal/runtime.js";
@@ -23,10 +23,10 @@ export const apiCommand = new Command("api")
   .addOption(new Option("--creative-lab", "use the Creative Lab base URL (paths like /figure/v1/prototype)"))
   .option("--data <json>", "request body JSON (or @file.json)")
   .option("--params <json>", "query params JSON object")
-  .option("--save-json <file>", "v1: also save the raw response body to this file (never overwrites)")
+  .option("--save-json <file>", "also save the raw response body to this file (never overwrites)")
   .action(async (method: string, path: string, opts: Record<string, unknown>, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "api", "legacy");
-    rejectOutputFlagForV1(opened, opts.saveJson as string | undefined);
+    const opened = openCommand(thisCmd, "api");
+    rejectOutputFlag(opened, opts.saveJson as string | undefined);
     const verb = method.toUpperCase();
     if (!METHODS.has(verb)) throw new UsageError(`unsupported HTTP method '${method}'. Expected: GET | POST | PUT | PATCH | DELETE`);
     if ((opts.v2 ? 1 : 0) + (opts.v1 ? 1 : 0) + (opts.creativeLab ? 1 : 0) > 1) {
@@ -62,10 +62,5 @@ export const apiCommand = new Command("api")
     }
     const saveJson = opts.saveJson as string | undefined;
     const saved = saveJson ? saveRawJson(saveJson, parsed, { workspace: opened.flags.workspaceRoot }) : null;
-    await emitResult(
-      opened,
-      parsed,
-      { http_status: resp.status, method: verb, path: finalPath, api: apiVersion, body: parsed, saved_json: saved },
-      { legacyFile: opened.flags.output },
-    );
+    await emitResult(opened, { http_status: resp.status, method: verb, path: finalPath, api: apiVersion, body: parsed, saved_json: saved });
   });

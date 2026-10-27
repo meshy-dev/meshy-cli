@@ -184,11 +184,11 @@ test("T-081 judgeTask: a non-terminal task without face_count is unknown because
 test("remeshSuggestion describes an unexecuted remesh and clamps the target to the endpoint range", () => {
   const s = remeshSuggestion("fixture-rig-1", 249_999);
   assert.equal(s.executed, false);
-  assert.equal(s.command, "meshy remesh create --input-task-id fixture-rig-1 --target-polycount 249999 --output-schema v1");
+  assert.equal(s.command, "meshy remesh create --input-task-id fixture-rig-1 --target-polycount 249999");
   assert.match(s.description, /not executed/);
   assert.ok(s.description.includes(s.command));
-  assert.match(remeshSuggestion("t", 50).command ?? "", /--target-polycount 100 /);
-  assert.match(remeshSuggestion("t", 10_000_000).command ?? "", /--target-polycount 300000 /);
+  assert.match(remeshSuggestion("t", 50).command ?? "", /--target-polycount 100$/);
+  assert.match(remeshSuggestion("t", 10_000_000).command ?? "", /--target-polycount 300000$/);
   // No id, or an id that is not a plain token: no command is fabricated.
   const none = remeshSuggestion(null, 1000);
   assert.equal(none.command, null);
@@ -261,7 +261,7 @@ test("T-080 command: fixture 250000 vs 300000 / 250000 / 249999 → pass 0 / pas
   assert.equal(failResult.face_count, FIXTURE_FACES);
   assert.match(failResult.reason ?? "", /exceeds the limit 249999 by 1/);
   assert.equal(failResult.suggestion?.executed, false);
-  assert.equal(failResult.suggestion?.command, "meshy remesh create --input-task-id fixture-rig-1 --target-polycount 249999 --output-schema v1");
+  assert.equal(failResult.suggestion?.command, "meshy remesh create --input-task-id fixture-rig-1 --target-polycount 249999");
 });
 
 test("T-081 command: missing/null/string face_count and a running task → unknown, exit 13, no remesh suggestion", async () => {
@@ -343,7 +343,7 @@ test("command: usage errors before any work — sources, --max-faces, schema, -o
   await usage(["--resource", "rigging", "--max-faces", "300000"], /together with --task-id/);
   await usage(["--task-id", "x", "--max-faces", "300000"], /together with --task-id/);
   await usage(["--resource", "no-such-resource", "--task-id", "x", "--max-faces", "300000"], /unknown --resource 'no-such-resource'.*rigging.*uv-unwrap/);
-  await usage(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "--output-schema", "legacy"], /only emits the v1 envelope/);
+  await usage(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "--output-schema", "legacy"], /removed in 0\.5\.0/);
   await usage(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "-o", "out.glb"], /--save-json/);
   await usage(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "--save-json", "x.json"], /only applies to the API source/);
   await usage(["--task-json", join(tmp(), "missing.json"), "--max-faces", "300000"], /cannot open/);

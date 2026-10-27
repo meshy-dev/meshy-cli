@@ -26,11 +26,11 @@ const detectCommand = new Command("detect")
     `Detect installed slicers (${SLICERS.map((s) => s.name).join(", ")}). Local only; an empty list is a successful result`,
   )
   .action(async (_opts: Record<string, never>, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "slicer.detect", "v1");
+    const opened = openCommand(thisCmd, "slicer.detect");
     rejectOutputFlag(opened);
     buildLocalRuntime(opened.flags);
     const detection = detectSlicers();
-    await emitResult(opened, detection, detection);
+    await emitResult(opened, detection);
   });
 
 const openCmd = new Command("open")
@@ -41,11 +41,11 @@ const openCmd = new Command("open")
   .requiredOption("--slicer <name>", "registered slicer name or id (see: meshy slicer detect)")
   .requiredOption("--file <path>", `model file to open (${[...LAUNCHABLE_EXTENSIONS].join(", ")})`)
   .action(async (opts: { slicer: string; file: string }, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "slicer.open", "v1");
+    const opened = openCommand(thisCmd, "slicer.open");
     rejectOutputFlag(opened);
     buildLocalRuntime(opened.flags);
     const launch = await openInSlicer(opts.file, opts.slicer);
-    await emitResult(opened, launch, launch);
+    await emitResult(opened, launch);
   });
 
 export const slicerCommand = new Command("slicer")

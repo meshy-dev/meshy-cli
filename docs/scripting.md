@@ -3,17 +3,17 @@
 The rule: **a terminal gets a readable view, everything else gets JSON.** An
 untyped `--format` resolves to `pretty` when stdout is a TTY and to `json`
 otherwise, so a pipe, a redirect, `$(...)`, CI and every agent subprocess read
-JSON without asking. Say it anyway — `--output-schema v1 --format json` — and
+JSON without asking. Say it anyway — `--format json` — and
 the shape is yours however you are spawned. Progress and prose go to stderr;
 stdout is only the result. Never parse `pretty`: it is a view that drops fields.
 
-## Stable machine output: `--output-schema v1`
+## Stable machine output: the envelope
 
-Existing commands keep their 0.2.0 output (`legacy`) unless told otherwise; the
-commands added in this release always speak `v1`. Pass `--output-schema v1` to
-get one envelope with six fixed keys on stdout, in `json` or `ndjson`. A typed
-`--output-schema v1` means JSON even on a terminal, since no person types a
-schema version; add `--format pretty` to see the human view instead:
+Every command prints one envelope with six fixed keys on stdout, in `json` or
+`ndjson` — there is no other data model. (`--output-schema v1`, which older
+examples carry, is accepted as a no-op and still means JSON even on a terminal;
+`--output-schema legacy` was removed in 0.5.0 and is refused.) Add `--format
+pretty` to see the human view instead:
 
 ```json
 {
@@ -107,10 +107,7 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   publishing the `meta.json` sidecar: `downloads.failed_step` names the step, the
   manifest carries the digests actually on disk. The sidecar itself is published
   like an asset (exclusive, no symlink, inside the root), so a file that appears
-  at its path during the download is never overwritten. The legacy schema
-  reports the same failures with additive `task_id`/`operation_id` fields and the
-  resume command as `hint`, so the accepted task is never lost from a default
-  `create -o` error.
+  at its path during the download is never overwritten.
 - Ctrl-C stops waiting, streaming or downloading (exit 130) and sends no DELETE;
   the envelope carries the task id, the command that resumes and the files that
   had already landed. An interrupted transfer leaves no temp file behind.

@@ -24,25 +24,25 @@ const listCommand = new Command("list")
   .description("List the journaled create operations, oldest first")
   .addOption(new Option("--state <state>", "only records in this state").choices(STATES))
   .action(async (opts: { state?: OperationState }, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "operations.list", "v1");
+    const opened = openCommand(thisCmd, "operations.list");
     buildLocalRuntime(opened.flags);
     const root = operationsRoot();
     const operations = listOperations(root).filter((r) => !opts.state || r.state === opts.state);
-    await emitResult(opened, operations, { root, operations });
+    await emitResult(opened, { root, operations });
   });
 
 const showCommand = new Command("show")
   .description("Show one journaled operation")
   .argument("<operation-id>")
   .action(async (operationId: string, _opts: Record<string, unknown>, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "operations.show", "v1");
+    const opened = openCommand(thisCmd, "operations.show");
     buildLocalRuntime(opened.flags);
     const root = operationsRoot();
     const record = readOperation(root, operationId);
     if (!record || record.operation_id !== operationId) {
       throw new CliError({ code: "not_found", message: `no operation ${operationId} in ${root}`, recovery: { action: "none", automatic: false, command: "meshy operations list" } });
     }
-    await emitResult(opened, record, { root, operation: record });
+    await emitResult(opened, { root, operation: record });
   });
 
 const resolveCommand = new Command("resolve")
@@ -54,7 +54,7 @@ const resolveCommand = new Command("resolve")
   .option("--not-created", "the server created no task; release the id so the same --operation-id submits again")
   .option("--force", "resolve a 'started' operation even though the process that started it still appears to run")
   .action(async (operationId: string, opts: { taskId?: string; notCreated?: boolean; force?: boolean }, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "operations.resolve", "v1");
+    const opened = openCommand(thisCmd, "operations.resolve");
     buildLocalRuntime(opened.flags);
     if ((opts.taskId !== undefined) === Boolean(opts.notCreated)) {
       throw new UsageError("pass exactly one of --task-id <id> or --not-created");
@@ -62,7 +62,7 @@ const resolveCommand = new Command("resolve")
     const taskId = opts.taskId?.trim();
     if (opts.taskId !== undefined && !taskId) throw new UsageError("--task-id needs a task id");
     const res = resolveOperation(operationsRoot(), operationId, taskId ? { as: "created", taskId } : { as: "not_created" }, { force: opts.force });
-    await emitResult(opened, res, res);
+    await emitResult(opened, res);
   });
 
 export const operationsCommand = new Command("operations")

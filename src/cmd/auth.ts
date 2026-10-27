@@ -55,10 +55,17 @@ import {
   openBrowser,
   startCallbackServer,
 } from "../internal/oauth.js";
-import { emit } from "../internal/output.js";
+import { emitEnvelope, type OutputFormat } from "../internal/output.js";
 import { refreshOAuthCredentialIfNeeded, type GlobalFlags } from "../internal/runtime.js";
-import { openCommand } from "../internal/command-helpers.js";
+import { openCommand, rejectOutputFlag } from "../internal/command-helpers.js";
+import { currentCommand } from "../internal/context.js";
+import { okEnvelope } from "../internal/result.js";
 import { withSpinner } from "../internal/progress.js";
+
+/** Every auth verb answers with the v1 envelope under the command it opened (`auth.login`, `auth.status`, …). */
+async function emitAuth(flags: { format: OutputFormat }, result: unknown): Promise<void> {
+  await emitEnvelope(okEnvelope(currentCommand()?.command ?? "auth", result), flags.format);
+}
 
 /** OOB redirect URI for manual flow (RFC 8252 §4.5 / RFC 6749 §4.1.2). */
 const OOB_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob";
@@ -146,20 +153,17 @@ async function finishLogin(
     }
   }
 
-  emit(
-    {
-      status: "logged_in",
-      kind: "oauth",
-      profile: opts.profile,
-      active_profile: credState.active_profile,
-      credential: maskSecret(tok.access_token),
-      credentials_file: file,
-      verified: verifyOutcome,
-      ...(balance === undefined ? {} : { balance }),
-      ...(verifyHint !== undefined ? { hint: verifyHint } : {}),
-    },
-    { format: flags.format, file: flags.output },
-  );
+  await emitAuth(flags, {
+    status: "logged_in",
+    kind: "oauth",
+    profile: opts.profile,
+    active_profile: credState.active_profile,
+    credential: maskSecret(tok.access_token),
+    credentials_file: file,
+    verified: verifyOutcome,
+    ...(balance === undefined ? {} : { balance }),
+    ...(verifyHint !== undefined ? { hint: verifyHint } : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +199,9 @@ const loginCommand = new Command("login")
       },
       thisCmd: Command,
     ) => {
-      const flags = openCommand(thisCmd, "auth.login", "legacy").flags;
+      const opened = openCommand(thisCmd, "auth.login");
+      rejectOutputFlag(opened, undefined);
+      const flags = opened.flags;
 
       // --with-key path: validate and store an existing API key.
       if (opts.withKey !== undefined && opts.withKey.trim() === "") {
@@ -214,18 +220,15 @@ const loginCommand = new Command("login")
         const file = resolveFile(flags);
         const state = saveProfile(file, opts.profile, { kind: "api_key", api_key: key });
 
-        emit(
-          {
-            status: "logged_in",
-            profile: opts.profile,
-            active_profile: state.active_profile,
-            credential: maskSecret(key),
-            credentials_file: file,
-            verified: opts.verify,
-            ...(balance === undefined ? {} : { balance }),
-          },
-          { format: flags.format, file: flags.output },
-        );
+        await emitAuth(flags, {
+          status: "logged_in",
+          profile: opts.profile,
+          active_profile: state.active_profile,
+          credential: maskSecret(key),
+          credentials_file: file,
+          verified: opts.verify,
+          ...(balance === undefined ? {} : { balance }),
+        });
         return;
       }
 
@@ -389,19 +392,16 @@ const loginCommand = new Command("login")
           // --device-code for a degraded-poll resume. The poll_command
           // deliberately uses the local flow_id (not device_code) so the
           // CLI can look up cached metadata (base_url, scope, interval).
-          emit(
-            {
-              status: "device_flow_started",
-              verification_url: deviceResp.verification_uri_complete,
-              user_code: deviceResp.user_code,
-              flow_id: flowId,
-              device_code: deviceResp.device_code,
-              expires_in: deviceResp.expires_in,
-              interval: deviceResp.interval,
-              poll_command: `meshy auth login --device-flow ${flowId}`,
-            },
-            { format: flags.format, file: flags.output },
-          );
+          await emitAuth(flags, {
+            status: "device_flow_started",
+            verification_url: deviceResp.verification_uri_complete,
+            user_code: deviceResp.user_code,
+            flow_id: flowId,
+            device_code: deviceResp.device_code,
+            expires_in: deviceResp.expires_in,
+            interval: deviceResp.interval,
+            poll_command: `meshy auth login --device-flow ${flowId}`,
+          });
           return;
         }
 
@@ -617,7 +617,9 @@ const statusCommand = new Command("status")
   .description("Show which credential is in effect, where it came from, and whether it works")
   .option("--offline", "skip the balance call")
   .action(async (opts: { offline?: boolean }, thisCmd: Command) => {
-    const flags = openCommand(thisCmd, "auth.status", "legacy").flags;
+    const opened = openCommand(thisCmd, "auth.status");
+    rejectOutputFlag(opened, undefined);
+    const flags = opened.flags;
     const file = resolveFile(flags);
     const stored = safeReadProfiles(file);
 
@@ -635,16 +637,13 @@ const statusCommand = new Command("status")
       );
     } catch (err) {
       if (err instanceof HintedError && err.code === "unauthenticated") {
-        emit(
-          {
-            authenticated: false,
-            credentials_file: file,
-            profiles: stored.names,
-            active_profile: stored.active,
-            hint: err.hint,
-          },
-          { format: flags.format, file: flags.output },
-        );
+        await emitAuth(flags, {
+          authenticated: false,
+          credentials_file: file,
+          profiles: stored.names,
+          active_profile: stored.active,
+          hint: err.hint,
+        });
         process.exitCode = EXIT_CODES.AUTH;
         return;
       }
@@ -670,22 +669,19 @@ const statusCommand = new Command("status")
       }
     }
 
-    emit(
-      {
-        authenticated: true,
-        source: config.credentialSource,
-        profile: config.credentialProfile ?? null,
-        credential: maskSecret(config.apiKey),
-        credentials_file: file,
-        base_url_v1: config.baseUrlV1,
-        profiles: stored.names,
-        active_profile: stored.active,
-        ...(verified === undefined ? {} : { verified }),
-        ...(balance === undefined ? {} : { balance }),
-        ...(verifyHint !== undefined ? { hint: verifyHint } : {}),
-      },
-      { format: flags.format, file: flags.output },
-    );
+    await emitAuth(flags, {
+      authenticated: true,
+      source: config.credentialSource,
+      profile: config.credentialProfile ?? null,
+      credential: maskSecret(config.apiKey),
+      credentials_file: file,
+      base_url_v1: config.baseUrlV1,
+      profiles: stored.names,
+      active_profile: stored.active,
+      ...(verified === undefined ? {} : { verified }),
+      ...(balance === undefined ? {} : { balance }),
+      ...(verifyHint !== undefined ? { hint: verifyHint } : {}),
+    });
     if (verified === false) process.exitCode = EXIT_CODES.AUTH;
   });
 
@@ -697,16 +693,15 @@ const logoutCommand = new Command("logout")
   .description("Remove a stored credential (only for the current environment's file)")
   .option("--profile <name>", "profile to remove (default: the active one)")
   .option("--all", "delete the whole credentials file for this environment")
-  .action((opts: { profile?: string; all?: boolean }, thisCmd: Command) => {
-    const flags = openCommand(thisCmd, "auth.logout", "legacy").flags;
+  .action(async (opts: { profile?: string; all?: boolean }, thisCmd: Command) => {
+    const opened = openCommand(thisCmd, "auth.logout");
+    rejectOutputFlag(opened, undefined);
+    const flags = opened.flags;
     const file = resolveFile(flags);
 
     if (opts.all) {
       const deleted = deleteCredentialsFile(file);
-      emit(
-        { status: deleted ? "deleted" : "nothing_to_delete", credentials_file: file },
-        { format: flags.format, file: flags.output },
-      );
+      await emitAuth(flags, { status: deleted ? "deleted" : "nothing_to_delete", credentials_file: file });
       return;
     }
 
@@ -714,23 +709,22 @@ const logoutCommand = new Command("logout")
     const target = opts.profile ?? state?.active_profile ?? DEFAULT_PROFILE;
     const removed = removeProfile(file, target);
     const after = safeReadProfiles(file);
-    emit(
-      {
-        status: removed ? "removed" : "nothing_to_remove",
-        profile: target,
-        credentials_file: file,
-        profiles: after.names,
-        active_profile: after.active,
-      },
-      { format: flags.format, file: flags.output },
-    );
+    await emitAuth(flags, {
+      status: removed ? "removed" : "nothing_to_remove",
+      profile: target,
+      credentials_file: file,
+      profiles: after.names,
+      active_profile: after.active,
+    });
   });
 
 const useCommand = new Command("use")
   .description("Switch the active profile")
   .argument("<profile>", "profile name")
-  .action((profile: string, _opts: unknown, thisCmd: Command) => {
-    const flags = openCommand(thisCmd, "auth.use", "legacy").flags;
+  .action(async (profile: string, _opts: unknown, thisCmd: Command) => {
+    const opened = openCommand(thisCmd, "auth.use");
+    rejectOutputFlag(opened, undefined);
+    const flags = opened.flags;
     const file = resolveFile(flags);
     const known = safeReadProfiles(file);
     if (!known.names.includes(profile)) {
@@ -741,16 +735,15 @@ const useCommand = new Command("use")
       });
     }
     setActiveProfile(file, profile);
-    emit(
-      { status: "switched", active_profile: profile, credentials_file: file },
-      { format: flags.format, file: flags.output },
-    );
+    await emitAuth(flags, { status: "switched", active_profile: profile, credentials_file: file });
   });
 
 const listCommand = new Command("list")
   .description("List stored profiles for this environment")
-  .action((_opts: unknown, thisCmd: Command) => {
-    const flags = openCommand(thisCmd, "auth.list", "legacy").flags;
+  .action(async (_opts: unknown, thisCmd: Command) => {
+    const opened = openCommand(thisCmd, "auth.list");
+    rejectOutputFlag(opened, undefined);
+    const flags = opened.flags;
     const file = resolveFile(flags);
     const state = readCredentials(file);
     const profiles = Object.entries(state?.profiles ?? {}).map(([name, profile]) => ({
@@ -760,10 +753,7 @@ const listCommand = new Command("list")
       credential: maskSecret(profile.api_key ?? profile.access_token ?? ""),
       created_at: profile.created_at ?? null,
     }));
-    emit(
-      { credentials_file: file, active_profile: state?.active_profile ?? null, profiles },
-      { format: flags.format, file: flags.output },
-    );
+    await emitAuth(flags, { credentials_file: file, active_profile: state?.active_profile ?? null, profiles });
   });
 
 /**

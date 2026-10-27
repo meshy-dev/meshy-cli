@@ -7,7 +7,7 @@
 
 import { Command } from "commander";
 import { MeshyApiError } from "../client/errors.js";
-import { emitResult, openCommand, rejectOutputFlagForV1 } from "../internal/command-helpers.js";
+import { emitResult, openCommand, rejectOutputFlag } from "../internal/command-helpers.js";
 import { buildRuntime } from "../internal/runtime.js";
 import { deleteFailure } from "../internal/task-command.js";
 
@@ -20,8 +20,8 @@ export const deleteCommand = new Command("delete")
   )
   .argument("<task-id>", "Meshy task id")
   .action(async (taskId: string, _opts: Record<string, unknown>, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "delete", "legacy");
-    rejectOutputFlagForV1(opened, undefined);
+    const opened = openCommand(thisCmd, "delete");
+    rejectOutputFlag(opened, undefined);
     const runtime = await buildRuntime(opened.flags);
     try {
       await runtime.client.textTo3d.delete(taskId);
@@ -33,10 +33,5 @@ export const deleteCommand = new Command("delete")
       // The type is unknown here, so there is no runnable wait command to offer.
       throw deleteFailure(err, taskId);
     }
-    await emitResult(
-      opened,
-      { task_id: taskId, deleted: true },
-      { task_id: taskId, resource: null, endpoint: "/openapi/v2/text-to-3d", deleted: true },
-      { legacyFile: opened.flags.output },
-    );
+    await emitResult(opened, { task_id: taskId, resource: null, endpoint: "/openapi/v2/text-to-3d", deleted: true });
   });

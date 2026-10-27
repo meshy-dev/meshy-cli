@@ -6,10 +6,10 @@
  * pays for the whole surface every time, so the root lists the one verb most
  * callers need and points here for the rest.
  *
- * legacy: the 0.2.0 array of `{name, summary}` (new commands appended).
- * v1:     `result.items` with `kind` (task | query | action | local), the command line,
- *         the endpoint and the supported verbs — all generated from the
- *         registry and filtered to what this build actually registers.
+ * `result.items` carries `kind` (task | query | action | local), the command
+ * line, the endpoint and the supported verbs — all generated from the registry
+ * and filtered to what this build actually registers. RESOURCES below is the
+ * hand-written summary table the root help and tests cross-check against.
  */
 
 import { Command } from "commander";
@@ -67,7 +67,6 @@ const VERBS = `Every task resource carries the same verbs:
 
 \`create\` is sync by default — it blocks until the task is terminal. Pass
 --async for the task id straight away, then \`wait\`/\`get\`/\`stream\` it later.
-Add --output-schema v1 for the stable machine envelope.
 
 Endpoints without a dedicated command are reachable through the passthrough:
 
@@ -78,20 +77,12 @@ export const resourcesCommand = new Command("resources")
   .description("List the per-endpoint commands and the verbs they share")
   .addHelpText("after", `\n${VERBS}\n`)
   .action(async (_opts: Record<string, unknown>, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "resources", "legacy");
+    const opened = openCommand(thisCmd, "resources");
     buildLocalRuntime(opened.flags);
     const registered = new Set((thisCmd.parent?.commands ?? []).map((c) => c.name()));
     const items = resourceIndex().filter((e) => registered.has(e.command.split(" ")[1] ?? ""));
-    const legacy = RESOURCES.filter((r) => registered.has(r.name));
-
-    if (opened.schema === "legacy" && opened.format === "pretty") {
-      const width = Math.max(...legacy.map((r) => r.name.length));
-      const lines = legacy.map((r) => `  ${r.name.padEnd(width)}  ${r.summary}`);
-      process.stdout.write(`${lines.join("\n")}\n\n${VERBS}\n`);
-      return;
-    }
     const byKind = (kind: ResourceIndexEntry["kind"]) => items.filter((e) => e.kind === kind).length;
-    await emitResult(opened, legacy, {
+    await emitResult(opened, {
       items,
       counts: { task: byKind("task"), query: byKind("query"), action: byKind("action"), local: byKind("local") },
       verbs_help: "meshy resources --help",

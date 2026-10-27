@@ -20,7 +20,7 @@ function envOf(api: MockApi, extra: Record<string, string | undefined> = {}) {
   return api.env(extra);
 }
 
-test("T-006 get: every valid status is a successful query (exit 0) in v1 and legacy; FAILED stays exit 1 in legacy only", async () => {
+test("T-006 get: every valid status is a successful query (exit 0), with or without --output-schema v1", async () => {
   const statuses = ["PENDING", "IN_PROGRESS", "SUCCEEDED", "FAILED", "CANCELED", "SOMETHING_NEW"];
   let current = "PENDING";
   const api = await startMockApi((req, res) => {
@@ -42,12 +42,11 @@ test("T-006 get: every valid status is a successful query (exit 0) in v1 and leg
       assert.deepEqual((env.result.task["raw"] as Record<string, unknown>)["novel"], { x: 1 });
       assert.equal(env.result.downloads.state, "not_requested");
 
-      const legacy = await runCli(["text-to-3d", "get", "task-1"], { env: envOf(api) });
-      const expected = status === "FAILED" || status === "CANCELED" ? 1 : 0;
-      assert.equal(legacy.code, expected, `legacy ${status}: ${legacy.stderr}`);
-      const payload = parseSingleJson(legacy.stdout) as Record<string, unknown>;
-      assert.equal(payload["status"], status);
-      assert.equal(payload["resource"], "text-to-3d");
+      const bare = await runCli(["text-to-3d", "get", "task-1"], { env: envOf(api) });
+      assert.equal(bare.code, 0, `bare ${status}: ${bare.stderr}`);
+      const payload = parseSingleJson(bare.stdout) as { command: string; result: { task: Record<string, unknown> } };
+      assert.equal(payload.command, "text-to-3d.get");
+      assert.equal(payload.result.task["status"], status);
     }
     // Missing face_count is null, never 0.
     current = "SUCCEEDED";
@@ -90,13 +89,13 @@ test("T-040 create --async: exactly one POST, zero GETs, accepted + id + operati
     assert.equal(rec.state, "accepted");
     assert.equal(rec.task_id, "task-new");
 
-    // Legacy async keeps the 0.2.0 shape (plus operation_id) and also makes exactly one request.
-    const legacy = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "a cactus", "--async"], { env: envOf(api) });
-    assert.equal(legacy.code, 0, legacy.stderr);
-    const lp = parseSingleJson(legacy.stdout) as Record<string, unknown>;
-    assert.equal(lp["task_id"], "task-new");
-    assert.equal(lp["status"], "PENDING");
-    assert.match(String(lp["hint"]), /text-to-3d wait task-new/);
+    // Without the flag: the same envelope, and still exactly one request.
+    const bare = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "a cactus", "--async"], { env: envOf(api) });
+    assert.equal(bare.code, 0, bare.stderr);
+    const lp = parseSingleJson(bare.stdout) as { result: { task: unknown; submission: { task_id: string }; next: { wait: string } } };
+    assert.equal(lp.result.submission.task_id, "task-new");
+    assert.equal(lp.result.task, null);
+    assert.match(lp.result.next.wait, /text-to-3d wait task-new/);
     assert.deepEqual(api.requests.map((q) => q.method), ["POST", "POST"]);
   } finally {
     await api.close();

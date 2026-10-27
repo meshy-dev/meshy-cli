@@ -258,11 +258,11 @@ test("delete of an IN_PROGRESS task (409) is its own class: conflict, exit 14, w
     const out = parseSingleJson(r.stdout) as { error: { code: string; http_status: number; hint: string; recovery: { command: string } } };
     assert.equal(out.error.code, "conflict");
     assert.equal(out.error.http_status, 409);
-    assert.equal(out.error.recovery.command, "meshy image-to-3d wait t-run --output-schema v1");
+    assert.equal(out.error.recovery.command, "meshy image-to-3d wait t-run");
     assert.doesNotMatch(out.error.hint, /delete again|then delete/i, "deleting the finished task would destroy the paid result");
     const top = await runCli(["delete", "t-run"], { env: api.env() });
     assert.equal(top.code, 14, top.stdout);
-    assert.equal((parseSingleJson(top.stdout) as { code: string }).code, "conflict");
+    assert.equal((parseSingleJson(top.stdout) as { error: { code: string } }).error.code, "conflict");
     // Top-level delete does not know the resource: a recovery command must be runnable verbatim, so there is none.
     const topV1 = await runCli(["delete", "t-run", "--output-schema", "v1"], { env: api.env() });
     assert.equal(topV1.code, 14, topV1.stdout);

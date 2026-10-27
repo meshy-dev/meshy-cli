@@ -4,7 +4,7 @@ description: "Generate 3D models, motion clips, 2D images and Creative Lab print
 license: MIT
 compatibility: Requires meshy-cli on PATH (Node 22.12+, no Python) and a stored credential, MESHY_API_KEY or --api-key-file for API commands; network access to api.meshy.ai. Local helpers work offline.
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
   cli-help: "meshy --help"
 ---
 
@@ -20,14 +20,16 @@ executed; do not use Node's `--env-file`). Never echo the key back or write it
 into a shell profile. `meshy doctor` checks the environment without touching the
 network; `meshy doctor --check-api` makes one free balance call.
 
-## Always ask for the stable envelope
+## Parse the envelope
 
-Add `--output-schema v1 --format json` to every command you parse. Untyped,
-`--format` is `pretty` at a terminal and `json` elsewhere; say both and the
-shape is fixed however you are spawned. `pretty` is a human view that drops
-fields, so never parse it; `json` and `ndjson` carry no colour codes. stdout is then
-exactly one JSON object with six keys — `schema_version, command, ok, result,
-error, warnings` — and nothing else. Progress goes to stderr as plain lines
+Every command prints one `meshy.cli/v1` envelope on stdout. Add `--format json`
+to every command you parse: untyped, `--format` is `pretty` at a terminal and
+`json` elsewhere; say it and the rendering is fixed however you are spawned.
+`pretty` is a human view that drops fields, so never parse it; `json` and
+`ndjson` carry no colour codes. stdout is then exactly one JSON object with six
+keys — `schema_version, command, ok, result, error, warnings` — and nothing
+else. (`--output-schema v1` from older examples is accepted as a no-op; there
+is no other schema.) Progress goes to stderr as plain lines
 (none under `ndjson`); it is for people, so read ids from stdout, not from it. `ok` is whether the
 CLI operation completed; `result.task.status` is the server's task state (a `get`
 of a FAILED task is `ok:true`). Fields the server did not send are `null` —
@@ -39,11 +41,11 @@ recoveries) is replaced with a real path.
 ## One model, one command
 
 ```bash
-meshy make "a red sports car" -o car.glb --output-schema v1     # prompt → text-to-3d preview → refine
-meshy make ./cat.png -o out/cat/ --output-schema v1             # image  → image-to-3d, textured
-meshy make "a red sports car" --dry-run --output-schema v1      # planned steps + estimate, no spend, no network
+meshy make "a red sports car" -o car.glb     # prompt → text-to-3d preview → refine
+meshy make ./cat.png -o out/cat/             # image  → image-to-3d, textured
+meshy make "a red sports car" --dry-run      # planned steps + estimate, no spend, no network
 meshy make "..." --max-credits 25                               # refuse to start over budget
-meshy make "..." --async --output-schema v1                     # one POST, returns step 1's task_id + pending_steps
+meshy make "..." --async                     # one POST, returns step 1's task_id + pending_steps
 ```
 
 The input decides the chain and nothing else does. If a later step fails, the
@@ -52,13 +54,13 @@ verbatim rather than starting over, or the finished step is paid for twice.
 
 ## Everything else
 
-`meshy resources --output-schema v1` indexes every command (kind `task`, `query`,
+`meshy resources` indexes every command (kind `task`, `query`,
 `action` or `local`); each task resource carries the same verbs:
 
 ```bash
-meshy <resource> create [flags] [--data '<json>'] [--async] [--timeout <s>] [--operation-id <id>] --output-schema v1
-meshy <resource> get|wait|stream|delete <task-id> --output-schema v1
-meshy <resource> list [--page-size <n>] --output-schema v1
+meshy <resource> create [flags] [--data '<json>'] [--async] [--timeout <s>] [--operation-id <id>]
+meshy <resource> get|wait|stream|delete <task-id>
+meshy <resource> list [--page-size <n>]
 ```
 
 - `create` blocks until the task is terminal; `--async` submits **exactly one
@@ -90,14 +92,14 @@ meshy <resource> list [--page-size <n>] --output-schema v1
 ## Creative Lab, UV, catalog, showcases
 
 ```bash
-meshy uv-unwrap create --input-task-id <id> --async --output-schema v1              # GLB only, ≤40k faces (server enforces)
-meshy creative-lab <figure|vinyl-figure|brick-figure|lamp|keychain|fridge-magnet|keycap|fidget-pixel> prototype create --image-url ./photo.png --name demo --async --output-schema v1
-meshy creative-lab <product> build create --input-task-id <prototype-id> [--model-format …] [--options '<json>'] --async --output-schema v1
-meshy creative-lab fidget-collapsible create --image-url ./photo.png --async --output-schema v1   # one stage → STL
-meshy animation-catalog list --category DailyActions --search wave --output-schema v1   # free; search is server-side
-meshy auto-split create --input-task-id <id> --mode by_parts --prompt "head, torso" --async --output-schema v1   # printable parts
-meshy usage tasks --start-time 2026-08-01T00:00:00Z --output-schema v1                 # Studio/Enterprise; credits per task
-meshy showcases list --search car --page-size 3 --output-schema v1                      # Enterprise only; EVERY request is billed
+meshy uv-unwrap create --input-task-id <id> --async              # GLB only, ≤40k faces (server enforces)
+meshy creative-lab <figure|vinyl-figure|brick-figure|lamp|keychain|fridge-magnet|keycap|fidget-pixel> prototype create --image-url ./photo.png --name demo --async
+meshy creative-lab <product> build create --input-task-id <prototype-id> [--model-format …] [--options '<json>'] --async
+meshy creative-lab fidget-collapsible create --image-url ./photo.png --async   # one stage → STL
+meshy animation-catalog list --category DailyActions --search wave   # free; search is server-side
+meshy auto-split create --input-task-id <id> --mode by_parts --prompt "head, torso" --async   # printable parts
+meshy usage tasks --start-time 2026-08-01T00:00:00Z                 # Studio/Enterprise; credits per task
+meshy showcases list --search car --page-size 3                      # Enterprise only; EVERY request is billed
 ```
 
 Prototype meanings differ: most yield a concept image, lamp also yields a
@@ -112,16 +114,16 @@ Never call `showcases` in a health check.
 ## Downloads, projects, printing (local, no key)
 
 ```bash
-meshy download --task-json ./task.json --list --output-schema v1
-meshy download --task-json ./task.json --model-format glb --output ./model.glb --output-schema v1
-meshy download --task-json ./rig.json --asset result.basic_animations.walking_glb_url --output ./walking.glb --output-schema v1
-meshy download --resource image-to-3d --task-id <id> --all --output-dir ./out/ --output-schema v1
-meshy project init --root ./meshy_output --name "<prompt>" --task-id <id> --output-schema v1
-meshy project record --project <dir> --task-id <id> --resource text-to-3d --stage preview --file preview.glb --output-schema v1
-meshy inspect faces --task-json ./task.json --max-faces 300000 --output-schema v1   # exit 0 pass | 12 fail | 13 unknown
-meshy mesh prepare-print ./model.obj --height-mm 75 --output-schema v1              # writes ./model.print.obj (Y-up → Z-up, grounded)
-meshy slicer detect --output-schema v1
-meshy slicer open --slicer OrcaSlicer --file ./model.print.obj --output-schema v1  # launch only; not proof of import
+meshy download --task-json ./task.json --list
+meshy download --task-json ./task.json --model-format glb --output ./model.glb
+meshy download --task-json ./rig.json --asset result.basic_animations.walking_glb_url --output ./walking.glb
+meshy download --resource image-to-3d --task-id <id> --all --output-dir ./out/
+meshy project init --root ./meshy_output --name "<prompt>" --task-id <id>
+meshy project record --project <dir> --task-id <id> --resource text-to-3d --stage preview --file preview.glb
+meshy inspect faces --task-json ./task.json --max-faces 300000   # exit 0 pass | 12 fail | 13 unknown
+meshy mesh prepare-print ./model.obj --height-mm 75              # writes ./model.print.obj (Y-up → Z-up, grounded)
+meshy slicer detect
+meshy slicer open --slicer OrcaSlicer --file ./model.print.obj  # launch only; not proof of import
 ```
 
 `download` needs an explicit selector when a task has several assets (it lists
@@ -184,8 +186,8 @@ These are API rules, not preferences — ignoring them produces failed tasks:
 ## Finding an animation id
 
 `--action-id` is an integer from Meshy's animation library. Ask the live
-library (free): `meshy animation-catalog list --category Fighting --search kick
---output-schema v1` → `result.items[].action_id`; `--action-ids 92,4` checks
+library (free): `meshy animation-catalog list --category Fighting --search kick` →
+`result.items[].action_id`; `--action-ids 92,4` checks
 stored ids. Ids are not `1..N` (the catalog contains `-2`, `-1` and `0`) — never
 guess one. This skill also bundles a
 snapshot as `animation-library.json` (with hand-written descriptions the API does
@@ -213,8 +215,6 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
   `result.downloads.files` lists what already landed (`status: written`), the rest can
   be fetched with `meshy download`. `downloads.failed_step` (`relink` | `digest` |
   `sidecar`) means every asset is on disk and only that step is missing.
-- Legacy-schema errors (no `--output-schema v1`) after a create carry additive
-  `task_id` / `operation_id` fields and a `hint` with the resume command — never re-create.
 - `result.downloads.material_links.status: "incomplete"` → name the references that
   stayed unresolved or ambiguous (`texture_maps[].method`, `note`) instead of claiming the
   model loads; two material groups that would share one texture without evidence are
@@ -223,7 +223,7 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
   disk (`result.downloads.files`); repair the project's `metadata.json`, then run
   `error.recovery.command` (`meshy project record …`, it already carries the original
   `--workspace` and `--operation-id`) verbatim — do not download or create again. The same
-  command appears after a task verb's `--project` record failure (legacy: `hint`); when the
+  command appears after a task verb's `--project` record failure; when the
   error says the project is *no longer a target inside the authorised boundary* (it moved
   mid-request) there is deliberately no command and `recovery` is null — restore the
   directory first, then record with `meshy project record` from inside the original workspace.
@@ -234,9 +234,6 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
   process was killed mid-request).
 - A `FAILED` task → relay `result.task.task_error.message` verbatim; do not guess a cause.
 - Any error may carry `error.recovery.command` — prefer it over improvising.
-
-Legacy JSON output (without `--output-schema v1`) may carry `_notice.update` when
-a newer meshy-cli exists; pass its `command` on to the user.
 
 ## Docs
 

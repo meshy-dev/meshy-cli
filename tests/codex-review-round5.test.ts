@@ -380,8 +380,8 @@ test("R5-F02 arbitration matrix: eight key/reference combinations in both orders
 type Verb = "get" | "wait" | "stream" | "create-async" | "create-sync";
 type Fault = "missing" | "damaged";
 
-test("E03/R5-F03 legacy/v1 × get/wait/stream/create-async/create-sync × metadata missing/damaged during the request (--project P --workspace P): exit 11 with the task, journal operation and a record_project command that carries --workspace and --operation-id; single POST for create; verbatim replay after the repair records the task with 0 requests and index_dirty", async () => {
-  for (const schema of ["legacy", "v1"] as const) {
+test("E03/R5-F03 bare/v1 × get/wait/stream/create-async/create-sync × metadata missing/damaged during the request (--project P --workspace P): exit 11 with the task, journal operation and a record_project command that carries --workspace and --operation-id; single POST for create; verbatim replay after the repair records the task with 0 requests and index_dirty", async () => {
+  for (const schema of ["bare", "v1"] as const) {
     for (const verb of ["get", "wait", "stream", "create-async", "create-sync"] as Verb[]) {
       for (const fault of ["missing", "damaged"] as Fault[]) {
         const id = `${schema}-${verb}-${fault}`;
@@ -415,22 +415,14 @@ test("E03/R5-F03 legacy/v1 × get/wait/stream/create-async/create-sync × metada
           const result = out["result"] as { task_id: string; submission: { state: string; operation_id: string | null; task_id?: string } };
           const isCreate = verb.startsWith("create");
           const records = journal(configDir);
-          let command: string;
-          if (schema === "v1") {
-            assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, id);
-            const error = out["error"] as { code: string; message: string; recovery: { action: string; automatic: boolean; command: string } | null; hint?: string };
-            assert.equal(error.code, "local_io", id);
-            assert.ok(error.recovery, `${id}: a recovery is offered`);
-            assert.equal(error.recovery!.action, "record_project", id);
-            assert.equal(error.hint, error.recovery!.command, id);
-            assert.match(error.message, fault === "missing" ? /has no metadata\.json any more/ : /not valid JSON/, id);
-            command = error.recovery!.command;
-          } else {
-            assert.equal(out["code"], "local_io", id);
-            assert.equal(out["task_id"], id, `${id}: the legacy payload names the task`);
-            assert.ok(String(out["hint"]).startsWith("meshy project record "), `${id}: the legacy hint is the record command: ${String(out["hint"])}`);
-            command = String(out["hint"]);
-          }
+          assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, id);
+          const error = out["error"] as { code: string; message: string; recovery: { action: string; automatic: boolean; command: string } | null; hint?: string };
+          assert.equal(error.code, "local_io", id);
+          assert.ok(error.recovery, `${id}: a recovery is offered`);
+          assert.equal(error.recovery!.action, "record_project", id);
+          assert.equal(error.hint, error.recovery!.command, id);
+          assert.match(error.message, fault === "missing" ? /has no metadata\.json any more/ : /not valid JSON/, id);
+          const command: string = error.recovery!.command;
           assert.equal(result.task_id, id, `${id}: the task is kept`);
           assert.equal(result.submission.state, "accepted");
           const words = shellSplit(command);
@@ -441,7 +433,6 @@ test("E03/R5-F03 legacy/v1 × get/wait/stream/create-async/create-sync × metada
             assert.equal(records[0]!.state, "accepted");
             assert.equal(records[0]!.task_id, id);
             assert.equal(result.submission.operation_id, records[0]!.operation_id, `${id}: submission names the journal record`);
-            if (schema === "legacy") assert.equal(out["operation_id"], records[0]!.operation_id, id);
             assert.equal(optionValue(words, "--operation-id"), records[0]!.operation_id, `${id}: the recovery keeps the operation id`);
             assert.equal(api.requests.filter((q) => q.method === "POST").length, 1, id);
           } else {
@@ -492,7 +483,7 @@ test("R5-F03 a project that leaves the workspace during the request (replaced by
     const configDir = String(env["MESHY_CONFIG_DIR"]);
     const workspace = join(dir, "workspace");
     mkdirSync(workspace);
-    for (const schema of ["legacy", "v1"] as const) {
+    for (const schema of ["bare", "v1"] as const) {
       taskId = `escaped-${schema}`;
       const init = await runCli(["project", "init", "--root", join(workspace, "projects"), "--name", `escape-${schema}`], { env, cwd: dir });
       assert.equal(init.code, 0, init.stderr);
@@ -514,15 +505,14 @@ test("R5-F03 a project that leaves the workspace during the request (replaced by
       assert.equal(records.length, 1, `${schema}: journaled exactly once`);
       assert.equal(records[0]!.state, "accepted");
       assert.equal(result.submission.operation_id, records[0]!.operation_id);
-      const message = schema === "v1" ? (out["error"] as { message: string }).message : String(out["message"]);
+      const message = (out["error"] as { message: string }).message;
       assert.match(message, /no longer a target inside the authorised boundary/, schema);
       assert.match(message, /symbolic link|outside the authorised root/, schema);
       assert.match(message, /nothing was recorded/, schema);
       assert.match(message, new RegExp(`operation ${records[0]!.operation_id}`), `${schema}: the journal operation is named`);
-      const hint = schema === "v1" ? (out["error"] as { hint?: string }).hint : (out["hint"] as string | undefined);
+      const hint = (out["error"] as { hint?: string }).hint;
       assert.ok(!(hint ?? "").startsWith("meshy project record"), `${schema}: no record command that would cross the boundary`);
-      if (schema === "v1") assert.equal((out["error"] as { recovery: unknown }).recovery, null, "no recovery that drops the workspace");
-      else assert.equal(out["task_id"], taskId);
+      assert.equal((out["error"] as { recovery: unknown }).recovery, null, "no recovery that drops the workspace");
       assert.deepEqual(listing(outside), ["metadata.json"], `${schema}: nothing was written through the symlink (no snapshot, no lock, no temp)`);
       assert.equal((JSON.parse(readFileSync(join(outside, "metadata.json"), "utf8")) as { tasks: unknown[] }).tasks.length, 0, `${schema}: the escaped metadata was not written`);
     }

@@ -1119,3 +1119,31 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Keep the public API's canonical model ID `meshy-t2.5`; the CLI does not
   introduce a renamed alias. Public API model names need not follow billing
   SKU conventions from the image-generation endpoints.
+
+## D-080 The v1 envelope is the only output schema
+
+- Supersedes the two-schema split in D-002 and the per-command defaults it
+  listed: since 0.5.0 every command — the task resources, `make`, `balance`,
+  `delete`, `api`, `resources`, the `auth` verbs included — prints one
+  `meshy.cli/v1` envelope. The `legacy` data model (bare 0.2.0 payloads, the
+  `-o` status report on stdout, the additive `{name, message, code, hint}`
+  error payload, `_notice.update` decoration) is removed, not deprecated.
+- `--output-schema v1` stays accepted as a hidden no-op so the recovery hints
+  and skill examples already in the wild keep working; `--output-schema legacy`
+  is a usage error (exit 2) whose message names the removal and the six keys.
+  D-065 keeps its one remaining effect: a typed `--output-schema v1` with an
+  untyped `--format` still means JSON on a TTY. Hints and recovery commands no
+  longer carry the flag; `forHumans()` still strips it from old ones.
+- Behaviours that only existed in the legacy model go with it: `get` of a
+  FAILED/CANCELED task exits 0 (`ok: true`, status in `result.task.status`);
+  `-o` on a JSON command (balance, api, delete, list, auth) is refused with
+  the `--save-json` pointer instead of writing the payload to a file; a wait
+  that times out before any status arrives is the `timed_out` error envelope
+  (still exit 8, still naming the task).
+- Why now: the split made the default shape unknowable from the command name,
+  put a machine-only flag on every call in the skill, and existed only for
+  pre-0.3 scripts. The CLI is 0.x and its callers are agents reading the
+  envelope; the exit-code change for FAILED tasks is the one real break and
+  rides the 0.5.0 bump.
+- Tests that iterated `["legacy", "v1"]` now iterate `["bare", "v1"]` (with and
+  without the flag) and assert the same envelope in both arms.

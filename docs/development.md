@@ -34,7 +34,7 @@ meshy-cli/
 │       ├── task-command.ts  # create/get/list/wait/stream/delete factory
 │       ├── operation-store.ts      # submission journal (single POST, unknown outcomes)
 │       ├── stream.ts / poll.ts     # SSE parser + cancellable polling
-│       ├── artifacts.ts / download.ts  # asset keys, safe downloads, legacy -o
+│       ├── artifacts.ts / download.ts  # asset keys, safe downloads, the -o layout
 │       ├── project-store.ts # meshy_output metadata + history
 │       ├── inspect.ts / obj-transform.ts / slicers.ts / doctor.ts
 │       ├── config.ts / runtime.ts / env-file.ts / credentials.ts / oauth.ts

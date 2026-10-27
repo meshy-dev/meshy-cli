@@ -1,7 +1,7 @@
 /**
  * The `meshy.cli/v1` machine contract.
  *
- * Every v1 command prints exactly one envelope on stdout (stream mode prints
+ * Every command prints exactly one envelope on stdout (stream mode prints
  * one per event, see StreamEventEnvelope). The six top-level keys never
  * change; `result` is shaped per command. `ok` reports whether the CLI
  * operation completed — a `get` that returns a FAILED task is `ok:true`, a
@@ -13,8 +13,6 @@ import { classifyError, type ErrorRecovery, type Warning } from "./errors.js";
 export type { Warning } from "./errors.js";
 
 export const SCHEMA_VERSION = "meshy.cli/v1";
-
-export type OutputSchema = "legacy" | "v1";
 
 export interface V1Error {
   code: string;

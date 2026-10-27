@@ -19,7 +19,8 @@ import {
   pollDeviceToken,
   ensureRequestedScopesGranted,
 } from "../src/internal/device.js";
-import { HintedError, toErrorPayload } from "../src/internal/errors.js";
+import { HintedError } from "../src/internal/errors.js";
+import { errorEnvelope } from "../src/internal/result.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -442,23 +443,28 @@ test("ensureRequestedScopesGranted — whitespace-only requested → passes", ()
 });
 
 // ---------------------------------------------------------------------------
-// Error serialization — oauth_error field in toErrorPayload
+// Error envelope — oauth_error in error.details
 // ---------------------------------------------------------------------------
 
-test("toErrorPayload — DeviceFlowError includes oauth_error field", () => {
+/** `error.details` of the v1 envelope a failure renders as. */
+function errorDetails(err: unknown): Record<string, unknown> {
+  const { envelope } = errorEnvelope("auth.login", err);
+  return (envelope.error?.details ?? {}) as Record<string, unknown>;
+}
+
+test("error envelope — DeviceFlowError carries oauth_error in details", () => {
   const err = new DeviceFlowError({
     message: "login was denied",
     code: "oauth_access_denied",
     oauthErrorCode: "access_denied",
     hint: "Run: meshy auth login",
   });
-  const payload = toErrorPayload(err);
-  assert.equal(payload["oauth_error"], "access_denied");
-  assert.equal(payload["code"], "oauth_access_denied");
-  assert.equal(payload["name"], "DeviceFlowError");
+  const details = errorDetails(err);
+  assert.equal(details["oauth_error"], "access_denied");
+  assert.equal(details["code"], "oauth_access_denied");
 });
 
-test("toErrorPayload — expired_token DeviceFlowError serializes distinctly from access_denied", () => {
+test("error envelope — expired_token DeviceFlowError serializes distinctly from access_denied", () => {
   const expired = new DeviceFlowError({
     message: "Device flow authorization code expired.",
     code: "oauth_timeout",
@@ -471,36 +477,37 @@ test("toErrorPayload — expired_token DeviceFlowError serializes distinctly fro
     oauthErrorCode: "access_denied",
     hint: "Run: meshy auth login",
   });
-  const expiredPayload = toErrorPayload(expired);
-  const deniedPayload = toErrorPayload(denied);
+  const expiredDetails = errorDetails(expired);
+  const deniedDetails = errorDetails(denied);
 
-  assert.equal(expiredPayload["oauth_error"], "expired_token");
-  assert.equal(expiredPayload["code"], "oauth_timeout");
+  assert.equal(expiredDetails["oauth_error"], "expired_token");
+  assert.equal(expiredDetails["code"], "oauth_timeout");
+  assert.equal(errorEnvelope("auth.login", expired).envelope.error?.code, "timed_out");
 
-  assert.equal(deniedPayload["oauth_error"], "access_denied");
-  assert.equal(deniedPayload["code"], "oauth_access_denied");
+  assert.equal(deniedDetails["oauth_error"], "access_denied");
+  assert.equal(deniedDetails["code"], "oauth_access_denied");
 
-  // The two payloads must be distinguishable by oauth_error alone.
-  assert.notEqual(expiredPayload["oauth_error"], deniedPayload["oauth_error"]);
+  // The two must be distinguishable by oauth_error alone.
+  assert.notEqual(expiredDetails["oauth_error"], deniedDetails["oauth_error"]);
 });
 
-test("toErrorPayload — invalid_grant DeviceFlowError serializes oauth_error", () => {
+test("error envelope — invalid_grant DeviceFlowError serializes oauth_error", () => {
   const err = new DeviceFlowError({
     message: "Device flow already consumed.",
     code: "oauth_invalid_grant",
     oauthErrorCode: "invalid_grant",
   });
-  const payload = toErrorPayload(err);
-  assert.equal(payload["oauth_error"], "invalid_grant");
-  assert.equal(payload["code"], "oauth_invalid_grant");
+  const details = errorDetails(err);
+  assert.equal(details["oauth_error"], "invalid_grant");
+  assert.equal(details["code"], "oauth_invalid_grant");
 });
 
-test("toErrorPayload — plain HintedError does NOT include oauth_error field", () => {
+test("error envelope — plain HintedError does NOT include oauth_error", () => {
   const err = new HintedError({
     message: "something went wrong",
     code: "oauth_network",
     hint: "retry",
   });
-  const payload = toErrorPayload(err);
-  assert.ok(!("oauth_error" in payload), `plain HintedError must not have oauth_error, got: ${JSON.stringify(payload)}`);
+  const details = errorDetails(err);
+  assert.ok(!("oauth_error" in details), `plain HintedError must not have oauth_error, got: ${JSON.stringify(details)}`);
 });

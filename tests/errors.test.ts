@@ -9,7 +9,7 @@ process.env["MESHY_CLI_NO_UPDATE_NOTIFIER"] = "1";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MeshyApiError, mapHttpError } from "../src/client/errors.js";
-import { exitCodeFor, EXIT_CODES, HintedError, SESSION_REVOKED_HINT, toErrorPayload, UsageError } from "../src/internal/errors.js";
+import { classifyError, exitCodeFor, EXIT_CODES, HintedError, SESSION_REVOKED_HINT, UsageError } from "../src/internal/errors.js";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -119,7 +119,7 @@ test("exitCodeFor — unknown → GENERIC", () => {
   assert.equal(exitCodeFor("string error"), EXIT_CODES.GENERIC);
 });
 
-test("toErrorPayload — 401/auth with credentialKind=oauth → SESSION_REVOKED_HINT", async () => {
+test("classifyError — 401/auth with credentialKind=oauth → SESSION_REVOKED_HINT", async () => {
   const err = await mapHttpError(
     new Response(JSON.stringify({ message: "Unauthorized" }), {
       status: 401,
@@ -130,12 +130,12 @@ test("toErrorPayload — 401/auth with credentialKind=oauth → SESSION_REVOKED_
   );
   assert.equal(err.code, "auth");
   assert.equal(err.credentialKind, "oauth");
-  const payload = toErrorPayload(err);
-  assert.equal(payload["hint"], SESSION_REVOKED_HINT);
-  assert.equal(payload["hint"], "Session revoked or expired. Run: meshy auth login");
+  const payload = classifyError(err);
+  assert.equal(payload.hint, SESSION_REVOKED_HINT);
+  assert.equal(payload.hint, "Session revoked or expired. Run: meshy auth login");
 });
 
-test("toErrorPayload — 401/auth with credentialKind=api_key → old Credential rejected hint", async () => {
+test("classifyError — 401/auth with credentialKind=api_key → old Credential rejected hint", async () => {
   const err = await mapHttpError(
     new Response(JSON.stringify({ message: "Unauthorized" }), {
       status: 401,
@@ -146,13 +146,13 @@ test("toErrorPayload — 401/auth with credentialKind=api_key → old Credential
   );
   assert.equal(err.code, "auth");
   assert.equal(err.credentialKind, "api_key");
-  const payload = toErrorPayload(err);
-  assert.match(String(payload["hint"]), /Credential rejected or revoked/);
-  assert.match(String(payload["hint"]), /meshy auth login/);
-  assert.notEqual(payload["hint"], SESSION_REVOKED_HINT);
+  const payload = classifyError(err);
+  assert.match(String(payload.hint), /Credential rejected or revoked/);
+  assert.match(String(payload.hint), /meshy auth login/);
+  assert.notEqual(payload.hint, SESSION_REVOKED_HINT);
 });
 
-test("toErrorPayload — 401/auth with no credentialKind → SESSION_REVOKED_HINT (unknown defaults to oauth path)", async () => {
+test("classifyError — 401/auth with no credentialKind → SESSION_REVOKED_HINT (unknown defaults to oauth path)", async () => {
   const err = await mapHttpError(
     new Response(JSON.stringify({ message: "Unauthorized" }), {
       status: 401,
@@ -163,8 +163,8 @@ test("toErrorPayload — 401/auth with no credentialKind → SESSION_REVOKED_HIN
   );
   assert.equal(err.code, "auth");
   assert.equal(err.credentialKind, undefined);
-  const payload = toErrorPayload(err);
-  assert.equal(payload["hint"], SESSION_REVOKED_HINT);
+  const payload = classifyError(err);
+  assert.equal(payload.hint, SESSION_REVOKED_HINT);
 });
 
 test("MeshyApiError — toJSON includes credentialKind when set", () => {

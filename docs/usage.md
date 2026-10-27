@@ -127,10 +127,10 @@ meshy-cli multi-color-print create --input-task-id <id> --style cartoon --printe
 meshy-cli multi-image-to-3d create --image-urls front.png,side.png,back.png --geometry-resolution 2k
 
 # fire-and-forget (--async): exactly one POST, returns the task_id, query later
-TASK=$(meshy-cli text-to-image create --prompt "mountain landscape" --async --output-schema v1 | jq -r .result.submission.task_id)
-meshy-cli text-to-image get  "$TASK" --output-schema v1
-meshy-cli text-to-image wait "$TASK" --output-schema v1 --save-json ./task.json
-meshy-cli text-to-image stream "$TASK" --format ndjson --output-schema v1   # Server-Sent Events
+TASK=$(meshy-cli text-to-image create --prompt "mountain landscape" --async | jq -r .result.submission.task_id)
+meshy-cli text-to-image get  "$TASK"
+meshy-cli text-to-image wait "$TASK" --save-json ./task.json
+meshy-cli text-to-image stream "$TASK" --format ndjson   # Server-Sent Events
 
 # UV unwrap and Creative Lab (photo → printable product, two stages)
 meshy uv-unwrap create --input-task-id <id> --async
@@ -167,7 +167,7 @@ meshy-cli api POST /text-to-3d --data '{"mode":"preview","prompt":"a cactus"}'
 ## What a person sees at a terminal
 
 `pretty`, the default on a TTY, is a view designed per command, not a dump of the
-payload. Every command shows the same view whichever `--output-schema` produced it:
+payload. Every command shows the same view, whatever its JSON looks like:
 
 ```text
 ✓ [1/2] text-to-3d preview (geometry)  1m 27s  01a0c94c-…
@@ -203,7 +203,7 @@ One command per endpoint. They are all registered and all supported, but they
 are indexed by `meshy resources` rather than listed in `meshy --help` — that
 help text is read on every invocation (an agent pays for the whole surface each
 time), so it should not grow with the API. `meshy <resource> --help` documents
-each one in full; `meshy resources --output-schema v1` also lists the query and
+each one in full; `meshy resources` also lists the query and
 local commands with their kind.
 
 | Command | Meshy endpoint | Docs |
@@ -300,14 +300,13 @@ in the web app are rejected by the server (404).
 a printable STL (plus a preview GLB when available), with the same
 get/list/wait/stream/delete verbs.
 
-## Saving artifacts with `-o` (legacy) and `meshy download` (selective)
+## Saving artifacts with `-o` and `meshy download` (selective)
 
 When `-o` is set on a `create`/`wait`/`get`, the CLI downloads every artifact
-the task produced, writes a sidecar metadata file, and (legacy schema) prints a
-status report instead of JSON. Single-file outputs get a per-file
-`<stem>_meta.json`; directory-mode outputs share a single `meta.json`. Under
-`--output-schema v1` the same download is reported in `result.downloads`, and a
-task that is not yet SUCCEEDED yields `downloads.state: "not_ready"` with exit 0.
+the task produced, writes a sidecar metadata file, and reports the download in
+`result.downloads`. Single-file outputs get a per-file `<stem>_meta.json`;
+directory-mode outputs share a single `meta.json`. A task that is not yet
+SUCCEEDED yields `downloads.state: "not_ready"` with exit 0.
 
 ```bash
 meshy-cli text-to-image create --ai-model nano-banana-2-1 --aspect-ratio 16:9 --prompt "a leaf" -o assets/leaf-wide.jpeg
@@ -327,7 +326,7 @@ meshy download --resource image-to-3d --task-id <id> --all --output-dir ./out/  
 meshy download --url https://assets.meshy.ai/... --output ./file.glb
 ```
 
-Sources are `--task-json` (an API task, a legacy `meta.json`, or a v1 envelope),
+Sources are `--task-json` (an API task, a `meta.json` sidecar, or a v1 envelope),
 `--url`, or `--resource` + `--task-id`; selectors are `--asset <key>` (repeatable),
 `--model-format`, `--kind`, `--all`. With several assets and no selector the
 command lists the candidates and exits 2 instead of guessing. Selecting an OBJ
@@ -434,8 +433,8 @@ URI is accepted when its bytes are a GLB.
 | `--api-key-file <path>` | Read `MESHY_API_KEY` from an explicit dotenv-style file (only that key) |
 | `--base-url-v1 <url>` / `--base-url-v2 <url>` | Override endpoints (staging/proxy) |
 | `--base-url-creative-lab <url>` | Override the Creative Lab base (default: `<v1 origin>/openapi/creative-lab`) |
-| `--output-schema legacy\|v1` | Stdout data model (existing commands default to `legacy`; new commands are `v1`) |
-| `--format json\|pretty\|ndjson` | Stdout rendering. Defaults to `pretty` when stdout is a terminal and `json` everywhere else — piped, redirected, or spawned as a subprocess, which is every agent, script and CI run. `--json` is shorthand for `--format json`. `-o <file>` keeps writing JSON unless `--format` is explicit |
+| `--output-schema v1` | Accepted as a no-op for compatibility: every command prints the `meshy.cli/v1` envelope. `legacy` was removed in 0.5.0 and is refused |
+| `--format json\|pretty\|ndjson` | Stdout rendering. Defaults to `pretty` when stdout is a terminal and `json` everywhere else — piped, redirected, or spawned as a subprocess, which is every agent, script and CI run. `--json` is shorthand for `--format json` |
 | `-o, --output <path>` | Download artifacts to a file/directory (task commands); output file for `mesh prepare-print` |
 | `--workspace <dir>` | Confine every written file to this directory: `download`, `-o` on task verbs and `make` (report-only tasks included), `--save-json`, `--project`/project folders and the history index (skipped with `index_dirty` when its root would fall outside), `mesh prepare-print` outputs and their copied materials — checked on real paths before anything, even a directory, is created. The boundary is frozen when the command starts (real path and directory identity): a workspace or project replaced by a symlink while a request is in flight is refused, never followed |
 | `--no-update-check` | Skip the background npm version check in this process |
@@ -466,8 +465,6 @@ meshy-cli checks the npm registry for a newer version at most once per 24 hours.
 
 When a newer version is available:
 
-- **Legacy JSON object outputs** carry a top-level `_notice.update = { current, latest, message, command }` so agents can relay it to the user.
-- **v1 envelopes are never decorated** — the six keys are the contract; humans get the hint on stderr.
-- **ndjson arrays** (legacy) carry `_notice.update` on the **first line only**.
+- **The envelope is never decorated** — the six keys are the contract; humans get the hint on stderr.
 - **Humans on an interactive terminal** get a single line on stderr after the command output.
 - **stdout is never polluted** — the notice never appears on stdout.

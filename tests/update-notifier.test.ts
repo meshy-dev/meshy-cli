@@ -3,8 +3,8 @@
  *
  * Covers: compareVersions, shouldSkip, buildNotice, checkCached,
  * isCacheStale, writeState, fetchLatestVersion, runRefreshCommand,
- * attachUpdateNotice, printHumanUpdateHint, refreshCache, emit-level
- * injection, and formatReport with _notice.
+ * printHumanUpdateHint, refreshCache, and the rule that the v1 envelope is
+ * never decorated with a notice.
  */
 
 import test from "node:test";
@@ -21,7 +21,6 @@ import {
   writeState,
   fetchLatestVersion,
   runRefreshCommand,
-  attachUpdateNotice,
   printHumanUpdateHint,
   refreshCache,
   CACHE_TTL_MS,
@@ -29,10 +28,10 @@ import {
   UPDATE_COMMAND,
 } from "../src/internal/update-notifier.js";
 import { PACKAGE_NAME } from "../src/internal/version.js";
-import { emit } from "../src/internal/output.js";
+import { emitEnvelope } from "../src/internal/output.js";
+import { okEnvelope } from "../src/internal/result.js";
 
 const stripAnsi = (s: string): string => s.replace(/\u001b\[[0-9;]*m/g, "");
-import { formatReport } from "../src/internal/report.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -564,60 +563,7 @@ test("runRefreshCommand — MESHY_CLI_NO_UPDATE_NOTIFIER=1 → no state file", a
   }
 });
 
-// ---------------------------------------------------------------------------
-// 9. attachUpdateNotice
-// ---------------------------------------------------------------------------
-
 const fakeNotice = buildNotice("9.9.9", "0.1.0")!;
-
-test("attachUpdateNotice — object + json → has _notice.update", () => {
-  const result = attachUpdateNotice({ a: 1 }, "json", fakeNotice) as Record<string, unknown>;
-  assert.ok("_notice" in result);
-  assert.deepEqual((result["_notice"] as Record<string, unknown>)["update"], fakeNotice);
-});
-
-test("attachUpdateNotice — object + pretty → unchanged", () => {
-  const value = { a: 1 };
-  const result = attachUpdateNotice(value, "pretty", fakeNotice);
-  assert.deepEqual(result, value);
-});
-
-test("attachUpdateNotice — array [{a:1},{a:2}] + ndjson → first element has _notice, second does NOT", () => {
-  const arr = [{ a: 1 }, { a: 2 }];
-  const result = attachUpdateNotice(arr, "ndjson", fakeNotice) as Array<Record<string, unknown>>;
-  assert.ok(Array.isArray(result));
-  assert.equal(result.length, 2);
-  assert.ok("_notice" in result[0]!);
-  assert.ok(!("_notice" in result[1]!));
-});
-
-test("attachUpdateNotice — array + json → unchanged", () => {
-  const arr = [{ a: 1 }];
-  const result = attachUpdateNotice(arr, "json", fakeNotice);
-  assert.deepEqual(result, arr);
-});
-
-test("attachUpdateNotice — null → unchanged", () => {
-  assert.equal(attachUpdateNotice(null, "json", fakeNotice), null);
-});
-
-test("attachUpdateNotice — string → unchanged", () => {
-  assert.equal(attachUpdateNotice("hello", "json", fakeNotice), "hello");
-});
-
-test("attachUpdateNotice — null notice → unchanged", () => {
-  const value = { a: 1 };
-  const result = attachUpdateNotice(value, "json", null);
-  assert.deepEqual(result, value);
-});
-
-test("attachUpdateNotice — existing _notice plain object is merged, not clobbered", () => {
-  const value = { a: 1, _notice: { other: true } };
-  const result = attachUpdateNotice(value, "json", fakeNotice) as Record<string, unknown>;
-  const notice = result["_notice"] as Record<string, unknown>;
-  assert.equal(notice["other"], true, "_notice.other should be preserved");
-  assert.deepEqual(notice["update"], fakeNotice, "_notice.update should be set");
-});
 
 // ---------------------------------------------------------------------------
 // 10. printHumanUpdateHint
@@ -861,93 +807,44 @@ test("E2E — unreachable registry URL → exit 0 and no state file written", { 
 });
 
 // ---------------------------------------------------------------------------
-// 13. emit-level injection
+// 13. the envelope is never decorated
 // ---------------------------------------------------------------------------
 
-test("emit — json with newer version in cache → stdout has _notice.update with 4 keys", () => {
+/** Capture stdout across an async body; the fake write honours the completion callback writeStdout waits on. */
+async function captureStdoutAsync(fn: () => Promise<void>): Promise<string> {
+  const chunks: string[] = [];
+  const original = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string | Uint8Array, ...rest: unknown[]): boolean => {
+    chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    const cb = rest.find((r) => typeof r === "function") as ((err?: Error) => void) | undefined;
+    if (cb) cb();
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    await fn();
+    return chunks.join("");
+  } finally {
+    process.stdout.write = original;
+  }
+}
+
+test("emitEnvelope — a newer version in the cache never adds a key to the envelope", async () => {
   const dir = makeTmpDir();
   const savedHome = process.env["HOME"];
   const savedEnv = saveEnv(NOTIFIER_ENV_KEYS);
   try {
     clearNotifierEnv();
     process.env["HOME"] = dir;
-    // Write a state file with a newer version
     const stateDir = join(dir, ".config", "meshy");
     mkdirSync(stateDir, { recursive: true });
-    writeFileSync(
-      join(stateDir, "update-state.json"),
-      JSON.stringify({ latest_version: "9.9.9", checked_at: Date.now() }),
-    );
-    const out = captureStdout(() => emit({ a: 1 }, { format: "json" }));
+    writeFileSync(join(stateDir, "update-state.json"), JSON.stringify({ latest_version: "9.9.9", checked_at: Date.now() }));
+    const out = await captureStdoutAsync(() => emitEnvelope(okEnvelope("balance", { balance: 1 }), "json"));
     const parsed = JSON.parse(out) as Record<string, unknown>;
-    assert.ok("_notice" in parsed, "should have _notice");
-    const notice = (parsed["_notice"] as Record<string, unknown>)["update"] as Record<string, unknown>;
-    assert.ok(notice, "_notice.update should exist");
-    assert.ok("current" in notice, "should have current");
-    assert.ok("latest" in notice, "should have latest");
-    assert.ok("message" in notice, "should have message");
-    assert.ok("command" in notice, "should have command");
+    assert.deepEqual(Object.keys(parsed), ["schema_version", "command", "ok", "result", "error", "warnings"]);
+    assert.ok(!("_notice" in parsed));
   } finally {
     if (savedHome === undefined) delete process.env["HOME"];
     else process.env["HOME"] = savedHome;
     restoreEnv(savedEnv);
   }
-});
-
-test("emit — ndjson array with newer version → two lines, only line 1 has _notice", () => {
-  const dir = makeTmpDir();
-  const savedHome = process.env["HOME"];
-  const savedEnv = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    process.env["HOME"] = dir;
-    const stateDir = join(dir, ".config", "meshy");
-    mkdirSync(stateDir, { recursive: true });
-    writeFileSync(
-      join(stateDir, "update-state.json"),
-      JSON.stringify({ latest_version: "9.9.9", checked_at: Date.now() }),
-    );
-    const out = captureStdout(() => emit([{ a: 1 }, { a: 2 }], { format: "ndjson" }));
-    const lines = out.trim().split("\n");
-    assert.equal(lines.length, 2);
-    const first = JSON.parse(lines[0]!) as Record<string, unknown>;
-    const second = JSON.parse(lines[1]!) as Record<string, unknown>;
-    assert.ok("_notice" in first, "first line should have _notice");
-    assert.ok(!("_notice" in second), "second line should NOT have _notice");
-  } finally {
-    if (savedHome === undefined) delete process.env["HOME"];
-    else process.env["HOME"] = savedHome;
-    restoreEnv(savedEnv);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// 14. formatReport with _notice
-// ---------------------------------------------------------------------------
-
-test("formatReport — with _notice → final line equals the message", () => {
-  const notice = buildNotice("2.0.0", "1.0.0")!;
-  const out = formatReport({
-    status: "SUCCESS",
-    taskId: "t1",
-    type: "text-to-3d",
-    savedFiles: ["out/model.glb"],
-    metadataPath: "out/meta.json",
-    _notice: notice,
-  });
-  const lines = out.trimEnd().split("\n");
-  assert.equal(lines[lines.length - 1], notice.message);
-});
-
-test("formatReport — without _notice → unchanged behavior (no extra line)", () => {
-  const out = formatReport({
-    status: "SUCCESS",
-    taskId: "t2",
-    type: "text-to-3d",
-    savedFiles: ["out/model.glb"],
-    metadataPath: "out/meta.json",
-  });
-  // Should end with the metadata path line
-  assert.match(out, /Metadata path: out\/meta\.json\n$/);
-  assert.ok(!out.includes("available"), "should not contain update notice");
 });
