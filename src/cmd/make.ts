@@ -30,7 +30,7 @@
 import { Command, Option } from "commander";
 import { basename } from "node:path";
 import { abortSignal, noteForView, wasInterrupted } from "../internal/context.js";
-import { CliError, HintedError, UsageError } from "../internal/errors.js";
+import { CliError, UsageError } from "../internal/errors.js";
 import { parseInt10 } from "../internal/flags.js";
 import { normalizeMediaPayload } from "../internal/file-input.js";
 import { logger } from "../internal/logger.js";

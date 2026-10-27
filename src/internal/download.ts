@@ -32,7 +32,7 @@ import type { Task } from "../client/types.js";
 import { publishTempFile, tempPathFor, writeJsonFile } from "./atomic-file.js";
 import { CliError, UsageError } from "./errors.js";
 import { logger } from "./logger.js";
-import { freezeRoot, isInside, looksLikeFile, realpathLenient, resolveWithinRoot, safeExtension, safeSegment, type AuthorisedRoot } from "./paths.js";
+import { freezeRoot, isInside, looksLikeFile, resolveWithinRoot, safeExtension, safeSegment, type AuthorisedRoot } from "./paths.js";
 import { USER_AGENT } from "./user-agent.js";
 import { modelAsset, productFromTaskType, type Asset } from "./artifacts.js";
 import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";

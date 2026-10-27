@@ -18,13 +18,18 @@ import { MeshyApiError } from "../src/client/errors.js";
 import { TransportError } from "../src/client/transport.js";
 import { apiCheckFailure, buildDoctorCommand } from "../src/cmd/doctor.js";
 import { resetCommandContextForTests } from "../src/internal/context.js";
-import { runDoctor, runDoctorDetailed, type DoctorReport } from "../src/internal/doctor.js";
+import { runDoctorDetailed, type DoctorOptions, type DoctorReport } from "../src/internal/doctor.js";
 import { authRequiredError, CliError, UsageError } from "../src/internal/errors.js";
 import { mirrorGlobalOptionsToDescendants, registerRootGlobalOptions, walkCommands } from "../src/internal/global-options.js";
 import type { V1Envelope } from "../src/internal/result.js";
 import type { GlobalFlags } from "../src/internal/runtime.js";
 import { VERSION } from "../src/internal/version.js";
 import { jsonReply, parseSingleJson, startMockApi } from "./helpers/cli.js";
+
+/** The report of one diagnosis run (the command also reads the API failure; these tests read the report). */
+async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
+  return (await runDoctorDetailed(opts)).report;
+}
 
 const FLAG_SECRET = "msy_flag_secret_value_789";
 const ENV_SECRET = "msy_env_secret_value_456";

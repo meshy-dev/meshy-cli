@@ -311,7 +311,7 @@ function attachToProject(
     stage,
     resource: descriptor.id,
     taskType: task?.type ?? null,
-    endpoint: descriptor.legacyEndpoint,
+    endpoint: descriptor.endpoint,
     parentTaskId: parentTaskIdFromPayload(extra.payload ?? null),
     status: task?.status ?? null,
     taskJson: null,
@@ -341,7 +341,6 @@ function attachToProject(
     const indexRoot = indexRootFor(located, undefined, opened.flags.workspaceRoot);
     const rec = recordTask(located, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
     if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}; run \`meshy project rebuild-index\``));
-    if (rec.migrated_from_legacy) warnings.push(warning("metadata_migrated", "legacy metadata.json migrated to schema_version 2 (backup kept beside it)"));
     return { project_dir: projectDir, snapshot: snapshot?.path ?? null, stage, action: rec.action, index: rec.index };
   } catch (err) {
     // The task exists and the journal is written; only the project entry is
@@ -626,7 +625,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         throw deleteFailure(err, taskId, nextCommands(descriptor, taskId).wait);
       }
       const outcome = cancels ? { deleted: false, canceled: true } : { deleted: true };
-      await emitResult(opened, { resource: spec.name, endpoint: descriptor.legacyEndpoint, task_id: taskId, ...outcome, response: raw ?? null });
+      await emitResult(opened, { resource: spec.name, endpoint: descriptor.endpoint, task_id: taskId, ...outcome, response: raw ?? null });
     });
 
   // list
@@ -759,7 +758,7 @@ export async function submitCreate(
   const credential = credentialIdentityFor(runtime, apiOrigin);
   const identity = {
     resource: descriptor.id,
-    endpoint: descriptor.legacyEndpoint,
+    endpoint: descriptor.endpoint,
     apiOrigin,
     credentialFingerprint: credential.fingerprint,
     credentialVerified: credential.verified,

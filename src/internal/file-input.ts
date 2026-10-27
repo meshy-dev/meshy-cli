@@ -46,64 +46,6 @@ export interface NormalizedMedia {
   bytes: number | null;
 }
 
-/** camelCase option names that hold image inputs (legacy flag-level API). */
-export const IMAGE_FIELDS = {
-  scalar: [
-    "imageUrl",       // image-to-3d
-    "imageStyleUrl",  // retexture
-    "textureImageUrl", // text-to-3d refine / rigging
-  ] as const,
-  list: [
-    "imageUrls",            // multi-image-to-3d
-    "referenceImageUrls",   // image-to-image
-    "multiviewImageUrls",   // retexture
-  ] as const,
-};
-
-/** camelCase option names that hold 3D model inputs (legacy flag-level API). */
-export const MODEL_FIELDS = {
-  scalar: ["modelUrl"] as const,  // remesh, retexture, rigging, uv-unwrap …
-  list: [] as const,
-};
-
-export async function resolveImageFields(opts: Record<string, unknown>, o: NormalizeOptions = {}): Promise<void> {
-  await resolveGroup(opts, IMAGE_FIELDS, "image", o);
-}
-
-export async function resolveModelFields(opts: Record<string, unknown>, o: NormalizeOptions = {}): Promise<void> {
-  await resolveGroup(opts, MODEL_FIELDS, "model", o);
-}
-
-async function resolveGroup(
-  opts: Record<string, unknown>,
-  fields: { scalar: readonly string[]; list: readonly string[] },
-  kind: MediaKind,
-  o: NormalizeOptions,
-): Promise<void> {
-  for (const key of fields.scalar) {
-    const v = opts[key];
-    if (typeof v === "string" && v) {
-      opts[key] = (await resolveOne(v, `--${toFlag(key)}`, kind, undefined, o)).value;
-    }
-  }
-  for (const key of fields.list) {
-    const v = opts[key];
-    if (Array.isArray(v) && v.length > 0) {
-      const resolved: string[] = [];
-      for (const entry of v) {
-        if (typeof entry === "string" && entry) {
-          resolved.push((await resolveOne(entry, `--${toFlag(key)}`, kind, undefined, o)).value);
-        }
-      }
-      opts[key] = resolved;
-    }
-  }
-}
-
-function toFlag(camel: string): string {
-  return camel.replace(/([A-Z])/g, "-$1").toLowerCase();
-}
-
 function flagForField(path: string): string {
   return `--${path.replace(/_/g, "-")}`;
 }
@@ -164,7 +106,7 @@ async function resolveOne(
   input: string,
   flagLabel: string,
   kind: MediaKind,
-  rule: FormatRule | undefined,
+  rule: FormatRule,
   o: NormalizeOptions,
 ): Promise<Resolved> {
   const limits: MediaLimits = { ...DEFAULT_MEDIA_LIMITS, ...(o.limits ?? {}) };
@@ -187,7 +129,7 @@ function validateDataUri(
   input: string,
   flagLabel: string,
   kind: MediaKind,
-  rule: FormatRule | undefined,
+  rule: FormatRule,
   limits: MediaLimits,
 ): Resolved {
   const m = DATA_URI_RE.exec(input);
@@ -207,7 +149,7 @@ function validateDataUri(
   if (kind === "model" && !(mime.startsWith("model/") || mime === "application/octet-stream")) {
     throw new UsageError(`${flagLabel}: expected a 3D-model data: URI (model/* or application/octet-stream), got ${mime}`);
   }
-  if (rule?.formats && rule.formats.length > 0) {
+  if (rule.formats && rule.formats.length > 0) {
     // application/octet-stream says nothing about the format: a GLB is known by its magic.
     const ext = mime === "application/octet-stream" && Buffer.from(body.slice(0, 8), "base64").subarray(0, 4).toString("latin1") === "glTF" ? "glb" : extForMime(mime);
     if (!ext || !rule.formats.includes(ext)) throw formatError(flagLabel, rule, `data: URI is ${mime}`);
@@ -251,7 +193,7 @@ function loadLocalFile(
   input: string,
   flagLabel: string,
   kind: MediaKind,
-  rule: FormatRule | undefined,
+  rule: FormatRule,
   limits: MediaLimits,
   cwd: string,
 ): Resolved {
@@ -273,7 +215,7 @@ function loadLocalFile(
   if (!mime) {
     throw new UsageError(`${flagLabel}: could not detect ${kind === "image" ? "image" : "3d model"} MIME type for ${absPath}`);
   }
-  if (rule?.formats && rule.formats.length > 0) {
+  if (rule.formats && rule.formats.length > 0) {
     const ext = extForMime(mime) ?? extname(absPath).slice(1).toLowerCase();
     if (!rule.formats.includes(ext)) throw formatError(flagLabel, rule, `got ${ext || "unknown"}`);
   }

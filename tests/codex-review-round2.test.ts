@@ -43,10 +43,6 @@ function listing(dir: string): string[] {
   return existsSync(dir) ? readdirSync(dir).sort() : ["<absent>"];
 }
 
-function localEnv(): Record<string, string | undefined> {
-  return { PATH: process.env["PATH"], HOME: process.env["HOME"], MESHY_CLI_NO_UPDATE_NOTIFIER: "1", MESHY_CONFIG_DIR: tmpDir("cfg-") };
-}
-
 async function pngBytes(color: string): Promise<Buffer> {
   return sharp({ create: { width: 2, height: 2, channels: 3, background: color } }).png().toBuffer();
 }

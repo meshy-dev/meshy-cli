@@ -23,7 +23,6 @@ export const TaskErrorSchema = z
     message: z.string().default(""),
   })
   .passthrough();
-export type TaskError = z.infer<typeof TaskErrorSchema>;
 
 export const TextureSetSchema = z
   .object({
@@ -33,7 +32,6 @@ export const TextureSetSchema = z
     roughness: z.string().nullable().optional(),
   })
   .passthrough();
-export type TextureSet = z.infer<typeof TextureSetSchema>;
 
 export const TaskStatusSchema = z.union([
   z.literal("PENDING"),
@@ -43,7 +41,6 @@ export const TaskStatusSchema = z.union([
   z.literal("CANCELED"),
   z.string(),
 ]);
-export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
 export const TERMINAL_STATUSES = new Set<string>(["SUCCEEDED", "FAILED", "CANCELED"]);
 
@@ -62,7 +59,6 @@ export const PrintabilitySchema = z
     evaluated_at: z.number().optional(),
   })
   .passthrough();
-export type Printability = z.infer<typeof PrintabilitySchema>;
 
 /** A count or epoch-millisecond field that a server may omit or send as null: absent and null both read as 0. */
 const nullableNumberOr0 = z
@@ -118,5 +114,4 @@ export type Task = z.infer<typeof TaskSchema>;
 export const TaskCreateResponseSchema = z.object({
   result: z.string(),
 });
-export type TaskCreateResponse = z.infer<typeof TaskCreateResponseSchema>;
 

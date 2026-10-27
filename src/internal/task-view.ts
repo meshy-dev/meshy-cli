@@ -76,7 +76,7 @@ export function toTaskView(raw: unknown, opts: TaskViewOptions = {}): TaskView {
   const view: TaskView = {
     task_id: id,
     resource: opts.descriptor?.id ?? null,
-    endpoint: opts.descriptor?.legacyEndpoint ?? opts.endpoint ?? null,
+    endpoint: opts.descriptor?.endpoint ?? opts.endpoint ?? null,
     type: str(r["type"]),
     name: str(r["name"]),
     status: str(r["status"]),

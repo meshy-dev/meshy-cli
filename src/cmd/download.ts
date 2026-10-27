@@ -18,7 +18,7 @@ import { lstatSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { findTaskResource, TASK_RESOURCES, type TaskResourceDescriptor } from "../client/resource-registry.js";
 import { enumerateAssets, selectAssets, SelectionError, type Asset, type AssetKind } from "../internal/artifacts.js";
-import { emitResult, openCommand, saveRawJson, type OpenedCommand } from "../internal/command-helpers.js";
+import { emitResult, openCommand, saveRawJson } from "../internal/command-helpers.js";
 import { abortSignal } from "../internal/context.js";
 import { downloadAssets, type DownloadedFile } from "../internal/download.js";
 import { withSpinner } from "../internal/progress.js";
@@ -283,7 +283,7 @@ export const downloadCommand = new Command("download")
         stage: opts.stage ?? stageFromTaskType(task["type"], descriptor?.id ?? "download"),
         resource: descriptor?.id ?? null,
         taskType: typeof task["type"] === "string" ? (task["type"] as string) : null,
-        endpoint: descriptor?.legacyEndpoint ?? null,
+        endpoint: descriptor?.endpoint ?? null,
         status: typeof task["status"] === "string" ? (task["status"] as string) : null,
         files: [],
       };

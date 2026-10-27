@@ -21,10 +21,6 @@ export function setLogLevel(level: LogLevel): void {
   currentLevel = level;
 }
 
-export function getLogLevel(): LogLevel {
-  return currentLevel;
-}
-
 function write(level: LogLevel, msg: string, extra?: unknown): void {
   if (LEVEL_ORDER[level] < LEVEL_ORDER[currentLevel]) return;
   const time = new Date().toISOString();

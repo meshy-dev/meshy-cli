@@ -13,7 +13,6 @@ import { ShowcasesEndpoint } from "./endpoints/showcases.js";
 import {
   creativeLabResource,
   requireTaskResource,
-  TASK_RESOURCES,
   type ApiBase,
   type CreativeLabProduct,
   type CreativeLabStage,
@@ -119,29 +118,5 @@ export class MeshyClient {
     return this.transportFor(apiVersion).fetchRaw(path, { ...init, method });
   }
 }
-
-/** The 0.2.0 resource names, still valid ids in the registry. */
-export const RESOURCE_NAMES = [
-  "text-to-3d",
-  "image-to-3d",
-  "multi-image-to-3d",
-  "remesh",
-  "convert",
-  "resize",
-  "rigging",
-  "animate",
-  "retexture",
-  "text-to-image",
-  "text-to-motion",
-  "image-to-image",
-  "multi-color-print",
-  "analyze-printability",
-  "repair-printability",
-] as const;
-
-export type ResourceName = (typeof RESOURCE_NAMES)[number];
-
-/** Every registered task resource id (15 legacy + uv-unwrap + Creative Lab stages). */
-export const TASK_RESOURCE_IDS: readonly string[] = TASK_RESOURCES.map((d) => d.id);
 
 export { MeshyApiError } from "./errors.js";

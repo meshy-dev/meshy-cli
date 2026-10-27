@@ -1,5 +1,5 @@
 /**
- * Project store (T-072..T-077): layout, legacy compatibility, de-duplication,
+ * Project store (T-072..T-077): layout, schema checks, de-duplication,
  * concurrency, index repair and path safety — plus the `--project` hook on
  * task verbs and the `project` subcommands as black boxes.
  */
@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -76,50 +76,30 @@ test("T-074 (task_id, stage) is merged, different stages and tasks are kept", ()
   assert.equal(meta.root_task_id, "t1");
 });
 
-test("T-073 legacy metadata.json (no schema_version) is read as v1, migrated on write with a backup, unknown fields kept; download meta.json is never accepted as metadata", () => {
+test("T-073 only schema_version 2 is read: an older or foreign metadata.json is refused and left as it was; unknown fields of a v2 file survive a rewrite", () => {
   const root = tmpDir("proj-root-");
-  const folder = "20260101_120000_legacy_abcdef12";
-  const dir = join(root, folder);
+  const dir = join(root, "20260101_120000_old_abcdef12");
   mkdirSync(dir);
-  const legacy = {
-    project_name: "legacy",
-    folder,
-    root_task_id: "abcdef12-legacy",
-    created_at: "2026-01-01T12:00:00",
-    updated_at: "2026-01-01T12:00:00",
-    tasks: [{ task_id: "abcdef12-legacy", task_type: "text-to-3d", stage: "preview", files: ["preview.glb"], created_at: "2026-01-01T12:00:00" }],
-    custom_note: "keep me",
+  const old = {
+    project_name: "old",
+    root_task_id: "abcdef12-old",
+    tasks: [{ task_id: "abcdef12-old", task_type: "text-to-3d", stage: "preview", files: ["preview.glb"], created_at: "2026-01-01T12:00:00" }],
   };
-  writeFileSync(join(dir, "metadata.json"), JSON.stringify(legacy, null, 2));
-  writeFileSync(join(root, "history.json"), JSON.stringify({ version: 1, projects: [{ folder, prompt: "legacy", task_type: "text-to-3d", root_task_id: "abcdef12-legacy", created_at: legacy.created_at, updated_at: legacy.updated_at, task_count: 1 }] }));
+  writeFileSync(join(dir, "metadata.json"), JSON.stringify(old));
+  assert.throws(() => readProject(dir), /not schema_version 2/);
+  assert.throws(() => recordTask(dir, { taskId: "abcdef12-old", stage: "refined", files: ["refined.glb"] }, { root, now: fixedNow }), /not schema_version 2/);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "metadata.json"), "utf8")), old, "a refused file is never rewritten");
+  // A download meta.json is not project metadata either.
+  writeFileSync(join(dir, "metadata.json"), JSON.stringify({ resource: "image-to-3d", task: { id: "x" }, saved_files: [] }));
+  assert.throws(() => readProject(dir), /not schema_version 2/);
 
-  const read = readProject(dir);
-  assert.equal(read.legacy, true);
-  assert.equal(read.metadata.tasks[0]!.resource, null);
-  assert.equal(read.metadata.tasks[0]!.status, null);
-  assert.equal(read.metadata["custom_note"], "keep me");
-  // show does not rewrite the file
-  assert.equal(JSON.parse(readFileSync(join(dir, "metadata.json"), "utf8")).schema_version, undefined);
-
-  const rec = recordTask(dir, { taskId: "abcdef12-legacy", stage: "refined", files: ["refined.glb"] }, { root, now: fixedNow });
-  assert.equal(rec.migrated_from_legacy, true);
-  const after = JSON.parse(readFileSync(join(dir, "metadata.json"), "utf8")) as Record<string, unknown>;
-  assert.equal(after["schema_version"], 2);
-  assert.equal(after["custom_note"], "keep me");
-  assert.equal((after["tasks"] as unknown[]).length, 2);
-  const backups = readdirSync(dir).filter((f) => f.startsWith("metadata.json.bak-"));
-  assert.equal(backups.length, 1);
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, backups[0]!), "utf8")), legacy);
-  const hist = JSON.parse(readFileSync(join(root, "history.json"), "utf8")) as { version: number; projects: Array<{ task_count: number }> };
-  assert.equal(hist.version, 1);
-  assert.equal(hist.projects[0]!.task_count, 2);
-
-  // A CLI download meta.json is not project metadata.
-  const other = join(root, "20260101_120001_dl_deadbeef");
-  mkdirSync(other);
-  writeFileSync(join(other, "metadata.json"), JSON.stringify({ resource: "image-to-3d", task: { id: "x" }, saved_files: [] }));
-  const view = readProject(other).metadata;
-  assert.deepEqual(view.tasks, [], "no tasks array → no tasks, nothing invented");
+  const init = initProject(root, { name: "kept", now: fixedNow });
+  const path = join(init.project_dir, "metadata.json");
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), custom_note: "keep me" }));
+  recordTask(init.project_dir, { taskId: "t1", stage: "preview", files: ["a.glb"] }, { root, now: fixedNow });
+  const after = JSON.parse(readFileSync(path, "utf8")) as { custom_note: string; tasks: unknown[] };
+  assert.equal(after.custom_note, "keep me");
+  assert.equal(after.tasks.length, 1);
 });
 
 test("T-077 unsafe names and paths are refused or skipped; damaged JSON is never overwritten", () => {
@@ -214,8 +194,7 @@ test("T-072 CLI: project init/record/show/list/rebuild-index run without a key o
   assert.ok(recEnv.warnings.some((w) => w.code === "recorded_file_missing"));
   const show = await runCli(["project", "show", "--project", initEnv.result.project_dir], { cwd, env });
   assert.equal(show.code, 0, show.stderr);
-  const showEnv = parseSingleJson(show.stdout) as { result: { legacy_format: boolean; files: Array<{ file: string; present: boolean }> } };
-  assert.equal(showEnv.result.legacy_format, false);
+  const showEnv = parseSingleJson(show.stdout) as { result: { files: Array<{ file: string; present: boolean }> } };
   assert.deepEqual(showEnv.result.files.map((f) => [f.file, f.present]), [["preview.glb", true], ["thumb, with comma.png", false]]);
   const list = await runCli(["project", "list"], { cwd, env });
   assert.equal(list.code, 0, list.stderr);

@@ -351,8 +351,3 @@ export async function runDoctorDetailed(opts: DoctorOptions): Promise<DoctorOutc
 
   return { report, apiFailure };
 }
-
-/** Run the diagnosis; never throws for a missing credential or a failed check. */
-export async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
-  return (await runDoctorDetailed(opts)).report;
-}

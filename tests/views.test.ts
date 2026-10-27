@@ -1,8 +1,7 @@
 /**
  * The human views behind `--format pretty` (src/internal/views.ts). They are
- * not a contract, but they must: read the same in both schemas, never print a
- * signed URL, never call an unknown credit count 0, and hand the person a
- * command that actually runs.
+ * not a contract, but they must never print a signed URL, never call an
+ * unknown credit count 0, and hand the person a command that actually runs.
  */
 
 import test from "node:test";
@@ -15,7 +14,7 @@ import { toTaskView } from "../src/internal/task-view.js";
 const SIGNED = "https://assets.meshy.ai/u/tasks/abc/output/model.glb?Expires=4943635200&Signature=" + "x".repeat(300);
 const TEX = (name: string) => `https://assets.meshy.ai/u/tasks/abc/output/${name}.png?Signature=${"y".repeat(200)}`;
 
-/** A text-to-3d refine as the API returns it (no started_at / consumed_credits, like the legacy summary). */
+/** A text-to-3d refine as the API returns it (no started_at / consumed_credits). */
 const RAW = {
   id: "01a0c94d-eaba-710e-b5b7-da5b2f620c95",
   type: "text-to-3d-refine",
@@ -28,17 +27,20 @@ const RAW = {
   thumbnail_url: TEX("preview"),
 };
 
-const LEGACY = { resource: "text-to-3d", ...RAW, elapsed_seconds: 336.19 };
+const view = (raw: Record<string, unknown>) => toTaskView(raw, { descriptor: { id: "text-to-3d", endpoint: "/openapi/v2/text-to-3d" } as never });
+const NOT_REQUESTED = { state: "not_requested", files: [], metadata_path: null };
 const V1 = okEnvelope("text-to-3d.wait", {
-  task: toTaskView(RAW, { descriptor: { id: "text-to-3d", legacyEndpoint: "/openapi/v2/text-to-3d" } as never }),
+  task: view(RAW),
   submission: { state: "accepted", operation_id: null },
-  downloads: { state: "not_requested", files: [], metadata_path: null },
+  downloads: NOT_REQUESTED,
   saved_json: null,
   wait: { timed_out: false, elapsed_seconds: 336.19, polls: 12 },
 });
+const GET = (raw: Record<string, unknown>) => okEnvelope("text-to-3d.get", { task: view(raw), submission: { state: "accepted", operation_id: null }, downloads: NOT_REQUESTED, saved_json: null });
+const MAKE = okEnvelope("make", { route: "text", executed: [], task: view(RAW), submission: { state: "accepted", operation_id: null }, downloads: NOT_REQUESTED, pending_steps: [] });
 
 test("task card: status, id, time, assets — and no URL anywhere", () => {
-  const out = renderView("text-to-3d.wait", LEGACY, plain);
+  const out = renderView("text-to-3d.wait", V1, plain);
   assert.match(out, /^✓ SUCCEEDED  text-to-3d-refine$/m);
   assert.match(out, /^Task {5}01a0c94d-eaba-710e-b5b7-da5b2f620c95$/m);
   assert.match(out, /^Took {5}5m 36s$/m, "server timestamps, not the time spent waiting");
@@ -47,12 +49,8 @@ test("task card: status, id, time, assets — and no URL anywhere", () => {
   assert.doesNotMatch(out, /^Credits/m, "an unknown credit count is not shown as 0");
 });
 
-test("legacy summary and v1 envelope read the same", () => {
-  assert.equal(renderView("text-to-3d.wait", V1, plain), renderView("text-to-3d.wait", LEGACY, plain));
-});
-
 test("a known credit count is shown, a failed task carries its error", () => {
-  const out = renderView("text-to-3d.get", { ...LEGACY, status: "FAILED", consumed_credits: 0, task_error: { message: "prompt rejected" } }, plain);
+  const out = renderView("text-to-3d.get", GET({ ...RAW, status: "FAILED", consumed_credits: 0, task_error: { message: "prompt rejected" } }), plain);
   assert.match(out, /^✗ FAILED/m);
   assert.match(out, /^Credits  0$/m, "0 reported by the server is a real 0");
   assert.match(out, /^Error {4}prompt rejected$/m);
@@ -60,7 +58,7 @@ test("a known credit count is shown, a failed task carries its error", () => {
 });
 
 test("make: the tip is a runnable download command with the full id and a directory named after the prompt", () => {
-  const out = renderView("make", LEGACY, plain, { name: "a lovely baby husky", estimatedCredits: 30, totalSeconds: 423 });
+  const out = renderView("make", MAKE, plain, { name: "a lovely baby husky", estimatedCredits: 30, totalSeconds: 423 });
   assert.match(out, /^Took {5}7m 03s$/m, "the whole chain, not the last step");
   assert.match(out, /^Credits  ~30 \(estimate for the whole chain\)$/m);
   assert.match(
@@ -100,34 +98,35 @@ test("what -o left on the server is one dim line, counted by reason; nothing whe
 
 test("--async create and make: the id and what to run next", () => {
   assert.equal(
-    renderView("text-to-3d.create", { resource: "text-to-3d", task_id: "t-1", status: "PENDING", hint: "meshy-cli text-to-3d wait t-1" }, plain),
+    renderView("text-to-3d.create", okEnvelope("text-to-3d.create", { task: null, task_id: "t-1", submission: { state: "accepted", operation_id: "op-1" }, next: { wait: "meshy text-to-3d wait t-1" } }), plain),
     "\n⧗ Submitted  t-1\nnext: meshy text-to-3d wait t-1",
     "create/wait/stream/make start one line below their stderr progress",
   );
-  assert.ok(!renderView("text-to-3d.get", LEGACY, plain).startsWith("\n"), "get shows no progress, so no gap");
-  const make = renderView("make", { command: "make", route: "text", submitted: "preview", task_id: "t-1", status: null, pending_steps: [{ command: "meshy text-to-3d create --mode refine --preview-task-id t-1" }], hint: "meshy text-to-3d wait t-1" }, plain);
+  assert.ok(!renderView("text-to-3d.get", GET(RAW), plain).startsWith("\n"), "get shows no progress, so no gap");
+  const make = renderView(
+    "make",
+    okEnvelope("make", { route: "text", submitted: { step: 1, resource: "text-to-3d", action: "preview", task_id: "t-1", operation_id: "op-1" }, task: null, executed: [], pending_steps: [{ command: "meshy text-to-3d create --mode refine --preview-task-id t-1" }], next: { wait: "meshy text-to-3d wait t-1" } }),
+    plain,
+  );
   assert.match(make, /^⧗ Submitted step 1 {2}t-1$/m);
   assert.match(make, /^then: meshy text-to-3d create --mode refine --preview-task-id t-1$/m);
 });
 
-test("list: a table with the full id, both schemas; an empty non-task list is not 'No tasks'", () => {
-  const legacy = renderView("text-to-3d.list", [LEGACY, { ...LEGACY, id: "t-2", status: "IN_PROGRESS", progress: 42 }], plain);
-  const lines = legacy.split("\n");
+test("list: a table with the full id; an empty non-task list is not 'No tasks'", () => {
+  const list = renderView("text-to-3d.list", okEnvelope("text-to-3d.list", { items: [view(RAW), view({ ...RAW, id: "t-2", status: "IN_PROGRESS", progress: 42 })], count: 2, page: { page_num: 1, page_size: 2 } }), plain);
+  const lines = list.split("\n");
   assert.match(lines[0]!, /^TASK ID\s+STATUS\s+PROGRESS\s+TYPE\s+CREATED$/);
   assert.match(lines[1]!, /^01a0c94d-eaba-710e-b5b7-da5b2f620c95 {2}SUCCEEDED\s+100%/);
   assert.match(lines[2]!, /^t-2\s+IN_PROGRESS\s+42%/);
-  const v1 = renderView("text-to-3d.list", okEnvelope("text-to-3d.list", { items: [V1.result!["task" as never]], count: 1, page: { page_num: 1, page_size: 1 } }), plain);
-  assert.match(v1, /^01a0c94d-eaba-710e-b5b7-da5b2f620c95 {2}SUCCEEDED/m);
-  assert.match(v1, /^more: --page 2$/m);
-  assert.equal(renderView("text-to-3d.list", [], plain), "No tasks.");
+  assert.match(list, /^more: --page 2$/m);
+  assert.equal(renderView("text-to-3d.list", okEnvelope("text-to-3d.list", { items: [], count: 0, page: { page_num: 1, page_size: 10 } }), plain), "No tasks.");
   assert.notEqual(renderView("showcases.list", okEnvelope("showcases.list", { items: [], count: 0 }), plain), "No tasks.");
 });
 
 test("balance, delete and dry-run plans", () => {
-  assert.equal(renderView("balance", { balance: 2357 }, plain), "Balance  2,357 credits");
-  assert.equal(renderView("balance", okEnvelope("balance", { balance: 42, saved_json: null }), plain), "Balance  42 credits");
-  assert.equal(renderView("text-to-3d.delete", { resource: "text-to-3d", task_id: "t-1", deleted: true }, plain), "✓ Deleted t-1");
-  const plan = renderView("make", { command: "make", route: "text", steps: [{ step: 1, resource: "text-to-3d", action: "preview", estimated_credits: 20 }, { step: 2, resource: "text-to-3d", action: "refine", estimated_credits: 10 }], estimated_credits: 30, note: "Estimates only." }, plain);
+  assert.equal(renderView("balance", okEnvelope("balance", { balance: 2357, saved_json: null }), plain), "Balance  2,357 credits");
+  assert.equal(renderView("text-to-3d.delete", okEnvelope("text-to-3d.delete", { resource: "text-to-3d", task_id: "t-1", deleted: true }), plain), "✓ Deleted t-1");
+  const plan = renderView("make", { route: "text", steps: [{ step: 1, resource: "text-to-3d", action: "preview", estimated_credits: 20 }, { step: 2, resource: "text-to-3d", action: "refine", estimated_credits: 10 }], estimated_credits: 30, note: "Estimates only." }, plain);
   assert.match(plan, /^Plan {2}2 steps · ~30 credits$/m);
   assert.match(plan, /^1\. {2}text-to-3d preview {2}~20$/m);
 });
@@ -142,8 +141,8 @@ test("fallback: v1 shows only the result, times are local, URLs lose their signa
 
 test("plain painter never emits escapes; the painted one colours status words only", () => {
   // eslint-disable-next-line no-control-regex
-  assert.doesNotMatch(renderView("make", LEGACY, plain, { name: "x" }), /\u001b/);
-  const out = renderView("text-to-3d.wait", LEGACY, painted);
+  assert.doesNotMatch(renderView("make", MAKE, plain, { name: "x" }), /\u001b/);
+  const out = renderView("text-to-3d.wait", V1, painted);
   assert.match(out, /\u001b\[32mSUCCEEDED\u001b\[0m/);
 });
 

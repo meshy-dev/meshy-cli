@@ -9,7 +9,6 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  isolatedEnv,
   jsonReply,
   parseSingleJson,
   runCli,

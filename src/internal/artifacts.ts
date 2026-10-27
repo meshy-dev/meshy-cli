@@ -50,8 +50,6 @@ export interface AssetEnumeration {
   product: string | null;
 }
 
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
-
 function isUrl(v: unknown): v is string {
   return typeof v === "string" && /^https?:\/\//i.test(v);
 }

@@ -92,21 +92,6 @@ function installFetch(
   return { calls, restore: () => { globalThis.fetch = original; } };
 }
 
-function captureStdout(fn: () => void): string {
-  const chunks: string[] = [];
-  const original = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array): boolean => {
-    chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
-    return true;
-  }) as typeof process.stdout.write;
-  try {
-    fn();
-    return chunks.join("");
-  } finally {
-    process.stdout.write = original;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // 1. compareVersions matrix
 // ---------------------------------------------------------------------------

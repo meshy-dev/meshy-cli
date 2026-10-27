@@ -28,7 +28,7 @@
 
 import { Command, Option } from "commander";
 import { z } from "zod";
-import { CREATIVE_LAB_PRODUCTS, type CreativeLabProduct, type CreativeLabStage } from "../client/resource-registry.js";
+import { CREATIVE_LAB_PRODUCTS, type CreativeLabProduct } from "../client/resource-registry.js";
 import { UsageError } from "../internal/errors.js";
 import { parseJsonFlag } from "../internal/payload.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
@@ -386,4 +386,3 @@ prototypes are rejected by the server (404). Build never re-runs a prototype.
 for (const product of CREATIVE_LAB_PRODUCTS) creativeLabCommand.addCommand(productCommand(product));
 creativeLabCommand.addCommand(buildResourceCommand(collapsibleFidgetSpec()));
 
-export const CREATIVE_LAB_STAGE_NAMES: readonly CreativeLabStage[] = ["prototype", "build"];
