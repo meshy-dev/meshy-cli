@@ -325,7 +325,7 @@ async function finalOutcome(
         message: `make finished (task ${task.id}) but downloading its assets ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`,
         httpStatus: err instanceof CliError ? err.httpStatus : null,
         retryable: err instanceof CliError ? err.retryable : false,
-        recovery: err instanceof CliError && err.recovery ? err.recovery : { action: "download", automatic: false, command: `meshy download --resource ${step.resource} --task-id ${task.id} --all --output-dir <dir>` },
+        recovery: err instanceof CliError ? err.recovery : null,
         hint: err instanceof CliError ? err.hint : undefined,
         details: err instanceof CliError ? err.details : undefined,
         warnings: [...warnings, ...(err instanceof CliError ? err.warnings : [])],

@@ -6,12 +6,13 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, existsSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, existsSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { requireTaskResource } from "../src/client/resource-registry.js";
 import type { Task } from "../src/client/types.js";
+import { CliError } from "../src/internal/errors.js";
 import { downloadTaskAssets } from "../src/internal/download.js";
 import { looksLikeFile } from "../src/internal/paths.js";
 
@@ -257,13 +258,45 @@ test("allAssets saves every asset of the task and needs a directory", async () =
   }
 });
 
-test("an existing target is refused before the network is touched", async () => {
-  const url = "https://cdn.example.com/img_0";
-  const restore = installFetch({ [url]: { body: await tinyPngBytes(), contentType: "image/png" } });
+test("a rerun of the same task replaces what its earlier -o saved; anything else already there is refused before the network is touched", async () => {
+  const base = "https://cdn.example.com/r/";
+  const png = await tinyPngBytes();
+  const restore = installFetch({
+    [`${base}m.glb`]: { body: GLB("-rerun"), contentType: "model/gltf-binary" },
+    [`${base}t.png`]: { body: png, contentType: "image/png" },
+    [`${base}bc.png`]: { body: png, contentType: "image/png" },
+  });
+  const counting = globalThis.fetch;
+  let fetches = 0;
+  globalThis.fetch = ((...args: Parameters<typeof globalThis.fetch>) => {
+    fetches += 1;
+    return counting(...args);
+  }) as typeof globalThis.fetch;
   try {
-    const out = join(tmp(), "already", "there.png");
-    await downloadTaskAssets(task({ id: "t1", type: "text-to-image", image_urls: [url] }), out, IMAGE);
-    await assert.rejects(() => downloadTaskAssets(task({ id: "t2", type: "text-to-image", image_urls: [url] }), out, IMAGE), /refusing to overwrite existing file/);
+    const t = task({ id: "r1", type: "image-to-3d", model_urls: { glb: `${base}m.glb` }, thumbnail_url: `${base}t.png`, texture_urls: [{ base_color: `${base}bc.png` }] });
+    const savedFiles = (dir: string): string[] => (JSON.parse(readFileSync(join(dir, "meta.json"), "utf8")) as { saved_files: string[] }).saved_files.sort();
+    const dir = join(tmp(), "out");
+    await downloadTaskAssets(t, dir, IMAGE_TO_3D);
+    const again = await downloadTaskAssets(t, dir, IMAGE_TO_3D);
+    assert.deepEqual(again.files.map((f) => f.status), ["written", "written"]);
+    await downloadTaskAssets(t, dir, IMAGE_TO_3D, { allAssets: true });
+    await downloadTaskAssets(t, dir, IMAGE_TO_3D);
+    assert.deepEqual(savedFiles(dir), [join(dir, "model.glb"), join(dir, "texture_0_base_color.png"), join(dir, "thumbnail.png")], "the texture an --all-assets run left stays recorded");
+
+    const before = fetches;
+    const other = task({ ...t, id: "r2" });
+    await assert.rejects(() => downloadTaskAssets(other, dir, IMAGE_TO_3D), (e: unknown) => e instanceof CliError && e.code === "local_io" && /no earlier -o of task r2 saved/.test(e.message));
+    const stray = join(tmp(), "stray");
+    mkdirSync(stray);
+    writeFileSync(join(stray, "model.glb"), "mine");
+    await assert.rejects(() => downloadTaskAssets(t, stray, IMAGE_TO_3D), /no earlier -o of task r1 saved:\n  .*model\.glb/);
+    assert.equal(readFileSync(join(stray, "model.glb"), "utf8"), "mine");
+    assert.equal(fetches, before, "a refusal costs no transfer");
+
+    const file = join(tmp(), "robot.glb");
+    await downloadTaskAssets(t, file, IMAGE_TO_3D);
+    await downloadTaskAssets(t, file, IMAGE_TO_3D);
+    assert.ok(existsSync(file.replace(/\.glb$/, "_meta.json")));
   } finally {
     restore();
   }

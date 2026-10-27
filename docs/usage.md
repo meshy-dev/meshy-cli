@@ -342,6 +342,15 @@ GLB, `-o hero.fbx` on a rigging task writes the FBX rigged character, and
 file matches — or the extension names another model format — the command asks
 for a directory instead of renaming anything.
 
+Running the same `-o` again for the same task is safe and costs no credits.
+The sidecar records which files that task saved, so the rerun replaces them and
+fetches anything missing. Any other file already at a target path is never
+overwritten: the command refuses before downloading anything (exit 11). A
+transfer that fails part-way (exit 7, 130) still writes the sidecar for what
+landed, and `error.recovery.command` is the same `get … -o …` with absolute
+paths, ready to run once the cause is gone. A create that would write into a
+place holding another run's files is refused before the request is sent.
+
 ```bash
 meshy-cli text-to-image create --ai-model nano-banana-2-1 --aspect-ratio 16:9 --prompt "a leaf" -o assets/leaf-wide.jpeg
 meshy-cli text-to-image create --ai-model nano-banana-2-lite --prompt "a leaf" -o assets/leaf.jpeg

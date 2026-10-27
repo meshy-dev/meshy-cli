@@ -189,7 +189,7 @@ test("N05/R2-F03 stream: a save-json conflict and a download failure each end in
 // R2-F04 / N06 — partial downloads keep their manifest and HTTP class
 // ---------------------------------------------------------------------------
 
-test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the manifest lists both, the HTTP class and status survive, files stay on disk", async () => {
+test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the manifest lists both, the HTTP class and status survive, files stay on disk, the sidecar records them and the recovery is the same -o", async () => {
   let second: { status: number; body: unknown } = { status: 503, body: { message: "temporary asset host outage" } };
   const api = await startMockApi((req, res) => {
     if (req.path === "/first.glb") {
@@ -213,7 +213,7 @@ test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the 
         const out = join(dir, `${verb}-${status}`);
         const r = await runCli(["text-to-3d", verb, "round2-task", "-o", out], { env: api.env(), cwd: dir });
         assert.equal(r.code, exitCode, `${verb} ${status}: ${r.stderr}\n${r.stdout}`);
-        const env = parseSingleJson(r.stdout) as { error: { code: string; http_status: number }; result: { task_id: string; downloads: { state: string; files: Array<{ key: string; path: string; status: string; sha256: string; error: string | null }> } } };
+        const env = parseSingleJson(r.stdout) as { error: { code: string; http_status: number; recovery: { command: string } }; result: { task_id: string; downloads: { state: string; metadata_path: string | null; files: Array<{ key: string; path: string; status: string; sha256: string; error: string | null }> } } };
         assert.equal(env.error.code, code);
         assert.equal(env.error.http_status, status);
         assert.equal(env.result.task_id, "round2-task");
@@ -224,8 +224,10 @@ test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the 
         assert.ok(existsSync(written.path), "the committed file is not rolled back");
         assert.equal(sha(written.path), written.sha256);
         assert.match(env.result.downloads.files[1]!.error ?? "", new RegExp(String(status)));
-        assert.ok(!existsSync(join(out, "meta.json")), "no sidecar for an incomplete set");
-        assert.deepEqual(readdirSync(out), ["model.glb"], "no temp files linger");
+        assert.equal(env.result.downloads.metadata_path, join(out, "meta.json"));
+        assert.deepEqual((JSON.parse(readFileSync(join(out, "meta.json"), "utf8")) as { saved_files: string[] }).saved_files, [written.path], "the sidecar records what landed");
+        assert.equal(env.error.recovery.command, `meshy text-to-3d get round2-task -o ${out}`);
+        assert.deepEqual(readdirSync(out).sort(), ["meta.json", "model.glb"], "no temp files linger");
       }
     }
     // make: same rule on its final download.
@@ -233,7 +235,7 @@ test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the 
     const makeOut = join(dir, "make-out");
     const mk = await runCli(["make", "a cactus", "-o", makeOut], { env: api.env(), cwd: dir });
     assert.equal(mk.code, 7, `${mk.stderr}\n${mk.stdout}`);
-    const mo = parseSingleJson(mk.stdout) as { error: { code: string; http_status: number }; result: { task_id: string; executed: unknown[]; downloads: { state: string; files: Array<{ key: string; status: string }> } } };
+    const mo = parseSingleJson(mk.stdout) as { error: { code: string; http_status: number; recovery: { command: string } }; result: { task_id: string; executed: unknown[]; downloads: { state: string; files: Array<{ key: string; status: string }> } } };
     assert.equal(mo.error.code, "network");
     assert.equal(mo.error.http_status, 503);
     assert.equal(mo.result.task_id, "round2-task");
@@ -241,6 +243,7 @@ test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the 
     assert.equal(mo.result.downloads.state, "partial");
     assert.deepEqual(mo.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "written"], ["thumbnail.primary", "failed"]]);
     assert.ok(existsSync(join(makeOut, "model.glb")));
+    assert.equal(mo.error.recovery.command, `meshy text-to-3d get round2-task -o ${makeOut}`);
   } finally {
     await api.close();
   }
@@ -308,7 +311,7 @@ test("N08/R2-F05 SIGINT during the asset transfer (before headers, mid-body, on 
     assert.equal(env.result.downloads.state, "partial");
     assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "written"], ["thumbnail.primary", "failed"]]);
     assert.ok(existsSync(env.result.downloads.files[0]!.path));
-    assert.deepEqual(readdirSync(out), ["model.glb"], "no temp file, no sidecar");
+    assert.deepEqual(readdirSync(out).sort(), ["meta.json", "model.glb"], "no temp file; the sidecar records what landed");
     assert.ok(!api.requests.some((q) => q.method === "DELETE" || q.method === "POST"));
   } finally {
     await api.close();

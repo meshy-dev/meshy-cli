@@ -109,11 +109,15 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   instead of downloading. When the second asset fails, the state is `partial`, the files
   already written stay listed and on disk, and the error keeps the asset host's
   class and HTTP status (a 503 is `network`, exit 7, not a local I/O error). The
-  same holds for a failure *after* the transfers — relinking, digesting or
-  publishing the `meta.json` sidecar: `downloads.failed_step` names the step, the
-  manifest carries the digests actually on disk. The sidecar itself is published
-  like an asset (exclusive, no symlink, inside the root), so a file that appears
-  at its path during the download is never overwritten.
+  sidecar is written for what landed (`downloads.metadata_path`), and
+  `error.recovery.command` is the same `-o` again (`meshy <resource> get <id> -o
+  <abs path>`, with `--all-assets`/`--workspace` when given): a rerun for the
+  same task replaces the files its sidecar lists and fetches the rest, while any
+  other existing file is refused before a transfer (exit 11). The same holds for
+  a failure *after* the transfers — relinking, digesting or publishing the
+  sidecar: `downloads.failed_step` names the step, the manifest carries the
+  digests actually on disk. The sidecar replaces only a sidecar of the same
+  task, never a symlink or another file.
 - Ctrl-C stops waiting, streaming or downloading (exit 130) and sends no DELETE;
   the envelope carries the task id, the command that resumes and the files that
   had already landed. An interrupted transfer leaves no temp file behind.

@@ -490,6 +490,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-045 The legacy sidecar is published like an asset
 
+*Partly superseded by D-086: a sidecar of the same task is replaced, and one is written after a partial transfer too.*
+
 - Codex review round 3 (R3-F01): `writeMeta` wrote `meta.json` / `<stem>_meta.json`
   with a truncating `writeFileSync` after a preflight that could be minutes old,
   so a symlink or file planted in the output directory during the transfer was
@@ -1361,3 +1363,33 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   deleted. The tests that only exercised the removed paths are deleted: the
   project store, the boundary swaps (review rounds 5 and 6) and the relink
   arbitration.
+
+## D-086 Rerunning `-o` for the same task passes; its recovery is that rerun (ENG-4886)
+
+- An agent that reran `get <id> -o <dir>` got exit 11 for its own files: the
+  task had succeeded and nothing was charged twice, but every target already
+  existed. A transfer that failed part-way (exit 7 on the second asset, exit 130)
+  handed out `meshy download … --output-dir <dir>`. That command had a
+  placeholder, and run as written it hit the same files.
+- The sidecar is the record of what an `-o` saved: `resource`, the task, and
+  `saved_files` (real paths). If the sidecar at the target belongs to the same
+  resource and task, the files it lists are that task's own, and a rerun
+  replaces them atomically (`DownloadAssetsOptions.replace`). The new sidecar
+  lists this run's files plus the earlier ones still on disk, so a default run
+  after an `--all-assets` run keeps the textures recorded.
+- Anything else already at a target is refused before any transfer: exit 11,
+  `local_io`, `choose_path`. That covers files with no sidecar, a sidecar of
+  another task, and an unreadable sidecar. Nothing is compared by content: the
+  OBJ set's MTL is rewritten after landing, so its bytes never match the served
+  file.
+- A transfer that fails part-way still writes the sidecar for the files that
+  landed (`downloads.metadata_path`). Its recovery is the same `-o` again:
+  `meshy <resource> get <id> -o <abs path>`, with `--all-assets` and
+  `--workspace` when they were given. Paths are absolute and single-quoted
+  where needed, so the command runs verbatim from any directory. `make` uses the
+  final step's resource. A refusal before any transfer carries no rerun.
+- A create can never own another run's files: a new task has a new id. Its
+  preflight now also refuses an `-o` whose sidecar exists, before the POST, so a
+  rerun of `create … -o dir` does not pay for a task and then fail to save it.
+- Not covered: a process killed hard mid-transfer leaves files without a
+  sidecar. A rerun then names them, and they have to be deleted first.
