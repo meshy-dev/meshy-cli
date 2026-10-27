@@ -12,7 +12,7 @@ import { detectSlicers, findSlicer, openInSlicer, SLICERS, type DetectionEnv, ty
 import { CliError, UsageError } from "../src/internal/errors.js";
 import { tmpDir } from "./helpers/cli.js";
 
-const LEGACY_NAMES = ["OrcaSlicer", "Bambu Studio", "Creality Print", "Elegoo Slicer", "Anycubic Slicer Next", "PrusaSlicer", "UltiMaker Cura"];
+const SLICER_NAMES = ["OrcaSlicer", "Bambu Studio", "Creality Print", "Elegoo Slicer", "Anycubic Slicer Next", "PrusaSlicer", "UltiMaker Cura"];
 const MULTICOLOR = new Set(["OrcaSlicer", "Bambu Studio", "Creality Print", "Elegoo Slicer", "Anycubic Slicer Next"]);
 
 function fakeEnv(platform: string, existing: Set<string>, extra: Partial<DetectionEnv> = {}): Partial<DetectionEnv> {
@@ -27,8 +27,8 @@ function fakeEnv(platform: string, existing: Set<string>, extra: Partial<Detecti
   };
 }
 
-test("T-088 registry: the seven legacy names, ids and multicolor flags", () => {
-  assert.deepEqual(SLICERS.map((s) => s.name), LEGACY_NAMES);
+test("T-088 registry: the seven names, ids and multicolor flags", () => {
+  assert.deepEqual(SLICERS.map((s) => s.name), SLICER_NAMES);
   for (const s of SLICERS) assert.equal(s.multicolor, MULTICOLOR.has(s.name), s.name);
   assert.equal(findSlicer("orcaslicer")?.id, "orca-slicer");
   assert.equal(findSlicer("BAMBU-STUDIO")?.name, "Bambu Studio");

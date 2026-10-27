@@ -1,10 +1,10 @@
 /**
  * Face-count gate — the verdict logic behind `meshy inspect faces`.
  *
- * Nothing here fabricates a number — a missing face_count is never 0, and a
- * model that was never measured never passes: only a finite, non-negative integer that the task actually carries
- * is "known"; everything else is `unknown`, which the command turns into exit
- * 13 rather than a pass (D-009). Strings are never parsed into numbers — a
+ * Nothing here fabricates a number: a missing face_count is never 0, and a
+ * model that was never measured never passes. Only a finite, non-negative
+ * integer that the task actually carries is "known"; everything else is
+ * `unknown`, which the command turns into exit 13 rather than a pass (D-009). Strings are never parsed into numbers — a
  * `"1234"` that the server never meant as a count must not become one here.
  *
  * The gate answers exactly one question — is face_count <= the caller's limit?

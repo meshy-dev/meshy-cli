@@ -6,7 +6,7 @@
  * the sidecar is published like an asset (no overwrite, no new symlink, root
  * re-proven at publication), every failure after the transfers keeps the
  * per-file manifest with the bytes actually on disk, Ctrl-C during the material
- * rewrite is an interrupt, legacy-schema errors still name the accepted task,
+ * rewrite is an interrupt, errors after an accepted create still name the task,
  * texture identity follows the server-side name even when it collides with a
  * generated one, and an aliased project path still records its files.
  */
@@ -365,7 +365,7 @@ test("C06/R3-F02 sync create/wait/get: an asset 503, a sidecar failure and SIGIN
   let plant: (() => void) | null = null;
   let child: ChildProcess | null = null;
   const api = await startMockApi(async (req, res) => {
-    if (req.method === "POST") return jsonReply(res, 200, { result: "paid-legacy-created-id" });
+    if (req.method === "POST") return jsonReply(res, 200, { result: "paid-created-id" });
     if (req.method === "DELETE") return jsonReply(res, 500, { message: "never" });
     if (req.path === "/asset.glb") {
       plant?.();
@@ -383,7 +383,7 @@ test("C06/R3-F02 sync create/wait/get: an asset 503, a sidecar failure and SIGIN
       }
       return;
     }
-    return jsonReply(res, 200, taskBody({ id: "paid-legacy-created-id", model_urls: { glb: `${api.url}/asset.glb` } }));
+    return jsonReply(res, 200, taskBody({ id: "paid-created-id", model_urls: { glb: `${api.url}/asset.glb` } }));
   });
   try {
     const dir = tmpDir();
@@ -391,43 +391,43 @@ test("C06/R3-F02 sync create/wait/get: an asset 503, a sidecar failure and SIGIN
     const configDir = String(env["MESHY_CONFIG_DIR"]);
 
     // Sync create (no flag), asset host 503.
-    const created = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture legacy", "-o", join(dir, "legacy-created")], { env, cwd: dir });
+    const created = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture created", "-o", join(dir, "created-out")], { env, cwd: dir });
     assert.equal(created.code, 7, `${created.stderr}\n${created.stdout}`);
     const payload = parseSingleJson(created.stdout) as ErrorEnvelope;
     assert.equal(payload.error.code, "network");
     assert.equal(payload.error.http_status, 503);
-    assert.equal(payload.result?.task_id, "paid-legacy-created-id");
-    assert.equal(payload.result?.task_id, "paid-legacy-created-id");
+    assert.equal(payload.result?.task_id, "paid-created-id");
+    assert.equal(payload.result?.task_id, "paid-created-id");
     assert.equal(payload.result?.submission?.state, "accepted");
     const [operationId] = journalOperationIds(configDir);
     assert.ok(operationId, "the journal holds the accepted record");
     assert.equal(payload.result?.submission?.operation_id, operationId, "the error names the journal's operation id");
     assert.equal(payload.result?.submission?.operation_id, operationId);
-    assert.match(payload.result?.next?.wait ?? "", /wait paid-legacy-created-id/);
+    assert.match(payload.result?.next?.wait ?? "", /wait paid-created-id/);
     assert.deepEqual(payload.result?.downloads?.files.map((f) => [f.key, f.status]), [["model.glb", "failed"]]);
-    assert.ok(payload.error.hint && /paid-legacy-created-id/.test(payload.error.hint), "the hint (also printed on stderr) names the task");
-    assert.match(created.stderr, /paid-legacy-created-id/);
+    assert.ok(payload.error.hint && /paid-created-id/.test(payload.error.hint), "the hint (also printed on stderr) names the task");
+    assert.match(created.stderr, /paid-created-id/);
     assert.equal(api.requests.filter((q) => q.method === "POST").length, 1);
     assert.equal(api.requests.filter((q) => q.method === "DELETE").length, 0);
 
     // wait -o: same fields.
-    const waited = await runCli(["text-to-3d", "wait", "paid-legacy-created-id", "-o", join(dir, "legacy-wait")], { env, cwd: dir });
+    const waited = await runCli(["text-to-3d", "wait", "paid-created-id", "-o", join(dir, "wait-out")], { env, cwd: dir });
     assert.equal(waited.code, 7, waited.stderr);
     const wp = parseSingleJson(waited.stdout) as ErrorEnvelope;
-    assert.equal(wp.result?.task_id, "paid-legacy-created-id");
+    assert.equal(wp.result?.task_id, "paid-created-id");
     assert.equal(wp.error.http_status, 503);
 
     // Sidecar failure after the asset landed.
     assetMode = "ok";
-    const sideDir = join(dir, "legacy-sidecar");
+    const sideDir = join(dir, "sidecar-out");
     plant = () => {
       mkdirSync(sideDir, { recursive: true });
       mkdirSync(join(sideDir, "meta.json"));
     };
-    const side = await runCli(["text-to-3d", "get", "paid-legacy-created-id", "-o", sideDir], { env, cwd: dir });
+    const side = await runCli(["text-to-3d", "get", "paid-created-id", "-o", sideDir], { env, cwd: dir });
     assert.equal(side.code, 11, `${side.stderr}\n${side.stdout}`);
     const sp = parseSingleJson(side.stdout) as ErrorEnvelope;
-    assert.equal(sp.result?.task_id, "paid-legacy-created-id");
+    assert.equal(sp.result?.task_id, "paid-created-id");
     assert.equal(sp.result?.downloads?.state, "partial");
     assert.equal(sp.result?.downloads?.failed_step, "sidecar");
     assert.deepEqual(sp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model.glb", "written"]]);
@@ -435,12 +435,12 @@ test("C06/R3-F02 sync create/wait/get: an asset 503, a sidecar failure and SIGIN
 
     // SIGINT during the transfer.
     assetMode = "slow";
-    const target = join(dir, "legacy-int.glb");
-    const interrupted = await runCli(["text-to-3d", "get", "paid-legacy-created-id", "-o", target], { env, cwd: dir, onSpawn: (c) => (child = c) });
+    const target = join(dir, "interrupted.glb");
+    const interrupted = await runCli(["text-to-3d", "get", "paid-created-id", "-o", target], { env, cwd: dir, onSpawn: (c) => (child = c) });
     assert.equal(interrupted.code, 130, `${interrupted.stderr}\n${interrupted.stdout}`);
     const ip = parseSingleJson(interrupted.stdout) as ErrorEnvelope;
     assert.equal(ip.error.code, "interrupted");
-    assert.equal(ip.result?.task_id, "paid-legacy-created-id");
+    assert.equal(ip.result?.task_id, "paid-created-id");
     assert.ok(!existsSync(target));
 
   } finally {

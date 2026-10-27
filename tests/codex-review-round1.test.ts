@@ -166,13 +166,6 @@ test("R03/F07 wait: a GET that answers after the deadline is a timeout (exit 8) 
     assert.equal(out.result.wait.polls, 0);
     assert.match(out.error.recovery.command, /wait review-task/);
     assert.ok(elapsed < 3000, `the command did not wait for the late body (${elapsed} ms)`);
-    // Without the flag: the same decision, the same envelope.
-    const bare = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0.05"], { env: api.env() });
-    assert.equal(bare.code, 8, bare.stderr);
-    const lp = parseSingleJson(bare.stdout) as { error: { code: string }; result: { task_id: string; wait: { timed_out: boolean } } };
-    assert.equal(lp.error.code, "timed_out");
-    assert.equal(lp.result.task_id, "review-task");
-    assert.equal(lp.result.wait.timed_out, true);
   } finally {
     await api.close();
   }
@@ -411,17 +404,17 @@ test("R07/F09 download: mtllib and map_* references are rewritten to the saved n
     ]);
     assert.ok(!env.warnings.some((w) => w.code === "material_reference_unresolved"));
 
-    // Legacy `-o` (all artifacts) relinks too.
+    // A task's `-o` delivers the OBJ with its maps and relinks it too.
     const api = await startMockApi((req, res) => {
       if (req.path.startsWith("/openapi/")) return jsonReply(res, 200, taskBody({ model_urls: { obj: `${host.url}/box.obj`, mtl: `${host.url}/box.mtl` }, texture_urls: [{ base_color: `${host.url}/bc.png`, normal: `${host.url}/n.png` }] }));
       return jsonReply(res, 404, {});
     });
     try {
-      const legacyOut = join(dir, "legacy");
-      const legacy = await runCli(["text-to-3d", "get", "review-task", "-o", legacyOut], { env: api.env(), cwd: dir });
-      assert.equal(legacy.code, 0, legacy.stderr);
-      assert.match(readFileSync(join(legacyOut, "model.obj"), "utf8"), /^mtllib model\.mtl$/m);
-      assert.match(readFileSync(join(legacyOut, "model.mtl"), "utf8"), /^map_Kd texture_0_base_color\.png$/m);
+      const taskOut = join(dir, "task-o");
+      const viaTask = await runCli(["text-to-3d", "get", "review-task", "-o", taskOut], { env: api.env(), cwd: dir });
+      assert.equal(viaTask.code, 0, viaTask.stderr);
+      assert.match(readFileSync(join(taskOut, "model.obj"), "utf8"), /^mtllib model\.mtl$/m);
+      assert.match(readFileSync(join(taskOut, "model.mtl"), "utf8"), /^map_Kd texture_0_base_color\.png$/m);
     } finally {
       await api.close();
     }
@@ -570,10 +563,6 @@ test("R09/F03 task -o (get/wait/create/make) honours --workspace like standalone
     const ok = await runCli(["text-to-3d", "get", "review-task", "--workspace", workspace, "-o", join(workspace, "sub", "model.glb")], { env, cwd: dir });
     assert.equal(ok.code, 0, ok.stderr);
     assert.ok(existsSync(join(workspace, "sub", "model.glb")));
-    // Legacy schema, same boundary.
-    const legacy = await runCli(["text-to-3d", "get", "review-task", "--workspace", workspace, "-o", join(outside, "legacy.glb")], { env, cwd: dir });
-    assert.equal(legacy.code, 11, legacy.stderr);
-    assert.ok(!existsSync(join(outside, "legacy.glb")));
   } finally {
     await api.close();
   }

@@ -268,7 +268,7 @@ test("N04/R2-F02 two material groups keep distinct textures: source names decide
     );
     assert.ok(!env.warnings.some((w) => w.code.startsWith("material_reference")));
 
-    // Legacy `-o` uses the same mapping.
+    // A task's `-o` uses the same mapping.
     const api = await startMockApi((req, res) => {
       if (req.path.startsWith("/openapi/")) {
         return jsonReply(res, 200, taskBody({ model_urls: { obj: `${host.url}/character.obj`, mtl: `${host.url}/character.mtl` }, texture_urls: [{ base_color: `${host.url}/assets/body.png` }, { base_color: `${host.url}/assets/eyes.jpg` }] }));
@@ -276,10 +276,10 @@ test("N04/R2-F02 two material groups keep distinct textures: source names decide
       return jsonReply(res, 404, {});
     });
     try {
-      const legacyOut = join(dir, "legacy");
-      const legacy = await runCli(["text-to-3d", "get", "round2-task", "-o", legacyOut], { env: api.env(), cwd: dir });
-      assert.equal(legacy.code, 0, legacy.stderr);
-      const lm = readFileSync(join(legacyOut, "model.mtl"), "utf8");
+      const taskOut = join(dir, "task-o");
+      const viaTask = await runCli(["text-to-3d", "get", "round2-task", "-o", taskOut], { env: api.env(), cwd: dir });
+      assert.equal(viaTask.code, 0, viaTask.stderr);
+      const lm = readFileSync(join(taskOut, "model.mtl"), "utf8");
       assert.match(lm, /^map_Kd texture_0_base_color\.png$/m);
       assert.match(lm, /^map_Kd texture_1_base_color\.png$/m);
     } finally {
@@ -433,14 +433,6 @@ test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the 
     assert.equal(mo.result.downloads.state, "partial");
     assert.deepEqual(mo.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "written"], ["thumbnail.primary", "failed"]]);
     assert.ok(existsSync(join(makeOut, "model.glb")));
-    // Without the flag: the same envelope keeps the class.
-    const bare = await runCli(["text-to-3d", "get", "round2-task", "-o", join(dir, "bare-out")], { env: api.env(), cwd: dir });
-    assert.equal(bare.code, 7, bare.stderr);
-    const lp = parseSingleJson(bare.stdout) as { error: { code: string; http_status: number }; result: { downloads: { state: string; files: unknown[] } } };
-    assert.equal(lp.error.code, "network");
-    assert.equal(lp.error.http_status, 503);
-    assert.equal(lp.result.downloads.state, "partial");
-    assert.equal(lp.result.downloads.files.length, 2);
   } finally {
     await api.close();
   }
@@ -510,12 +502,6 @@ test("N08/R2-F05 SIGINT during the asset transfer (before headers, mid-body, on 
     assert.ok(existsSync(env.result.downloads.files[0]!.path));
     assert.deepEqual(readdirSync(out), ["model.glb"], "no temp file, no sidecar");
     assert.ok(!api.requests.some((q) => q.method === "DELETE" || q.method === "POST"));
-    // Legacy schema and make share the behaviour.
-    mode = "headers";
-    api.requests.length = 0;
-    const legacy = await runCli(["text-to-3d", "get", "round2-task", "-o", join(dir, "legacy.glb")], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c) });
-    assert.equal(legacy.code, 130, legacy.stderr);
-    assert.ok(!existsSync(join(dir, "legacy.glb")));
   } finally {
     await api.close();
   }

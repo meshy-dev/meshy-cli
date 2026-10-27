@@ -1,5 +1,5 @@
 /**
- * Command-surface pins for the agent-ts alignment (2026-07).
+ * Command-surface pins.
  *
  * The flag surface is a curated contract, not a mirror of every API field:
  * deprecated parameters (symmetry_mode) stay gone, geometry knobs live on
@@ -26,7 +26,7 @@ function createFlags(resource: string): Set<string> {
   return new Set(create.options.map((o) => o.long ?? ""));
 }
 
-test("deprecated and relocated flags are gone from the generation commands", () => {
+test("generation commands carry no geometry, sizing or API-deprecated knobs (remesh and resize own them)", () => {
   for (const resource of ["text-to-3d", "image-to-3d", "multi-image-to-3d"]) {
     const flags = createFlags(resource);
     // symmetry_mode is deprecated API-wide (no effect since 2026-05).
@@ -45,13 +45,13 @@ test("deprecated and relocated flags are gone from the generation commands", () 
   assert.ok(!createFlags("multi-image-to-3d").has("--target-polycount"));
 });
 
-test("texture_resolution replaced the hd_texture era on every texturing command", () => {
+test("every texturing command takes --texture-resolution", () => {
   for (const resource of ["text-to-3d", "image-to-3d", "multi-image-to-3d", "retexture"]) {
     assert.ok(createFlags(resource).has("--texture-resolution"), resource);
   }
 });
 
-test("remesh kept geometry, lost sizing and format-only conversion", () => {
+test("remesh owns geometry; sizing and format-only conversion live on resize and convert", () => {
   const flags = createFlags("remesh");
   for (const kept of ["--topology", "--target-polycount", "--decimation-mode"]) {
     assert.ok(flags.has(kept), `remesh lost ${kept}`);
@@ -74,7 +74,7 @@ test("convert and resize are first-class resources with the full verb set", () =
   }
 });
 
-test("image-to-3d gained the smart-topology surface and task chaining", () => {
+test("image-to-3d has the smart-topology surface and task chaining", () => {
   const flags = createFlags("image-to-3d");
   for (const flag of ["--model-type", "--input-task-id", "--target-polycount"]) {
     assert.ok(flags.has(flag), `image-to-3d is missing ${flag}`);
@@ -101,7 +101,7 @@ test("the mode picks the model: --ai-model on 3D generation offers the Smart Top
   }
 });
 
-test("the Meshy 7 surface: no --ultra-mode anywhere, multi-view is retexture only", () => {
+test("the Ultra pass is --geometry-resolution, never a boolean; multi-view is retexture only", () => {
   // The Ultra pass is the geometry_resolution enum; multi-image-to-3d limits it
   // to standard/2k because the server refuses 4k there.
   for (const resource of ["image-to-3d", "text-to-3d", "multi-image-to-3d", "retexture"]) {

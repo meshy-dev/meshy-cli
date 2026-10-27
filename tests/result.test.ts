@@ -85,7 +85,7 @@ test("classifyError — usage, commander, hinted and unknown errors", () => {
   assert.equal(classifyError("str").exitCode, 1);
 });
 
-test("exitCodeFor — legacy mapping keeps 0.2.0 codes and adds the new ones", () => {
+test("exitCodeFor — usage, local I/O, checks and interrupts map to their exit codes", () => {
   assert.equal(exitCodeFor(new CommanderError(1, "commander.unknownOption", "x")), 2);
   assert.equal(exitCodeFor(new CommanderError(0, "commander.helpDisplayed", "")), 0);
   assert.equal(exitCodeFor(new CliError({ code: "local_io", message: "x" })), 11);

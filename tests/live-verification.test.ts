@@ -74,7 +74,7 @@ test("L01 creative-lab lamp prototype get/wait on a task that is still IN_PROGRE
 });
 
 // ---------------------------------------------------------------------------
-// L02 — the legacy `-o` layout names Creative Lab parts and bundles like `meshy download`
+// L02 — `-o` names Creative Lab parts and bundles by the asset, end to end
 // ---------------------------------------------------------------------------
 
 test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.lamp_stl), and a keychain OBJ bundle saves as model.obj.zip; stable keys and digests", async () => {
