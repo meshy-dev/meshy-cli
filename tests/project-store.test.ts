@@ -239,7 +239,7 @@ test("--project on task verbs: async create records the id immediately; wait sna
     const init = await runCli(["project", "init", "--name", "chain"], { cwd, env });
     assert.equal(init.code, 0, init.stderr);
     const dir = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
-    const created = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "p", "--async", "--project", dir, "--output-schema", "v1"], { cwd, env });
+    const created = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "p", "--async", "--project", dir], { cwd, env });
     assert.equal(created.code, 0, created.stderr);
     const cEnv = parseSingleJson(created.stdout) as { result: { project: { stage: string; action: string; snapshot: string | null } } };
     assert.equal(cEnv.result.project.stage, "preview");
@@ -249,7 +249,7 @@ test("--project on task verbs: async create records the id immediately; wait sna
     assert.equal(meta.tasks[0]!.status, null);
     assert.ok(meta.tasks[0]!.operation_id);
 
-    const waited = await runCli(["text-to-3d", "wait", "task-p", "--project", dir, "--output-schema", "v1"], { cwd, env });
+    const waited = await runCli(["text-to-3d", "wait", "task-p", "--project", dir], { cwd, env });
     assert.equal(waited.code, 0, waited.stderr);
     const wEnv = parseSingleJson(waited.stdout) as { result: { project: { action: string; snapshot: string } } };
     assert.equal(wEnv.result.project.action, "merged");
@@ -260,7 +260,7 @@ test("--project on task verbs: async create records the id immediately; wait sna
     assert.equal(meta.tasks[0]!.task_json, "task_task-p.json");
 
     // Not an initialised project → local_io with the task id kept.
-    const bad = await runCli(["text-to-3d", "get", "task-p", "--project", join(cwd, "nope"), "--output-schema", "v1"], { cwd, env });
+    const bad = await runCli(["text-to-3d", "get", "task-p", "--project", join(cwd, "nope")], { cwd, env });
     assert.equal(bad.code, 11, bad.stderr);
     const bEnv = parseSingleJson(bad.stdout) as { result: { task_id: string } };
     assert.equal(bEnv.result.task_id, "task-p");

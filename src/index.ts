@@ -96,7 +96,7 @@ function installSignalHandlers(): void {
 async function reportFailure(program: Command, argv: string[], err: unknown): Promise<number> {
   stopActiveProgress();
   const ctx = currentCommand();
-  const format: OutputFormat = ctx?.format ?? resolveErrorFormat(program, argv);
+  const format: OutputFormat = ctx?.format ?? resolveErrorFormat(program);
   // A SIGINT that surfaced as some other failure is still reported as
   // interrupted — but whatever the command already knew (task id, submission,
   // files written so far, recovery command) travels with it.
@@ -148,7 +148,7 @@ async function reportFailure(program: Command, argv: string[], err: unknown): Pr
  * the user passed it) — scanning only root opts would miss
  * `meshy --format pretty auth login --json`.
  */
-function resolveErrorFormat(program: Command, argv: string[]): OutputFormat {
+function resolveErrorFormat(program: Command): OutputFormat {
   const anyJson = (cmd: Command): boolean =>
     Boolean(cmd.opts()["json"]) || cmd.commands.some(anyJson);
   if (anyJson(program)) return "json";
@@ -158,10 +158,8 @@ function resolveErrorFormat(program: Command, argv: string[]): OutputFormat {
     return v === "pretty" || v === "ndjson" ? v : "json";
   }
   // Untyped: the same rule as the success path — a person at a terminal who
-  // mistyped a flag reads a sentence, not a JSON object (D-063, D-065).
-  const i = argv.indexOf("--output-schema");
-  const typedV1 = argv.includes("--output-schema=v1") || (i >= 0 && argv[i + 1]?.toLowerCase() === "v1");
-  return resolveFormat({ outputSchema: typedV1 ? "v1" : undefined });
+  // mistyped a flag reads a sentence, not a JSON object (D-063).
+  return resolveFormat({});
 }
 
 function firstCommandToken(program: Command, argv: string[]): string | undefined {

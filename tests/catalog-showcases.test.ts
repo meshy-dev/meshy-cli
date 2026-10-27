@@ -34,9 +34,6 @@ test("T-026 catalog: the documented library endpoint, authenticated, every filte
     // A non-integer lookup id is refused before the request.
     const bad = await runCli(["animation-catalog", "list", "--action-ids", "wave"], { env: api.env() });
     assert.equal(bad.code, 2);
-    // Legacy schema is not available for a v1-only command.
-    const legacy = await runCli(["animation-catalog", "list", "--output-schema", "legacy"], { env: api.env() });
-    assert.equal(legacy.code, 2);
     assert.equal(api.requests.length, 1);
   } finally {
     await api.close();

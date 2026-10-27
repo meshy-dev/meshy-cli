@@ -143,7 +143,7 @@ test("animate: --action-ids (one merged file) and --motion-task-id; exactly one 
 
 test("rigging list is enabled (GET /openapi/v1/rigging)", async () => {
   await withApi((_req, res) => jsonReply(res, 200, []), async (api) => {
-    const r = await runCli(["rigging", "list", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["rigging", "list"], { env: api.env() });
     assert.equal(r.code, 0, r.stderr);
     assert.equal(api.requests[0]!.path, "/openapi/v1/rigging");
   });
@@ -281,14 +281,12 @@ test("images: --remove-background on both; image-to-image takes --input-task-id 
   });
 });
 
-test("balance: monthly / permanent credits and the reset time are reported (with and without --output-schema v1)", async () => {
+test("balance: monthly / permanent credits and the reset time are reported", async () => {
   const reply = { balance: 1500, monthly_credits: 1000, permanent_credits: 500, monthly_resets_at: 1_793_404_800_000 };
   await withApi((_req, res) => jsonReply(res, 200, reply), async (api) => {
-    const v1 = await runCli(["balance", "--output-schema", "v1"], { env: api.env() });
-    assert.equal(v1.code, 0, v1.stderr);
-    assert.deepEqual((parseSingleJson(v1.stdout) as { result: unknown }).result, { ...reply, saved_json: null });
-    const bare = await runCli(["balance"], { env: api.env() });
-    assert.deepEqual((parseSingleJson(bare.stdout) as { result: unknown }).result, { ...reply, saved_json: null }, "the envelope is the only shape; the flag is a no-op");
+    const json = await runCli(["balance"], { env: api.env() });
+    assert.equal(json.code, 0, json.stderr);
+    assert.deepEqual((parseSingleJson(json.stdout) as { result: unknown }).result, { ...reply, saved_json: null });
     const pretty = await runCli(["balance", "--format", "pretty"], { env: api.env() });
     assert.match(pretty.stdout, /1,000 monthly, resets 2026-10-31 · 500 permanent/);
   });

@@ -491,11 +491,10 @@ function resourcesView(body: unknown, paint: Painter): string | null {
 
 /**
  * A recovery command as a person should run it. Hints are written for agents
- * (`--format json`; older ones still carry `--output-schema v1`, which since
- * D-065 means JSON) — copied at a terminal they would answer in braces.
+ * (`--format json`) — copied at a terminal they would answer in braces.
  */
 export function forHumans(text: string): string {
-  return text.replace(/\s+--output-schema[ =]v1\b/g, "").replace(/\s+--format[ =](?:json|ndjson)\b/g, "");
+  return text.replace(/\s+--format[ =](?:json|ndjson)\b/g, "");
 }
 
 /**

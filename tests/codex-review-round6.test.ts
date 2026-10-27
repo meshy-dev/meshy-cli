@@ -21,7 +21,6 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync,
 import { basename, join, relative } from "node:path";
 import { jsonReply, parseSingleJson, runCli, startMockApi, tmpDir } from "./helpers/cli.js";
 
-const V1 = ["--output-schema", "v1"];
 const ENVELOPE_KEYS = ["schema_version", "command", "ok", "result", "error", "warnings"].sort();
 
 function taskBody(fields: Record<string, unknown> = {}): Record<string, unknown> {
@@ -188,87 +187,85 @@ test("R6-F01 download --project P --workspace W --output-dir W/assets: when P (l
 type Verb = "get" | "wait" | "stream" | "create-async" | "create-sync";
 type Swap = "directory" | "alias";
 
-test("R6-F02 bare/v1 × get/wait/stream/create-async/create-sync × workspace replaced (the directory itself swapped for a symlink to an outside copy, or the alias the workspace was given through re-pointed) while the request is in flight: exit 11, task and accepted journal kept, single POST, exact method/path, outside tree byte-identical, no snapshot/lock/temp, no cross-boundary record command", async () => {
-  for (const schema of ["bare", "v1"] as const) {
-    for (const verb of ["get", "wait", "stream", "create-async", "create-sync"] as Verb[]) {
-      for (const swap of ["directory", "alias"] as Swap[]) {
-        const id = `${schema}-${verb}-${swap}`;
-        let plant: (() => void) | null = null;
-        const api = await startMockApi((req, res) => {
-          plant?.();
-          plant = null;
-          if (req.method === "POST") return jsonReply(res, 200, { result: id });
-          if (req.method === "DELETE") return jsonReply(res, 500, { message: "never" });
-          const body = taskBody({ id });
-          if (req.path.endsWith("/stream")) {
-            res.writeHead(200, { "content-type": "text/event-stream" });
-            return void res.end(`data: ${JSON.stringify(body)}\n\n`);
-          }
-          return jsonReply(res, 200, body);
-        });
-        try {
-          const dir = tmpDir();
-          const env = api.env();
-          const configDir = String(env["MESHY_CONFIG_DIR"]);
-          const real = join(dir, "real-workspace");
-          mkdirSync(real);
-          // "directory": the workspace is a plain directory that gets swapped for a symlink.
-          // "alias": the workspace is given through a symlink that keeps pointing at `real` … until it is re-pointed.
-          const workspace = swap === "directory" ? real : join(dir, "workspace-alias");
-          if (swap === "alias") symlinkSync(real, workspace);
-          const init = await runCli(["project", "init", "--root", join(workspace, "projects"), "--name", id], { env, cwd: dir });
-          assert.equal(init.code, 0, init.stderr);
-          const proj = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
-          const outside = join(dir, "outside");
-          cpSync(real, outside, { recursive: true });
-          const outsideBefore = treeDigest(outside);
-          const realBefore = treeDigest(real);
-          plant =
-            swap === "directory"
-              ? () => {
-                  renameSync(real, `${real}.moved`);
-                  symlinkSync(outside, real);
-                }
-              : () => {
-                  unlinkSync(workspace);
-                  symlinkSync(outside, workspace);
-                };
-          const args = verb.startsWith("create") ? ["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture", ...(verb === "create-async" ? ["--async"] : [])] : ["text-to-3d", verb, id];
-          const r = await runCli([...args, ...(schema === "v1" ? V1 : []), "--project", proj, "--workspace", workspace], { env, cwd: dir });
-          assert.equal(r.code, 11, `${id}: ${r.stderr}\n${r.stdout}`);
-          const out = parseSingleJson(r.stdout) as Record<string, unknown>;
-          const result = out["result"] as { task_id: string; submission: { state: string; operation_id: string | null } };
-          assert.equal(result.task_id, id, `${id}: the task is kept`);
-          assert.equal(result.submission.state, "accepted");
-          const message = (out["error"] as { message: string }).message;
-          assert.match(message, /no longer a target inside the authorised boundary/, id);
-          assert.match(message, /changed since the command started|outside the authorised root|symbolic link/, id);
-          assert.match(message, /nothing was recorded/, id);
-          const hint = (out["error"] as { hint?: string }).hint;
-          assert.ok(!(hint ?? "").startsWith("meshy project record"), `${id}: no record command that would cross the boundary`);
-          assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, id);
-          assert.equal((out["error"] as { code: string }).code, "local_io", id);
-          assert.equal((out["error"] as { recovery: unknown }).recovery, null, `${id}: recovery null`);
-          const records = journal(configDir);
-          const isCreate = verb.startsWith("create");
-          if (isCreate) {
-            assert.equal(records.length, 1, `${id}: exactly one accepted journal record — nothing re-submitted`);
-            assert.equal(records[0]!.state, "accepted");
-            assert.equal(records[0]!.task_id, id);
-            assert.equal(result.submission.operation_id, records[0]!.operation_id, id);
-          } else {
-            assert.equal(records.length, 0, id);
-          }
-          const base = "/openapi/v2/text-to-3d";
-          const expected: Array<[string, string]> =
-            verb === "get" || verb === "wait" ? [["GET", `${base}/${id}`]] : verb === "stream" ? [["GET", `${base}/${id}/stream`]] : verb === "create-async" ? [["POST", base]] : [["POST", base], ["GET", `${base}/${id}`]];
-          assert.deepEqual(api.requests.map((q) => [q.method, q.path]), expected, `${id}: exact request sequence`);
-          assert.deepEqual(treeDigest(outside), outsideBefore, `${id}: the outside tree is byte-identical (no metadata/history change, no snapshot/lock/temp)`);
-          const original = swap === "directory" ? `${real}.moved` : real;
-          assert.deepEqual(treeDigest(original), realBefore, `${id}: the original workspace tree is untouched too`);
-        } finally {
-          await api.close();
+test("R6-F02 get/wait/stream/create-async/create-sync × workspace replaced (the directory itself swapped for a symlink to an outside copy, or the alias the workspace was given through re-pointed) while the request is in flight: exit 11, task and accepted journal kept, single POST, exact method/path, outside tree byte-identical, no snapshot/lock/temp, no cross-boundary record command", async () => {
+  for (const verb of ["get", "wait", "stream", "create-async", "create-sync"] as Verb[]) {
+    for (const swap of ["directory", "alias"] as Swap[]) {
+      const id = `${verb}-${swap}`;
+      let plant: (() => void) | null = null;
+      const api = await startMockApi((req, res) => {
+        plant?.();
+        plant = null;
+        if (req.method === "POST") return jsonReply(res, 200, { result: id });
+        if (req.method === "DELETE") return jsonReply(res, 500, { message: "never" });
+        const body = taskBody({ id });
+        if (req.path.endsWith("/stream")) {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          return void res.end(`data: ${JSON.stringify(body)}\n\n`);
         }
+        return jsonReply(res, 200, body);
+      });
+      try {
+        const dir = tmpDir();
+        const env = api.env();
+        const configDir = String(env["MESHY_CONFIG_DIR"]);
+        const real = join(dir, "real-workspace");
+        mkdirSync(real);
+        // "directory": the workspace is a plain directory that gets swapped for a symlink.
+        // "alias": the workspace is given through a symlink that keeps pointing at `real` … until it is re-pointed.
+        const workspace = swap === "directory" ? real : join(dir, "workspace-alias");
+        if (swap === "alias") symlinkSync(real, workspace);
+        const init = await runCli(["project", "init", "--root", join(workspace, "projects"), "--name", id], { env, cwd: dir });
+        assert.equal(init.code, 0, init.stderr);
+        const proj = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
+        const outside = join(dir, "outside");
+        cpSync(real, outside, { recursive: true });
+        const outsideBefore = treeDigest(outside);
+        const realBefore = treeDigest(real);
+        plant =
+          swap === "directory"
+            ? () => {
+                renameSync(real, `${real}.moved`);
+                symlinkSync(outside, real);
+              }
+            : () => {
+                unlinkSync(workspace);
+                symlinkSync(outside, workspace);
+              };
+        const args = verb.startsWith("create") ? ["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture", ...(verb === "create-async" ? ["--async"] : [])] : ["text-to-3d", verb, id];
+        const r = await runCli([...args, "--project", proj, "--workspace", workspace], { env, cwd: dir });
+        assert.equal(r.code, 11, `${id}: ${r.stderr}\n${r.stdout}`);
+        const out = parseSingleJson(r.stdout) as Record<string, unknown>;
+        const result = out["result"] as { task_id: string; submission: { state: string; operation_id: string | null } };
+        assert.equal(result.task_id, id, `${id}: the task is kept`);
+        assert.equal(result.submission.state, "accepted");
+        const message = (out["error"] as { message: string }).message;
+        assert.match(message, /no longer a target inside the authorised boundary/, id);
+        assert.match(message, /changed since the command started|outside the authorised root|symbolic link/, id);
+        assert.match(message, /nothing was recorded/, id);
+        const hint = (out["error"] as { hint?: string }).hint;
+        assert.ok(!(hint ?? "").startsWith("meshy project record"), `${id}: no record command that would cross the boundary`);
+        assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, id);
+        assert.equal((out["error"] as { code: string }).code, "local_io", id);
+        assert.equal((out["error"] as { recovery: unknown }).recovery, null, `${id}: recovery null`);
+        const records = journal(configDir);
+        const isCreate = verb.startsWith("create");
+        if (isCreate) {
+          assert.equal(records.length, 1, `${id}: exactly one accepted journal record — nothing re-submitted`);
+          assert.equal(records[0]!.state, "accepted");
+          assert.equal(records[0]!.task_id, id);
+          assert.equal(result.submission.operation_id, records[0]!.operation_id, id);
+        } else {
+          assert.equal(records.length, 0, id);
+        }
+        const base = "/openapi/v2/text-to-3d";
+        const expected: Array<[string, string]> =
+          verb === "get" || verb === "wait" ? [["GET", `${base}/${id}`]] : verb === "stream" ? [["GET", `${base}/${id}/stream`]] : verb === "create-async" ? [["POST", base]] : [["POST", base], ["GET", `${base}/${id}`]];
+        assert.deepEqual(api.requests.map((q) => [q.method, q.path]), expected, `${id}: exact request sequence`);
+        assert.deepEqual(treeDigest(outside), outsideBefore, `${id}: the outside tree is byte-identical (no metadata/history change, no snapshot/lock/temp)`);
+        const original = swap === "directory" ? `${real}.moved` : real;
+        assert.deepEqual(treeDigest(original), realBefore, `${id}: the original workspace tree is untouched too`);
+      } finally {
+        await api.close();
       }
     }
   }
@@ -290,7 +287,7 @@ test("R6-F02 stable aliases keep working: a workspace given through a symlink th
     assert.equal(init.code, 0, init.stderr);
     const proj = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
     assert.ok(proj.startsWith(alias));
-    const r = await runCli(["text-to-3d", "get", "alias-ok", ...V1, "--project", proj, "--workspace", alias], { env, cwd: dir });
+    const r = await runCli(["text-to-3d", "get", "alias-ok", "--project", proj, "--workspace", alias], { env, cwd: dir });
     assert.equal(r.code, 0, `${r.stderr}\n${r.stdout}`);
     const o = parseSingleJson(r.stdout) as { result: { project: { action: string; snapshot: string | null; index: { updated: boolean } } } };
     assert.equal(o.result.project.action, "added");

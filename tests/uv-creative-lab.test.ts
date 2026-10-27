@@ -209,7 +209,7 @@ test("T-041/T-042 make: --async is one POST and zero polls with pending_steps; -
     return jsonReply(res, 200, { id: "prev-1", status: "SUCCEEDED", progress: 100, type: "text-to-3d-preview" });
   });
   try {
-    const a = await runCli(["make", "a red sports car", "--async", "--output-schema", "v1"], { env: api.env() });
+    const a = await runCli(["make", "a red sports car", "--async"], { env: api.env() });
     assert.equal(a.code, 0, a.stderr);
     const out = parseSingleJson(a.stdout) as { result: { submitted: { task_id: string }; pending_steps: Array<{ step: number; action: string; command: string | null }>; task: unknown } };
     assert.equal(out.result.submitted.task_id, "prev-1");
@@ -228,7 +228,7 @@ test("T-041/T-042 make: --async is one POST and zero polls with pending_steps; -
     assert.deepEqual(api.requests.map((q) => q.method), ["POST"]);
 
     api.requests.length = 0;
-    const stop = await runCli(["make", "a red sports car", "--stop-after-first", "--output-schema", "v1"], { env: api.env() });
+    const stop = await runCli(["make", "a red sports car", "--stop-after-first"], { env: api.env() });
     assert.equal(stop.code, 0, stop.stderr);
     const so = parseSingleJson(stop.stdout) as { result: { stopped_after: { action: string; status: string }; resume: string } };
     assert.equal(so.result.stopped_after.action, "preview");
@@ -245,7 +245,7 @@ test("T-041/T-042 make: --async is one POST and zero polls with pending_steps; -
     const dir = tmpDir();
     const png = join(dir, "cat.png");
     writeFileSync(png, await sharp({ create: { width: 2, height: 2, channels: 3, background: { r: 1, g: 2, b: 3 } } }).png().toBuffer());
-    const img = await runCli(["make", png, "--async", "--output-schema", "v1"], { env: api.env(), cwd: dir });
+    const img = await runCli(["make", png, "--async"], { env: api.env(), cwd: dir });
     assert.equal(img.code, 0, img.stderr);
     assert.deepEqual(api.requests.map((q) => `${q.method} ${q.path}`), ["POST /openapi/v1/image-to-3d"]);
     assert.equal((parseSingleJson(img.stdout) as { result: { pending_steps: unknown[] } }).result.pending_steps.length, 0);

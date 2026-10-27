@@ -122,7 +122,7 @@ test("one SIGTERM ends a command that does not observe the abort (auth login wai
   assert.ok(Date.now() - sentAt < 8_000, `exited ${Date.now() - sentAt}ms after a single SIGTERM`);
 });
 
-const CREATE = ["text-to-motion", "create", "--prompt", "jet entry", "--mode", "prime", "--duration", "3", "--async", "--operation-id", "lf-jet_entry", "--output-schema", "v1"];
+const CREATE = ["text-to-motion", "create", "--prompt", "jet entry", "--mode", "prime", "--duration", "3", "--async", "--operation-id", "lf-jet_entry"];
 
 test("SIGTERM mid-POST records `unknown` (not `started`); after reconciling, resolve --not-created lets the same --operation-id submit once", async () => {
   let hang = true;
@@ -149,7 +149,7 @@ test("SIGTERM mid-POST records `unknown` (not `started`); after reconciling, res
     assert.match(out.error.hint ?? "", /meshy operations resolve lf-jet_entry --not-created/);
     assert.equal(api.requests.filter((q) => q.method === "POST").length, 1, "the replay sent nothing");
 
-    const resolved = await runCli(["operations", "resolve", "lf-jet_entry", "--not-created", "--output-schema", "v1"], { env });
+    const resolved = await runCli(["operations", "resolve", "lf-jet_entry", "--not-created"], { env });
     assert.equal(resolved.code, 0, resolved.stderr);
     assert.equal((parseSingleJson(resolved.stdout) as { result: { previous_state: string } }).result.previous_state, "unknown");
 
@@ -175,12 +175,12 @@ test("a record left `started` by a hard kill: operations list shows it, resolve 
     const killed = await runCli(CREATE, { env, onSpawn: (c) => (child = c) });
     assert.equal(killed.signal, "SIGKILL");
 
-    const listed = await runCli(["operations", "list", "--state", "started", "--output-schema", "v1"], { env });
+    const listed = await runCli(["operations", "list", "--state", "started"], { env });
     assert.equal(listed.code, 0, listed.stderr);
     const ops = (parseSingleJson(listed.stdout) as { result: { operations: Array<{ operation_id: string; state: string }> } }).result.operations;
     assert.deepEqual(ops.map((o) => [o.operation_id, o.state]), [["lf-jet_entry", "started"]]);
 
-    const resolved = await runCli(["operations", "resolve", "lf-jet_entry", "--task-id", "task-found", "--output-schema", "v1"], { env });
+    const resolved = await runCli(["operations", "resolve", "lf-jet_entry", "--task-id", "task-found"], { env });
     assert.equal(resolved.code, 0, resolved.stderr);
 
     const replay = await runCli(CREATE, { env });
@@ -188,9 +188,9 @@ test("a record left `started` by a hard kill: operations list shows it, resolve 
     assert.match(replay.stdout, /task-found/);
     assert.equal(api.requests.filter((q) => q.method === "POST").length, 1, "the replay sent nothing");
 
-    const usage = await runCli(["operations", "resolve", "lf-jet_entry", "--output-schema", "v1"], { env });
+    const usage = await runCli(["operations", "resolve", "lf-jet_entry"], { env });
     assert.equal(usage.code, 2, "exactly one of --task-id / --not-created");
-    const empty = await runCli(["operations", "resolve", "lf-jet_entry", "--task-id", "", "--not-created", "--output-schema", "v1"], { env });
+    const empty = await runCli(["operations", "resolve", "lf-jet_entry", "--task-id", "", "--not-created"], { env });
     assert.equal(empty.code, 2, "an empty --task-id is not --not-created");
     assert.equal(readOperation(join(env["MESHY_CONFIG_DIR"]!, "operations"), "lf-jet_entry")?.task_id, "task-found");
   } finally {

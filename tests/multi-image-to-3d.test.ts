@@ -36,7 +36,7 @@ async function withApi(fn: (api: MockApi) => Promise<void>): Promise<void> {
 function create(api: MockApi, ...extra: string[]) {
   const cwd = tmpDir("meshy-views-");
   for (const view of VIEWS) writeFileSync(join(cwd, view), PNG);
-  return runCli(["multi-image-to-3d", "create", "--image-urls", VIEWS.join(","), "--async", "--output-schema", "v1", ...extra], {
+  return runCli(["multi-image-to-3d", "create", "--image-urls", VIEWS.join(","), "--async", ...extra], {
     env: api.env(),
     cwd,
   });

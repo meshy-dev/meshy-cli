@@ -153,8 +153,8 @@ test("formatters", () => {
   assert.equal(formatDuration(3725), "1h 02m");
   assert.equal(relativeTime(1_000_000, 1_000_000 + 125_000), "2m ago");
   assert.equal(shortUrl("https://x.io/a?sig=1"), "https://x.io/a");
-  assert.equal(forHumans("meshy text-to-3d wait t-1 --output-schema v1"), "meshy text-to-3d wait t-1");
-  assert.equal(forHumans("meshy text-to-3d stream t-1 --format ndjson --output-schema v1"), "meshy text-to-3d stream t-1");
+  assert.equal(forHumans("meshy text-to-3d wait t-1 --format json"), "meshy text-to-3d wait t-1");
+  assert.equal(forHumans("meshy text-to-3d stream t-1 --format ndjson"), "meshy text-to-3d stream t-1");
 });
 
 test("auth: login, status, not logged in, logout, list — no masked-token dump, balance as credits", () => {
@@ -178,9 +178,9 @@ test("auth: login, status, not logged in, logout, list — no masked-token dump,
 test("humanHint: the hint, else the recovery command, else how to resume a task the server still runs", async () => {
   const { humanHint } = await import("../src/internal/views.js");
   assert.equal(humanHint("Run: meshy auth login", "x", null), "Run: meshy auth login");
-  assert.equal(humanHint(undefined, "meshy text-to-3d wait t-1 --output-schema v1", null), "meshy text-to-3d wait t-1");
+  assert.equal(humanHint(undefined, "meshy text-to-3d wait t-1 --format json", null), "meshy text-to-3d wait t-1");
   assert.equal(
-    humanHint(undefined, null, { task_id: "t-1", next: { wait: "meshy text-to-3d wait t-1 --output-schema v1" } }),
+    humanHint(undefined, null, { task_id: "t-1", next: { wait: "meshy text-to-3d wait t-1 --format json" } }),
     "the task keeps running on the server — resume with: meshy text-to-3d wait t-1",
   );
   assert.equal(humanHint(undefined, null, { route: "text" }), undefined);

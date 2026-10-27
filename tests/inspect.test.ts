@@ -229,7 +229,7 @@ test("readTaskJsonFile: bounded read, invalid JSON, non-task JSON and missing fi
 // ---------------------------------------------------------------------------
 
 test("T-080 command: fixture 250000 vs 300000 / 250000 / 249999 → pass 0 / pass 0 / fail 12", async () => {
-  const pass = envelopeOf(await runInspect(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "--output-schema", "v1"]));
+  const pass = envelopeOf(await runInspect(["--task-json", FIXTURE_PATH, "--max-faces", "300000"]));
   assert.deepEqual(Object.keys(pass), ["schema_version", "command", "ok", "result", "error", "warnings"]);
   assert.equal(pass.schema_version, "meshy.cli/v1");
   assert.equal(pass.command, "inspect.faces");
@@ -253,7 +253,7 @@ test("T-080 command: fixture 250000 vs 300000 / 250000 / 249999 → pass 0 / pas
   const equal = envelopeOf(await runInspect(["--task-json", FIXTURE_PATH, "--max-faces", String(FIXTURE_FACES)]));
   assert.equal(equal.result!.verdict, "pass");
 
-  const fail = cliErrorOf(await runInspect(["--task-json", FIXTURE_PATH, "--max-faces", String(FIXTURE_FACES - 1), "--output-schema", "v1"]));
+  const fail = cliErrorOf(await runInspect(["--task-json", FIXTURE_PATH, "--max-faces", String(FIXTURE_FACES - 1)]));
   assert.equal(fail.code, "check_failed");
   assert.equal(fail.exitCode, 12);
   const failResult = fail.result as unknown as FacesResult;
@@ -343,7 +343,6 @@ test("command: usage errors before any work — sources, --max-faces, schema, -o
   await usage(["--resource", "rigging", "--max-faces", "300000"], /together with --task-id/);
   await usage(["--task-id", "x", "--max-faces", "300000"], /together with --task-id/);
   await usage(["--resource", "no-such-resource", "--task-id", "x", "--max-faces", "300000"], /unknown --resource 'no-such-resource'.*rigging.*uv-unwrap/);
-  await usage(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "--output-schema", "legacy"], /removed in 0\.5\.0/);
   await usage(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "-o", "out.glb"], /--save-json/);
   await usage(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "--save-json", "x.json"], /only applies to the API source/);
   await usage(["--task-json", join(tmp(), "missing.json"), "--max-faces", "300000"], /cannot open/);
@@ -362,7 +361,7 @@ test("T-082 api: exactly one GET through the registry, same verdict as the file,
   });
   const dir = tmp();
   try {
-    const common = ["--base-url-v1", `${api.url}/openapi/v1`, "--api-key", "msy_fixture_key_loopback_only", "--output-schema", "v1"];
+    const common = ["--base-url-v1", `${api.url}/openapi/v1`, "--api-key", "msy_fixture_key_loopback_only"];
     const pass = envelopeOf(await runInspect(["--resource", "rigging", "--task-id", "fixture-rig-1", "--max-faces", "300000", ...common]));
     assert.equal(pass.result!.verdict, "pass");
     assert.equal(pass.result!.face_count, FIXTURE_FACES);
@@ -416,7 +415,7 @@ test("T-082 subprocess: dist/ inspect faces — file source needs no credential,
   });
   try {
     // File source: no MESHY_API_KEY, no profile, no base URL — still exit 0.
-    const local = await runCli(["inspect", "faces", "--task-json", FIXTURE_PATH, "--max-faces", "300000", "--output-schema", "v1"]);
+    const local = await runCli(["inspect", "faces", "--task-json", FIXTURE_PATH, "--max-faces", "300000"]);
     assert.equal(local.code, 0, local.stderr);
     const localOut = parseSingleJson(local.stdout) as V1Envelope<FacesResult>;
     assert.equal(localOut.command, "inspect.faces");

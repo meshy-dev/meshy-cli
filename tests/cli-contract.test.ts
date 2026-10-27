@@ -43,20 +43,20 @@ test("T-005 unknown option exits 2 with a usage envelope and no API request", as
 });
 
 test("T-005 v1: unknown command, missing argument and bad --format are usage errors in the envelope", async () => {
-  const unknown = await runCli(["--output-schema", "v1", "no-such-command"]);
+  const unknown = await runCli(["no-such-command"]);
   assert.equal(unknown.code, 2, unknown.stderr);
   const env1 = parseSingleJson(unknown.stdout) as Record<string, unknown>;
   assert.deepEqual(Object.keys(env1), SIX);
   assert.equal(env1["ok"], false);
   assert.equal((env1["error"] as Record<string, unknown>)["code"], "usage");
 
-  const missing = await runCli(["text-to-3d", "get", "--output-schema", "v1"]);
+  const missing = await runCli(["text-to-3d", "get"]);
   assert.equal(missing.code, 2, missing.stderr);
   const env2 = parseSingleJson(missing.stdout) as Record<string, unknown>;
   assert.equal(env2["command"], "text-to-3d.get");
   assert.equal((env2["error"] as Record<string, unknown>)["code"], "usage");
 
-  const badFormat = await runCli(["--output-schema", "v1", "--format", "yaml", "balance"]);
+  const badFormat = await runCli(["--format", "yaml", "balance"]);
   assert.equal(badFormat.code, 2, badFormat.stderr);
   const env3 = parseSingleJson(badFormat.stdout) as Record<string, unknown>;
   assert.equal(env3["ok"], false);
@@ -68,7 +68,7 @@ test("T-002 v1 success: balance emits one six-key envelope; pretty and ndjson sh
     return jsonReply(res, 404, { message: "nope" });
   });
   try {
-    const json = await runCli(["balance", "--output-schema", "v1"], { env: api.env() });
+    const json = await runCli(["balance"], { env: api.env() });
     assert.equal(json.code, 0, json.stderr);
     const env = parseSingleJson(json.stdout) as Record<string, unknown>;
     assert.deepEqual(Object.keys(env), SIX);
@@ -81,12 +81,12 @@ test("T-002 v1 success: balance emits one six-key envelope; pretty and ndjson sh
     assert.equal(api.requests.length, 1);
     assert.equal(api.requests[0]!.headers["authorization"], "Bearer msy_fixture_key_loopback_only");
 
-    const nd = await runCli(["--output-schema", "v1", "--format", "ndjson", "balance"], { env: api.env() });
+    const nd = await runCli(["--format", "ndjson", "balance"], { env: api.env() });
     assert.equal(nd.code, 0);
     assert.equal(nd.stdout.trim().split("\n").length, 1);
     assert.deepEqual(JSON.parse(nd.stdout.trim())["result"], { balance: 42, monthly_credits: null, permanent_credits: null, monthly_resets_at: null, saved_json: null });
 
-    const pretty = await runCli(["balance", "--format", "pretty", "--output-schema", "v1"], { env: api.env() });
+    const pretty = await runCli(["balance", "--format", "pretty"], { env: api.env() });
     assert.equal(pretty.code, 0);
     // pretty is the human view: the balance, not the envelope.
     assert.equal(pretty.stdout, "Balance  42 credits\n");
@@ -95,7 +95,7 @@ test("T-002 v1 success: balance emits one six-key envelope; pretty and ndjson sh
   }
 });
 
-test("T-001 balance prints the v1 envelope with no flag; --output-schema v1 is a no-op and legacy is refused", async () => {
+test("T-001 balance prints the v1 envelope; --output-schema is an unknown option; -o points at --save-json", async () => {
   const api = await startMockApi((_req, res) => jsonReply(res, 200, { balance: 7 }));
   try {
     const r = await runCli(["balance"], { env: api.env() });
@@ -104,11 +104,9 @@ test("T-001 balance prints the v1 envelope with no flag; --output-schema v1 is a
     assert.deepEqual(Object.keys(env1), SIX);
     assert.equal(env1["command"], "balance");
     assert.equal((env1["result"] as Record<string, unknown>)["balance"], 7);
-    const flagged = await runCli(["balance", "--output-schema", "v1"], { env: api.env() });
-    assert.equal(flagged.stdout, r.stdout, "the flag changes nothing");
-    const legacy = await runCli(["balance", "--output-schema", "legacy"], { env: api.env() });
-    assert.equal(legacy.code, 2, legacy.stdout);
-    assert.match(String((parseSingleJson(legacy.stdout) as { error: { message: string } }).error.message), /removed in 0\.5\.0/);
+    const removed = await runCli(["balance", "--output-schema", "v1"], { env: api.env() });
+    assert.equal(removed.code, 2, removed.stdout);
+    assert.match(String((parseSingleJson(removed.stdout) as { error: { message: string } }).error.message), /unknown option '--output-schema'/);
     // -o is for task assets; a JSON command points at --save-json.
     const file = join(tmpDir(), "out.json");
     const r2 = await runCli(["balance", "-o", file], { env: api.env() });
@@ -123,9 +121,9 @@ test("T-001 balance prints the v1 envelope with no flag; --output-schema v1 is a
 test("T-004 global flags resolve identically at root, middle and end", async () => {
   const api = await startMockApi((_req, res) => jsonReply(res, 200, { balance: 1 }));
   try {
-    const a = await runCli(["--output-schema", "v1", "--format", "ndjson", "balance"], { env: api.env() });
-    const b = await runCli(["balance", "--output-schema", "v1", "--format", "ndjson"], { env: api.env() });
-    const c = await runCli(["--format", "pretty", "balance", "--json", "--output-schema", "v1"], { env: api.env() });
+    const a = await runCli(["--format", "ndjson", "balance"], { env: api.env() });
+    const b = await runCli(["balance", "--format", "ndjson"], { env: api.env() });
+    const c = await runCli(["--format", "pretty", "balance", "--json"], { env: api.env() });
     assert.equal(a.stdout, b.stdout);
     // --json wins over --format pretty.
     assert.equal((parseSingleJson(c.stdout) as Record<string, unknown>)["ok"], true);
@@ -139,19 +137,19 @@ test("T-010 v1: --save-json stores the raw body, -o is refused, existing files a
   try {
     const dir = tmpDir();
     const target = join(dir, "raw.json");
-    const ok = await runCli(["balance", "--output-schema", "v1", "--save-json", target], { env: api.env(), cwd: dir });
+    const ok = await runCli(["balance", "--save-json", target], { env: api.env(), cwd: dir });
     assert.equal(ok.code, 0, ok.stderr);
     assert.deepEqual(JSON.parse(readFileSync(target, "utf8")), { balance: 3, extra: { nested: true } });
     const env = parseSingleJson(ok.stdout) as { result: { saved_json: { path: string; bytes: number } } };
     assert.equal(env.result.saved_json.path, realpathSync(target));
 
-    const again = await runCli(["balance", "--output-schema", "v1", "--save-json", target], { env: api.env(), cwd: dir });
+    const again = await runCli(["balance", "--save-json", target], { env: api.env(), cwd: dir });
     assert.equal(again.code, 11, again.stderr);
     const err = parseSingleJson(again.stdout) as { error: { code: string } };
     assert.equal(err.error.code, "local_io");
     assert.deepEqual(JSON.parse(readFileSync(target, "utf8")), { balance: 3, extra: { nested: true } }, "original file untouched");
 
-    const withOutput = await runCli(["balance", "--output-schema", "v1", "-o", join(dir, "x.json")], { env: api.env(), cwd: dir });
+    const withOutput = await runCli(["balance", "-o", join(dir, "x.json")], { env: api.env(), cwd: dir });
     assert.equal(withOutput.code, 2);
     assert.ok(!existsSync(join(dir, "x.json")));
     // -o was rejected before any request.
@@ -164,7 +162,7 @@ test("T-010 v1: --save-json stores the raw body, -o is refused, existing files a
 test("T-011 v1: API failures map to codes/exits and never include the key", async () => {
   const api = await startMockApi((_req, res) => jsonReply(res, 402, { message: "Insufficient credits" }));
   try {
-    const r = await runCli(["balance", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["balance"], { env: api.env() });
     assert.equal(r.code, 9, r.stderr);
     const env = parseSingleJson(r.stdout) as { ok: boolean; error: { code: string; http_status: number; recovery: unknown } };
     assert.equal(env.ok, false);
@@ -181,7 +179,7 @@ test("--env-file is refused with an explanation (Node.js intercepts it)", async 
   const dir = tmpDir();
   const file = join(dir, "k.env");
   writeFileSync(file, "MESHY_API_KEY=msy_x\n");
-  const r = await runCli(["balance", "--env-file", file, "--output-schema", "v1"], { cwd: dir });
+  const r = await runCli(["balance", "--env-file", file], { cwd: dir });
   assert.equal(r.code, 2, r.stderr);
   const env = parseSingleJson(r.stdout) as { error: { message: string } };
   assert.match(env.error.message, /--api-key-file/);
@@ -215,16 +213,16 @@ test("T-100 credential priority: flag > env > api-key-file > profile; a broken k
 
     // A malformed explicit file is an error even though the env var could have been used.
     writeFileSync(envFile, "MESHY_API_KEY=$(curl evil)\n");
-    const broken = await runCli(["balance", "--api-key-file", envFile, "--output-schema", "v1"], { env: api.env(), cwd: dir });
+    const broken = await runCli(["balance", "--api-key-file", envFile], { env: api.env(), cwd: dir });
     assert.equal(broken.code, 3, broken.stderr);
     const before = seen.length;
     // A missing file is a usage error and makes no request.
-    const missing = await runCli(["balance", "--api-key-file", join(dir, "absent.env"), "--output-schema", "v1"], { env: api.env(), cwd: dir });
+    const missing = await runCli(["balance", "--api-key-file", join(dir, "absent.env")], { env: api.env(), cwd: dir });
     assert.equal(missing.code, 2, missing.stderr);
     assert.equal(seen.length, before);
     // A file without the key does not fall back to the stored profile.
     writeFileSync(envFile, "OTHER=1\n");
-    const keyless = await runCli(["balance", "--api-key-file", envFile, "--output-schema", "v1"], { env: api.env({ MESHY_API_KEY: undefined }), cwd: dir });
+    const keyless = await runCli(["balance", "--api-key-file", envFile], { env: api.env({ MESHY_API_KEY: undefined }), cwd: dir });
     assert.equal(keyless.code, 3, keyless.stderr);
     assert.equal(seen.length, before);
   } finally {

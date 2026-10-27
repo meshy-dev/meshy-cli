@@ -47,7 +47,7 @@ test("L01 creative-lab lamp prototype get/wait on a task that is still IN_PROGRE
   });
   try {
     const env = api.env({ MESHY_POLL_INTERVAL_MS: "20" });
-    const got = await runCli(["creative-lab", "lamp", "prototype", "get", "cl-live", "--output-schema", "v1"], { env });
+    const got = await runCli(["creative-lab", "lamp", "prototype", "get", "cl-live"], { env });
     assert.equal(got.code, 0, `${got.stderr}\n${got.stdout}`);
     const g = parseSingleJson(got.stdout) as { ok: boolean; result: { task: { status: string; progress: number; finished_at: number } } };
     assert.equal(g.ok, true);
@@ -55,7 +55,7 @@ test("L01 creative-lab lamp prototype get/wait on a task that is still IN_PROGRE
     assert.equal(g.result.task.progress, 5);
     assert.equal(g.result.task.finished_at, null, "the v1 view shows a timestamp that has not happened as null — for the Creative Lab null and the v2 zero alike");
 
-    const waited = await runCli(["creative-lab", "lamp", "prototype", "wait", "cl-live", "--output-schema", "v1"], { env });
+    const waited = await runCli(["creative-lab", "lamp", "prototype", "wait", "cl-live"], { env });
     assert.equal(waited.code, 0, `${waited.stderr}\n${waited.stdout}`);
     const w = parseSingleJson(waited.stdout) as { ok: boolean; result: { task: { status: string; finished_at: number }; wait: { polls: number; timed_out: boolean } } };
     assert.equal(w.ok, true);
@@ -104,7 +104,7 @@ test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.l
     const env = api.env();
     const lampOut = join(dir, "lamp");
     mkdirSync(lampOut);
-    const lamp = await runCli(["creative-lab", "lamp", "build", "get", "lamp-1", "--output-schema", "v1", "-o", lampOut], { env, cwd: dir });
+    const lamp = await runCli(["creative-lab", "lamp", "build", "get", "lamp-1", "-o", lampOut], { env, cwd: dir });
     assert.equal(lamp.code, 0, `${lamp.stderr}\n${lamp.stdout}`);
     const l = parseSingleJson(lamp.stdout) as { result: { downloads: { files: Array<{ key: string; path: string; bytes: number; status: string }> } } };
     assert.deepEqual(l.result.downloads.files.map((f) => [f.key, f.path.split("/").at(-1), f.status]), [
@@ -116,7 +116,7 @@ test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.l
 
     const keyOut = join(dir, "keychain");
     mkdirSync(keyOut);
-    const key = await runCli(["creative-lab", "keychain", "build", "get", "key-1", "--output-schema", "v1", "-o", keyOut], { env, cwd: dir });
+    const key = await runCli(["creative-lab", "keychain", "build", "get", "key-1", "-o", keyOut], { env, cwd: dir });
     assert.equal(key.code, 0, `${key.stderr}\n${key.stdout}`);
     const k = parseSingleJson(key.stdout) as { result: { downloads: { files: Array<{ key: string; path: string; status: string }>; material_links: unknown } } };
     assert.deepEqual(k.result.downloads.files.map((f) => [f.key, f.path.split("/").at(-1), f.status]), [["model_obj", "model.obj.zip", "written"]]);

@@ -16,7 +16,7 @@ import { jsonReply, parseNdjson, parseSingleJson, runCli, startMockApi, tmpDir, 
 
 const KEY_A = "msy_review_fixture_account_a";
 const KEY_B = "msy_review_fixture_account_b";
-const CREATE = ["text-to-3d", "create", "--mode", "preview", "--prompt", "review fixture", "--async", "--output-schema", "v1"];
+const CREATE = ["text-to-3d", "create", "--mode", "preview", "--prompt", "review fixture", "--async"];
 
 function taskBody(fields: Record<string, unknown> = {}): Record<string, unknown> {
   return { id: "review-task", status: "SUCCEEDED", type: "text-to-3d-preview", progress: 100, ...fields };
@@ -122,7 +122,7 @@ test("R02/F06 two equal-length images differ: the second conflicts; the same ima
     assert.ok(!red.equals(green));
     assert.equal(red.toString("base64").length, green.toString("base64").length, "the probe's premise: equal encoded length");
     const env = api.env({ MESHY_API_KEY: KEY_A });
-    const args = (b64: string) => ["image-to-3d", "create", "--image-url", `data:image/png;base64,${b64}`, "--operation-id", "same-media-op", "--async", "--output-schema", "v1"];
+    const args = (b64: string) => ["image-to-3d", "create", "--image-url", `data:image/png;base64,${b64}`, "--operation-id", "same-media-op", "--async"];
     const first = await runCli(args(red.toString("base64")), { env });
     assert.equal(first.code, 0, first.stderr);
     const changed = await runCli(args(green.toString("base64")), { env });
@@ -154,7 +154,7 @@ test("R03/F07 wait: a GET that answers after the deadline is a timeout (exit 8) 
   const api = await startMockApi((_req, res) => laterReply(res, 400, 200, taskBody()));
   try {
     const started = Date.now();
-    const r = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0.05", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0.05"], { env: api.env() });
     const elapsed = Date.now() - started;
     assert.equal(r.code, 8, `${r.stderr}\n${r.stdout}`);
     const out = parseSingleJson(r.stdout) as { ok: boolean; error: { code: string; recovery: { command: string } }; result: { task: unknown; task_id: string; wait: { timed_out: boolean; polls: number }; next: { wait: string } } };
@@ -199,7 +199,7 @@ test("R03/F07 wait: slow body, expiry during sleep and --timeout 0 behave as spe
     return jsonReply(res, 200, taskBody({ status: "IN_PROGRESS", progress: 10 }));
   });
   try {
-    const slowBody = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0.05", "--output-schema", "v1"], { env: api.env() });
+    const slowBody = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0.05"], { env: api.env() });
     assert.equal(slowBody.code, 8, `${slowBody.stderr}\n${slowBody.stdout}`);
     assert.equal((parseSingleJson(slowBody.stdout) as { error: { code: string } }).error.code, "timed_out");
 
@@ -212,7 +212,7 @@ test("R03/F07 wait: slow body, expiry during sleep and --timeout 0 behave as spe
     mode = "instant";
     stamps.length = 0;
     origin = Date.now();
-    const expiry = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0.3", "--output-schema", "v1"], { env: api.env({ MESHY_POLL_INTERVAL_MS: "250" }) });
+    const expiry = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0.3"], { env: api.env({ MESHY_POLL_INTERVAL_MS: "250" }) });
     assert.equal(expiry.code, 8, expiry.stderr);
     const eo = parseSingleJson(expiry.stdout) as { result: { task: { status: string }; wait: { polls: number } } };
     assert.equal(eo.result.task.status, "IN_PROGRESS", "the last status seen is reported");
@@ -227,7 +227,7 @@ test("R03/F07 wait: slow body, expiry during sleep and --timeout 0 behave as spe
     // --timeout 0: exactly one query bounded by the read timeout, not by a zero budget.
     mode = "slow-200";
     stamps.length = 0;
-    const single = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0", "--output-schema", "v1"], { env: api.env() });
+    const single = await runCli(["text-to-3d", "wait", "review-task", "--timeout", "0"], { env: api.env() });
     assert.equal(single.code, 8, single.stderr);
     const so = parseSingleJson(single.stdout) as { result: { task: { status: string }; wait: { polls: number } } };
     assert.equal(so.result.task.status, "IN_PROGRESS", "the single query completed although it took 200 ms");
@@ -331,16 +331,10 @@ test("R06/F01 sync create: a 503 while polling keeps the created id, submission 
     assert.equal(out.result.wait.last_poll_error.http_status, 503);
     assert.equal(api.requests.filter((q) => q.method === "POST").length, 1);
     assert.ok(api.requests.filter((q) => q.method === "GET").length >= 2, "the 503 was retried");
-    // The same for a bare `wait`, and without the flag.
-    const w = await runCli(["text-to-3d", "wait", "some-task", "--timeout", "1", "--output-schema", "v1"], { env: api.env() });
+    // The same for a bare `wait`.
+    const w = await runCli(["text-to-3d", "wait", "some-task", "--timeout", "1"], { env: api.env() });
     assert.equal(w.code, 8, w.stderr);
     assert.equal((parseSingleJson(w.stdout) as { result: { task_id: string } }).result.task_id, "some-task");
-    const bare = await runCli([...CREATE.filter((a) => a !== "--async" && a !== "--output-schema" && a !== "v1"), "--timeout", "1"], { env: api.env() });
-    assert.equal(bare.code, 8, bare.stderr);
-    const lp = parseSingleJson(bare.stdout) as { error: { code: string }; result: { task_id: string; wait: { timed_out: boolean } } };
-    assert.equal(lp.error.code, "timed_out");
-    assert.equal(lp.result.task_id, "accepted-before-get-error");
-    assert.equal(lp.result.wait.timed_out, true);
   } finally {
     await api.close();
   }
@@ -350,7 +344,7 @@ test("F01 make: a polling failure after step 1 was accepted keeps executed steps
   // A 503 is retried; a 401 that appears mid-poll still ends the wait at once.
   const api = await startMockApi((req, res) => (req.method === "POST" ? jsonReply(res, 200, { result: "prev-accepted" }) : jsonReply(res, 401, { message: "key revoked" })));
   try {
-    const r = await runCli(["make", "a fixture cactus", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["make", "a fixture cactus"], { env: api.env() });
     assert.equal(r.code, 3, `${r.stderr}\n${r.stdout}`);
     const out = parseSingleJson(r.stdout) as { error: { code: string; http_status: number }; result: { task_id: string; executed: Array<{ task_id: string }>; submission: { state: string }; next: { wait: string } } };
     assert.equal(out.error.code, "auth");
@@ -548,7 +542,7 @@ test("R09/F03 task -o (get/wait/create/make) honours --workspace like standalone
   try {
     const env = api.env();
     const outsideModel = join(outside, "model.glb");
-    const get = await runCli(["text-to-3d", "get", "review-task", "--output-schema", "v1", "--workspace", workspace, "-o", outsideModel], { env, cwd: dir });
+    const get = await runCli(["text-to-3d", "get", "review-task", "--workspace", workspace, "-o", outsideModel], { env, cwd: dir });
     assert.equal(get.code, 11, `${get.stderr}\n${get.stdout}`);
     const go = parseSingleJson(get.stdout) as { error: { code: string }; result: { task_id: string; downloads: { state: string } } };
     assert.equal(go.error.code, "local_io");
@@ -559,7 +553,7 @@ test("R09/F03 task -o (get/wait/create/make) honours --workspace like standalone
 
     // Symlinked directory inside the workspace pointing outside.
     symlinkSync(outside, join(workspace, "link"));
-    const viaLink = await runCli(["text-to-3d", "wait", "review-task", "--output-schema", "v1", "--workspace", workspace, "-o", join(workspace, "link", "m.glb")], { env, cwd: dir });
+    const viaLink = await runCli(["text-to-3d", "wait", "review-task", "--workspace", workspace, "-o", join(workspace, "link", "m.glb")], { env, cwd: dir });
     assert.equal(viaLink.code, 11, viaLink.stderr);
     assert.deepEqual(readdirSync(outside), []);
 
@@ -567,13 +561,13 @@ test("R09/F03 task -o (get/wait/create/make) honours --workspace like standalone
     const before = api.requests.length;
     const create = await runCli([...CREATE, "--workspace", workspace, "-o", outsideModel], { env, cwd: dir });
     assert.equal(create.code, 11, create.stderr);
-    const make = await runCli(["make", "a fixture cactus", "--workspace", workspace, "-o", outsideModel, "--output-schema", "v1"], { env, cwd: dir });
+    const make = await runCli(["make", "a fixture cactus", "--workspace", workspace, "-o", outsideModel], { env, cwd: dir });
     assert.equal(make.code, 11, make.stderr);
     assert.equal(api.requests.length, before, "no request for a target outside the workspace");
     assert.deepEqual(readdirSync(outside), []);
 
     // Inside the workspace the same commands work.
-    const ok = await runCli(["text-to-3d", "get", "review-task", "--output-schema", "v1", "--workspace", workspace, "-o", join(workspace, "sub", "model.glb")], { env, cwd: dir });
+    const ok = await runCli(["text-to-3d", "get", "review-task", "--workspace", workspace, "-o", join(workspace, "sub", "model.glb")], { env, cwd: dir });
     assert.equal(ok.code, 0, ok.stderr);
     assert.ok(existsSync(join(workspace, "sub", "model.glb")));
     // Legacy schema, same boundary.
@@ -610,7 +604,7 @@ test("R10/F10 stream -o downloads the assets in ndjson, json and pretty; a downl
     for (const format of ["ndjson", "json", "pretty"] as const) {
       api.requests.length = 0;
       const target = join(dir, `${format}.glb`);
-      const r = await runCli(["text-to-3d", "stream", "review-task", "--format", format, "--output-schema", "v1", "-o", target], { env: api.env(), cwd: dir });
+      const r = await runCli(["text-to-3d", "stream", "review-task", "--format", format, "-o", target], { env: api.env(), cwd: dir });
       assert.equal(r.code, 0, `${format}: ${r.stderr}\n${r.stdout}`);
       assert.ok(existsSync(target), `${format}: the asset landed`);
       assert.deepEqual(api.requests.map((q) => q.path), ["/openapi/v2/text-to-3d/review-task/stream", "/asset.glb"], `${format}: one SSE GET, one asset GET`);
@@ -632,7 +626,7 @@ test("R10/F10 stream -o downloads the assets in ndjson, json and pretty; a downl
     assetOk = false;
     api.requests.length = 0;
     const target = join(dir, "failing.glb");
-    const bad = await runCli(["text-to-3d", "stream", "review-task", "--format", "ndjson", "--output-schema", "v1", "-o", target], { env: api.env(), cwd: dir });
+    const bad = await runCli(["text-to-3d", "stream", "review-task", "--format", "ndjson", "-o", target], { env: api.env(), cwd: dir });
     // The asset host's 404 keeps its own class (round 2, R2-F04): not_found / exit 5, never a bare local_io.
     assert.equal(bad.code, 5, `${bad.stderr}\n${bad.stdout}`);
     const lines = parseNdjson(bad.stdout) as Array<{ event: string; ok: boolean; error: { code: string; http_status: number | null } | null; result: { task_id: string; task: { status: string }; downloads: { state: string; files: Array<{ key: string; status: string }> } } }>;
@@ -645,7 +639,7 @@ test("R10/F10 stream -o downloads the assets in ndjson, json and pretty; a downl
     assert.equal(lines[1]!.result.downloads.state, "failed");
     assert.deepEqual(lines[1]!.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]]);
     assert.ok(!existsSync(target));
-    const badJson = await runCli(["text-to-3d", "stream", "review-task", "--output-schema", "v1", "-o", join(dir, "failing2.glb")], { env: api.env(), cwd: dir });
+    const badJson = await runCli(["text-to-3d", "stream", "review-task", "-o", join(dir, "failing2.glb")], { env: api.env(), cwd: dir });
     assert.equal(badJson.code, 5, badJson.stderr);
     assert.equal((parseSingleJson(badJson.stdout) as { result: { task_id: string } }).result.task_id, "review-task");
   } finally {
@@ -671,7 +665,7 @@ test("R11/F02 make: a journal write failure after the server accepted is local_i
   try {
     const shared = api.env();
     operations = join(String(shared["MESHY_CONFIG_DIR"]), "operations");
-    const text = await runCli(["make", "a fixture cactus", "--async", "--output-schema", "v1"], { env: shared });
+    const text = await runCli(["make", "a fixture cactus", "--async"], { env: shared });
     assert.equal(text.code, 11, `${text.stderr}\n${text.stdout}`);
     const out = parseSingleJson(text.stdout) as { error: { code: string }; result: { submission: { state: string; task_id: string }; task_id: string; step: number; next: { wait: string } } };
     assert.equal(out.error.code, "local_io");
@@ -687,7 +681,7 @@ test("R11/F02 make: a journal write failure after the server accepted is local_i
     const dir = tmpDir();
     const png = join(dir, "cat.png");
     writeFileSync(png, await sharp({ create: { width: 2, height: 2, channels: 3, background: { r: 1, g: 2, b: 3 } } }).png().toBuffer());
-    const img = await runCli(["make", png, "--async", "--output-schema", "v1"], { env: shared, cwd: dir });
+    const img = await runCli(["make", png, "--async"], { env: shared, cwd: dir });
     assert.equal(img.code, 11, `${img.stderr}\n${img.stdout}`);
     const io = parseSingleJson(img.stdout) as { error: { code: string }; result: { submission: { state: string; task_id: string } } };
     assert.equal(io.error.code, "local_io");

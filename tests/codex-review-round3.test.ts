@@ -22,7 +22,6 @@ import { CliError } from "../src/internal/errors.js";
 import { relinkMaterials } from "../src/internal/material-links.js";
 import { jsonReply, parseSingleJson, runCli, startMockApi, tmpDir } from "./helpers/cli.js";
 
-const V1 = ["--output-schema", "v1"];
 
 function taskBody(fields: Record<string, unknown> = {}): Record<string, unknown> {
   return { id: "round3-task", status: "SUCCEEDED", type: "text-to-3d-preview", progress: 100, ...fields };
@@ -54,8 +53,8 @@ function journalOperationIds(configDir: string): string[] {
     .map((f) => (JSON.parse(readFileSync(join(ops, f), "utf8")) as { operation_id: string; state: string; task_id: string | null }).operation_id);
 }
 
-/** The error envelope a run without `--output-schema v1` prints (the same envelope). */
-interface BareErrorEnvelope {
+/** The error envelope of a failed run. */
+interface ErrorEnvelope {
   ok: boolean;
   error: { code: string; http_status: number | null; hint?: string; message: string };
   result: { task_id?: string; submission?: { state: string; operation_id: string | null; task_id?: string }; next?: { wait: string; get: string }; downloads?: { state: string; files: Array<{ key: string; status: string }>; failed_step?: string } } | null;
@@ -96,7 +95,7 @@ test("C01+C02/R3-F01,R3-F04 sidecar targets planted after the preflight (symlink
         mkdirSync(out, { recursive: true });
         planter(out);
       };
-      const r = await runCli(["text-to-3d", "get", "round3-task", ...V1, "--workspace", workspace, "-o", out], { env, cwd: dir });
+      const r = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", out], { env, cwd: dir });
       assert.equal(r.code, 11, `${label}: ${r.stderr}\n${r.stdout}`);
       const env1 = parseSingleJson(r.stdout) as { error: { code: string; message: string }; result: { task_id: string; downloads: { state: string; failed_step: string; files: Array<{ key: string; path: string; status: string; sha256: string }> } } };
       assert.equal(env1.error.code, "local_io");
@@ -117,19 +116,19 @@ test("C01+C02/R3-F01,R3-F04 sidecar targets planted after the preflight (symlink
     // Single-file mode: the per-file sidecar (`<stem>_meta.json`) follows the same rule.
     const single = join(workspace, "single.glb");
     plant = () => symlinkSync(outside, join(workspace, "single_meta.json"));
-    const s = await runCli(["text-to-3d", "get", "round3-task", ...V1, "--workspace", workspace, "-o", single], { env, cwd: dir });
+    const s = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", single], { env, cwd: dir });
     assert.equal(s.code, 11, `${s.stderr}\n${s.stdout}`);
     assert.equal(readFileSync(outside, "utf8"), "original-user-data");
     assert.ok(existsSync(single), "the model itself was published");
-    // Without the flag: same refusal, same envelope, the task stays discoverable.
-    const bareOut = join(workspace, "race-bare");
+    // The refusal's envelope keeps the task discoverable and names the failed step.
+    const raceOut = join(workspace, "race-envelope");
     plant = () => {
-      mkdirSync(bareOut, { recursive: true });
-      symlinkSync(outside, join(bareOut, "meta.json"));
+      mkdirSync(raceOut, { recursive: true });
+      symlinkSync(outside, join(raceOut, "meta.json"));
     };
-    const bare = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", bareOut], { env, cwd: dir });
-    assert.equal(bare.code, 11, bare.stderr);
-    const lp = parseSingleJson(bare.stdout) as BareErrorEnvelope;
+    const raced = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", raceOut], { env, cwd: dir });
+    assert.equal(raced.code, 11, raced.stderr);
+    const lp = parseSingleJson(raced.stdout) as ErrorEnvelope;
     assert.equal(lp.error.code, "local_io");
     assert.equal(lp.result?.task_id, "round3-task");
     assert.equal(lp.result?.downloads?.failed_step, "sidecar");
@@ -175,7 +174,7 @@ test("C03/R3-F05 SIGINT while the OBJ is being relinked exits 130, keeps the com
         child?.kill("SIGINT");
       }
     }, 1);
-    const r = await runCli(["text-to-3d", "get", "round3-task", ...V1, "-o", out], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c), timeoutMs: 60_000 });
+    const r = await runCli(["text-to-3d", "get", "round3-task", "-o", out], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c), timeoutMs: 60_000 });
     clearInterval(poll);
     assert.ok(signalSent, "the test caught the relink phase (temp file observed)");
     assert.equal(r.code, 130, `${r.stderr}\n${r.stdout}`);
@@ -361,7 +360,7 @@ test("R3-F03 without source evidence a saved-name match is still accepted (conse
 // R3-F02 / C06 — a run without the flag keeps the accepted task on every download failure
 // ---------------------------------------------------------------------------
 
-test("C06/R3-F02 bare (no --output-schema) sync create/wait/get: an asset 503, a sidecar failure and SIGINT still report task_id, the real operation_id, next and the manifest; exactly one POST (make: codex-review-round4 R4-T01 with distinct step ids)", async () => {
+test("C06/R3-F02 sync create/wait/get: an asset 503, a sidecar failure and SIGINT still report task_id, the real operation_id, next and the manifest; exactly one POST (make: codex-review-round4 R4-T01 with distinct step ids)", async () => {
   let assetMode: "503" | "ok" | "slow" = "503";
   let plant: (() => void) | null = null;
   let child: ChildProcess | null = null;
@@ -394,7 +393,7 @@ test("C06/R3-F02 bare (no --output-schema) sync create/wait/get: an asset 503, a
     // Sync create (no flag), asset host 503.
     const created = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture legacy", "-o", join(dir, "legacy-created")], { env, cwd: dir });
     assert.equal(created.code, 7, `${created.stderr}\n${created.stdout}`);
-    const payload = parseSingleJson(created.stdout) as BareErrorEnvelope;
+    const payload = parseSingleJson(created.stdout) as ErrorEnvelope;
     assert.equal(payload.error.code, "network");
     assert.equal(payload.error.http_status, 503);
     assert.equal(payload.result?.task_id, "paid-legacy-created-id");
@@ -414,7 +413,7 @@ test("C06/R3-F02 bare (no --output-schema) sync create/wait/get: an asset 503, a
     // wait -o: same fields.
     const waited = await runCli(["text-to-3d", "wait", "paid-legacy-created-id", "-o", join(dir, "legacy-wait")], { env, cwd: dir });
     assert.equal(waited.code, 7, waited.stderr);
-    const wp = parseSingleJson(waited.stdout) as BareErrorEnvelope;
+    const wp = parseSingleJson(waited.stdout) as ErrorEnvelope;
     assert.equal(wp.result?.task_id, "paid-legacy-created-id");
     assert.equal(wp.error.http_status, 503);
 
@@ -427,7 +426,7 @@ test("C06/R3-F02 bare (no --output-schema) sync create/wait/get: an asset 503, a
     };
     const side = await runCli(["text-to-3d", "get", "paid-legacy-created-id", "-o", sideDir], { env, cwd: dir });
     assert.equal(side.code, 11, `${side.stderr}\n${side.stdout}`);
-    const sp = parseSingleJson(side.stdout) as BareErrorEnvelope;
+    const sp = parseSingleJson(side.stdout) as ErrorEnvelope;
     assert.equal(sp.result?.task_id, "paid-legacy-created-id");
     assert.equal(sp.result?.downloads?.state, "partial");
     assert.equal(sp.result?.downloads?.failed_step, "sidecar");
@@ -439,7 +438,7 @@ test("C06/R3-F02 bare (no --output-schema) sync create/wait/get: an asset 503, a
     const target = join(dir, "legacy-int.glb");
     const interrupted = await runCli(["text-to-3d", "get", "paid-legacy-created-id", "-o", target], { env, cwd: dir, onSpawn: (c) => (child = c) });
     assert.equal(interrupted.code, 130, `${interrupted.stderr}\n${interrupted.stdout}`);
-    const ip = parseSingleJson(interrupted.stdout) as BareErrorEnvelope;
+    const ip = parseSingleJson(interrupted.stdout) as ErrorEnvelope;
     assert.equal(ip.error.code, "interrupted");
     assert.equal(ip.result?.task_id, "paid-legacy-created-id");
     assert.ok(!existsSync(target));
