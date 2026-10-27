@@ -558,8 +558,8 @@ interface MakeResult {
   downloads: { state: string; files: Array<{ key: string; status: string }> };
 }
 
-test("R4-T01 make: two chain steps get different task ids; submission.operation_id, executed[-1].operation_id and the legacy top-level operation_id are the last accepted journal record's, refine carries step 1's id as preview_task_id — asset 503 and SIGINT, legacy and v1, POST GET POST GET GET", async () => {
-  for (const schema of ["legacy", "v1"] as const) {
+test("R4-T01 make: two chain steps get different task ids; submission.operation_id, executed[-1].operation_id are the last accepted journal record's, refine carries step 1's id as preview_task_id — asset 503 and SIGINT, with and without the flag, POST GET POST GET GET", async () => {
+  for (const schema of ["bare", "v1"] as const) {
     for (const mode of ["503", "sigint"] as const) {
       const label = `${schema}/${mode}`;
       let n = 0;
@@ -593,17 +593,11 @@ test("R4-T01 make: two chain steps get different task ids; submission.operation_
         const step1 = `${schema}-${mode}-step-1`;
         const step2 = `${schema}-${mode}-step-2`;
         const result = out.result;
-        if (schema === "v1") {
-          assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, label);
-          assert.equal(out["ok"], false);
-          const error = out["error"] as { code: string; http_status: number | null };
-          assert.equal(error.code, mode === "503" ? "network" : "interrupted", label);
-          assert.equal(error.http_status, mode === "503" ? 503 : null);
-        } else {
-          assert.equal(out["code"], mode === "503" ? "network" : "interrupted", label);
-          if (mode === "503") assert.equal(out["status"], 503);
-          assert.equal(out["task_id"], step2, `${label}: the legacy top-level task_id is the last step's`);
-        }
+        assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, label);
+        assert.equal(out["ok"], false);
+        const error = out["error"] as { code: string; http_status: number | null };
+        assert.equal(error.code, mode === "503" ? "network" : "interrupted", label);
+        assert.equal(error.http_status, mode === "503" ? 503 : null);
         assert.equal(result.task_id, step2, `${label}: the reported task is the last step, not the preview`);
         assert.equal(result.submission.state, "accepted");
         assert.equal(result.submission.task_id, step2);
@@ -626,7 +620,6 @@ test("R4-T01 make: two chain steps get different task ids; submission.operation_
         assert.equal(result.submission.operation_id, rec2.operation_id, `${label}: submission.operation_id is the last accepted record's`);
         assert.equal(result.executed.at(-1)!.operation_id, rec2.operation_id, `${label}: executed[-1].operation_id matches the journal`);
         assert.equal(result.executed[0]!.operation_id, rec1.operation_id, `${label}: executed[0].operation_id is step 1's own record`);
-        if (schema === "legacy") assert.equal(out["operation_id"], rec2.operation_id, `${label}: the legacy top-level operation_id is the last step's`);
         assert.match(result.next.wait, new RegExp(`wait ${step2}`), label);
         assert.deepEqual(api.requests.map((q) => q.method), ["POST", "GET", "POST", "GET", "GET"], label);
         const bodies = api.requests.map((q) => q.json as Record<string, unknown> | undefined);

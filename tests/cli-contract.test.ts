@@ -31,12 +31,15 @@ test("--version and --help stay plain text and exit 0", async () => {
   assert.match(sub.stdout, /--save-json/);
 });
 
-test("T-005 legacy: unknown option exits 2 with a parseable payload and no API request", async () => {
+test("T-005 unknown option exits 2 with a usage envelope and no API request", async () => {
   const r = await runCli(["balance", "--bogus"]);
   assert.equal(r.code, 2, r.stderr);
   const payload = parseSingleJson(r.stdout) as Record<string, unknown>;
-  assert.equal(payload["name"], "UsageError");
-  assert.match(String(payload["message"]), /unknown option/);
+  assert.deepEqual(Object.keys(payload), SIX);
+  assert.equal(payload["ok"], false);
+  const error = payload["error"] as Record<string, unknown>;
+  assert.equal(error["code"], "usage");
+  assert.match(String(error["message"]), /unknown option/);
 });
 
 test("T-005 v1: unknown command, missing argument and bad --format are usage errors in the envelope", async () => {
@@ -92,17 +95,26 @@ test("T-002 v1 success: balance emits one six-key envelope; pretty and ndjson sh
   }
 });
 
-test("T-001 legacy: balance output shape is unchanged without --output-schema", async () => {
+test("T-001 balance prints the v1 envelope with no flag; --output-schema v1 is a no-op and legacy is refused", async () => {
   const api = await startMockApi((_req, res) => jsonReply(res, 200, { balance: 7 }));
   try {
     const r = await runCli(["balance"], { env: api.env() });
     assert.equal(r.code, 0, r.stderr);
-    assert.equal(r.stdout, '{\n  "balance": 7\n}\n');
+    const env1 = parseSingleJson(r.stdout) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(env1), SIX);
+    assert.equal(env1["command"], "balance");
+    assert.equal((env1["result"] as Record<string, unknown>)["balance"], 7);
+    const flagged = await runCli(["balance", "--output-schema", "v1"], { env: api.env() });
+    assert.equal(flagged.stdout, r.stdout, "the flag changes nothing");
+    const legacy = await runCli(["balance", "--output-schema", "legacy"], { env: api.env() });
+    assert.equal(legacy.code, 2, legacy.stdout);
+    assert.match(String((parseSingleJson(legacy.stdout) as { error: { message: string } }).error.message), /removed in 0\.5\.0/);
+    // -o is for task assets; a JSON command points at --save-json.
     const file = join(tmpDir(), "out.json");
     const r2 = await runCli(["balance", "-o", file], { env: api.env() });
-    assert.equal(r2.code, 0);
-    assert.equal(r2.stdout, "");
-    assert.equal(readFileSync(file, "utf8"), '{\n  "balance": 7\n}\n');
+    assert.equal(r2.code, 2, r2.stdout);
+    assert.match(String((parseSingleJson(r2.stdout) as { error: { message: string } }).error.message), /--save-json/);
+    assert.ok(!existsSync(file));
   } finally {
     await api.close();
   }
@@ -239,7 +251,7 @@ test("T-102 local commands run without a credential, without network and without
     });
     const r = await runCli(["resources"], { env });
     assert.equal(r.code, 0, r.stderr);
-    const list = parseSingleJson(r.stdout) as unknown[];
+    const list = (parseSingleJson(r.stdout) as { result: { items: unknown[] } }).result.items;
     assert.ok(Array.isArray(list) && list.length > 0);
     await new Promise((resolve) => setTimeout(resolve, 1500));
     assert.equal(registryHits, 0, "a local command must not spawn the update child");

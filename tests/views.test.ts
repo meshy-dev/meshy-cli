@@ -167,3 +167,25 @@ test("humanHint: the hint, else the recovery command, else how to resume a task 
   );
   assert.equal(humanHint(undefined, null, { route: "text" }), undefined);
 });
+
+test("resources view — one line per command with its kind and summary, then the verbs pointer", () => {
+  const out = renderView("resources", {
+    schema_version: "meshy.cli/v1",
+    command: "resources",
+    ok: true,
+    result: {
+      items: [
+        { name: "text-to-3d", kind: "task", command: "meshy text-to-3d", summary: "two-stage 3D generation from text", endpoint: "/openapi/v2/text-to-3d", verbs: ["create"] },
+        { name: "balance", kind: "query", command: "meshy balance", summary: "remaining credit balance", endpoint: "/openapi/v1/balance", verbs: null },
+      ],
+      counts: { task: 1, query: 1, action: 0, local: 0 },
+      verbs_help: "meshy resources --help",
+    },
+    error: null,
+    warnings: [],
+  });
+  assert.match(out, /^ {2}meshy text-to-3d {2}task {4}two-stage 3D generation from text$/m);
+  assert.match(out, /^ {2}meshy balance {5}query {3}remaining credit balance$/m);
+  assert.match(out, /verbs: meshy resources --help$/);
+  assert.doesNotMatch(out, /schema_version|counts/);
+});

@@ -8,66 +8,63 @@ process.env["MESHY_CLI_NO_UPDATE_NOTIFIER"] = "1";
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { defaultOutputFormat, emit, parseOutputFormat, renderPretty } from "../src/internal/output.js";
+import { defaultOutputFormat, emitEnvelope, parseOutputFormat, render, renderPretty } from "../src/internal/output.js";
 import { emitResult, type OpenedCommand } from "../src/internal/command-helpers.js";
+import { okEnvelope, SCHEMA_VERSION } from "../src/internal/result.js";
 import type { GlobalFlags } from "../src/internal/runtime.js";
 
-function captureStdout(fn: () => void): string {
+/** Capture stdout across an async body; the fake write honours the completion callback writeStdout waits on. */
+async function captureStdout(fn: () => Promise<void> | void): Promise<string> {
   const chunks: string[] = [];
   const original = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+  process.stdout.write = ((chunk: string | Uint8Array, ...rest: unknown[]): boolean => {
     chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    const cb = rest.find((r) => typeof r === "function") as ((err?: Error) => void) | undefined;
+    if (cb) cb();
     return true;
   }) as typeof process.stdout.write;
   try {
-    fn();
+    await fn();
     return chunks.join("");
   } finally {
     process.stdout.write = original;
   }
 }
 
-test("emit — json prints 2-space indented JSON with trailing newline", () => {
-  const out = captureStdout(() => emit({ balance: 10 }, { format: "json" }));
-  assert.equal(out, '{\n  "balance": 10\n}\n');
+test("render — json prints 2-space indented JSON", () => {
+  assert.equal(render({ balance: 10 }, "json"), '{\n  "balance": 10\n}');
 });
 
-test("emit — ndjson of an array prints one-line-per-entry", () => {
-  const out = captureStdout(() =>
-    emit([{ a: 1 }, { a: 2 }], { format: "ndjson" }),
-  );
-  assert.equal(out, '{"a":1}\n{"a":2}\n');
+test("render — ndjson of an array prints one line per entry; an object one compact line", () => {
+  assert.equal(render([{ a: 1 }, { a: 2 }], "ndjson"), '{"a":1}\n{"a":2}');
+  assert.equal(render({ a: 1 }, "ndjson"), '{"a":1}');
 });
 
-test("emit — ndjson of an object prints a single compact line", () => {
-  const out = captureStdout(() => emit({ a: 1 }, { format: "ndjson" }));
-  assert.equal(out, '{"a":1}\n');
-});
-
-test("emit — pretty collapses primitives and indents nested objects", () => {
-  const out = captureStdout(() =>
-    emit(
-      { id: "x", nested: { a: 1 }, list: [1, 2] },
-      { format: "pretty" },
-    ),
-  );
+test("render — pretty collapses primitives and indents nested objects", () => {
+  const out = render({ id: "x", nested: { a: 1 }, list: [1, 2] }, "pretty");
   assert.match(out, /^id: x$/m);
   assert.match(out, /^nested:\n {2}a: 1$/m);
   assert.match(out, /^list:\n {2}- 1\n {2}- 2$/m);
 });
 
-test("emit — writes to file when opts.file is set, stdout stays empty", () => {
-  const dir = mkdtempSync(join(tmpdir(), "meshy-cli-out-"));
-  const file = join(dir, "out.json");
-  const stdout = captureStdout(() =>
-    emit({ balance: 7 }, { format: "json", file }),
-  );
-  assert.equal(stdout, "");
-  const written = readFileSync(file, "utf8");
-  assert.equal(written, '{\n  "balance": 7\n}\n');
+test("render — no painter means no colour, whatever the terminal would show", () => {
+  const out = render({ status: "ok" }, "pretty");
+  assert.equal(out, "status: ok");
+  assert.doesNotMatch(out, /\u001b\[/);
+});
+
+test("emitEnvelope — json prints exactly one envelope object with a trailing newline", async () => {
+  const out = await captureStdout(() => emitEnvelope(okEnvelope("balance", { balance: 10 }), "json"));
+  const parsed = JSON.parse(out) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(parsed), ["schema_version", "command", "ok", "result", "error", "warnings"]);
+  assert.equal(parsed["schema_version"], SCHEMA_VERSION);
+  assert.ok(out.endsWith("\n"));
+});
+
+test("emitEnvelope — ndjson prints the envelope on one line", async () => {
+  const out = await captureStdout(() => emitEnvelope(okEnvelope("balance", { balance: 10 }), "ndjson"));
+  assert.equal(out.split("\n").filter(Boolean).length, 1);
+  assert.equal((JSON.parse(out) as { result: { balance: number } }).result.balance, 10);
 });
 
 test("parseOutputFormat — accepts the three canonical values", () => {
@@ -99,40 +96,26 @@ test("parseOutputFormat — rejects garbage", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Legacy `-o <file>` under the TTY default
+// emitResult — one envelope per command, whatever the command
 // ---------------------------------------------------------------------------
 
-function opened(format: "json" | "pretty", formatExplicit: boolean): OpenedCommand {
-  const flags = { format, formatExplicit, updateCheck: false, verbose: false } as GlobalFlags;
-  return { command: "balance", schema: "legacy", format, flags };
+function opened(format: "json" | "pretty"): OpenedCommand {
+  const flags = { format, formatExplicit: true, updateCheck: false, verbose: false } as GlobalFlags;
+  return { command: "balance", format, flags };
 }
 
-/**
- * `-o <file>` writes the payload to disk instead of stdout. A TTY-derived
- * `pretty` describes the terminal, not the file, and callers have always read
- * that file back as JSON — so an untyped --format must not leak into it.
- */
-test("emitResult — untyped --format on a TTY still writes JSON to -o", async () => {
-  const file = join(mkdtempSync(join(tmpdir(), "meshy-cli-ofile-")), "out.json");
-  await emitResult(opened("pretty", false), { balance: 7 }, { balance: 7 }, { legacyFile: file });
-  assert.equal(readFileSync(file, "utf8"), '{\n  "balance": 7\n}\n');
+test("emitResult — wraps the result in the envelope under the opened command", async () => {
+  const out = await captureStdout(() => emitResult(opened("json"), { balance: 7 }));
+  const parsed = JSON.parse(out) as Record<string, unknown>;
+  assert.equal(parsed["command"], "balance");
+  assert.equal(parsed["ok"], true);
+  assert.deepEqual(parsed["result"], { balance: 7 });
+  assert.equal(parsed["error"], null);
+  assert.deepEqual(parsed["warnings"], []);
 });
 
-test("emitResult — an explicit --format pretty is honoured for -o", async () => {
-  const file = join(mkdtempSync(join(tmpdir(), "meshy-cli-ofile-")), "out.txt");
-  await emitResult(opened("pretty", true), { balance: 7 }, { balance: 7 }, { legacyFile: file });
-  assert.equal(readFileSync(file, "utf8"), "balance: 7\n");
-});
-
-/**
- * A file is not a terminal. `--format pretty -o notes.txt` must land readable
- * text on disk, never control codes — the bug you only notice a week later in
- * a diff.
- */
-test("emit — a file never receives colour, even from a painted terminal", () => {
-  const file = join(mkdtempSync(join(tmpdir(), "meshy-cli-color-"))," out.txt".trim());
-  emit({ status: "ok" }, { format: "pretty", file });
-  const written = readFileSync(file, "utf8");
-  assert.equal(written, "status: ok\n");
-  assert.doesNotMatch(written, /\u001b\[/);
+test("emitResult — warnings ride in the envelope", async () => {
+  const out = await captureStdout(() => emitResult(opened("json"), { balance: 7 }, { warnings: [{ code: "w", message: "careful" }] }));
+  const parsed = JSON.parse(out) as { warnings: Array<{ code: string }> };
+  assert.equal(parsed.warnings[0]?.code, "w");
 });

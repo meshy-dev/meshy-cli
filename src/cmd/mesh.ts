@@ -35,7 +35,7 @@ const prepareCommand = new Command("prepare-print")
       opts: { heightMm: number; inPlace?: boolean; geometryOnly?: boolean },
       thisCmd: Command,
     ) => {
-      const opened = openCommand(thisCmd, "mesh.prepare-print", "v1");
+      const opened = openCommand(thisCmd, "mesh.prepare-print");
       buildLocalRuntime(opened.flags);
       const outputFlag = opened.flags.output;
       if (outputFlag !== undefined && opts.inPlace) {
@@ -70,7 +70,7 @@ const prepareCommand = new Command("prepare-print")
         geometryOnly: opts.geometryOnly,
         root: workspace,
       });
-      await emitResult(opened, report, report, { warnings: report.warnings });
+      await emitResult(opened, report, { warnings: report.warnings });
     },
   );
 

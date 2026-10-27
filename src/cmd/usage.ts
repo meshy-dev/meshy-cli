@@ -6,7 +6,7 @@
  */
 
 import { Command, Option } from "commander";
-import { emitResult, listItems, openCommand, rejectOutputFlagForV1, saveRawJson } from "../internal/command-helpers.js";
+import { emitResult, listItems, openCommand, rejectOutputFlag, saveRawJson } from "../internal/command-helpers.js";
 import { abortSignal } from "../internal/context.js";
 import { UsageError } from "../internal/errors.js";
 import { parseCsv, parseInt10 } from "../internal/flags.js";
@@ -37,8 +37,8 @@ const tasksCommand = new Command("tasks")
       opts: { page: number; pageSize: number; sortBy: string; startTime?: string; endTime?: string; endpoints?: string[]; status?: string; saveJson?: string },
       thisCmd: Command,
     ) => {
-      const opened = openCommand(thisCmd, "usage.tasks", "v1");
-      rejectOutputFlagForV1(opened, opts.saveJson);
+      const opened = openCommand(thisCmd, "usage.tasks");
+      rejectOutputFlag(opened, opts.saveJson);
       if (!Number.isInteger(opts.page) || opts.page < 1) throw new UsageError("--page must be a positive integer");
       if (!Number.isInteger(opts.pageSize) || opts.pageSize < 1 || opts.pageSize > 100) throw new UsageError("--page-size must be between 1 and 100");
       const page = { page_num: opts.page, page_size: opts.pageSize, sort_by: opts.sortBy };
@@ -58,7 +58,7 @@ const tasksCommand = new Command("tasks")
       }, { signal: abortSignal() });
       const items = listItems(raw, USAGE_TASKS_PATH);
       const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
-      await emitResult(opened, items, { items, count: items.length, page, filters, saved_json: saved });
+      await emitResult(opened, { items, count: items.length, page, filters, saved_json: saved });
     },
   );
 

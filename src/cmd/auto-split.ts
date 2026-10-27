@@ -17,7 +17,6 @@ const PROMPT_MAX = 600;
 
 const spec: ResourceCommandSpec = {
   name: "auto-split",
-  defaultSchema: "v1",
   description:
     "Split a model into separately printable parts — automatically, by named parts, or by colour " +
     "region — with optional connectors. Input is a SUCCEEDED Meshy 6/7 task; textures are not kept",

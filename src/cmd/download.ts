@@ -109,11 +109,11 @@ export const downloadCommand = new Command("download")
   .option("--with-dependencies", "for OBJ selections also fetch the MTL and textures (default)")
   .option("--geometry-only", "for OBJ selections fetch the OBJ alone")
   .option("--save-json <file>", "save the raw task JSON (API source) alongside")
-  .option("--include-raw", "v1: include the raw task under result.source.raw")
+  .option("--include-raw", "include the raw task under result.source.raw")
   .option("--project <dir>", "initialised meshy_output project: default output directory, and the files are recorded in metadata.json")
   .option("--stage <name>", "stage label for the project record (default: derived from the task type)")
   .action(async (opts: DownloadOpts, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "download", "v1");
+    const opened = openCommand(thisCmd, "download");
     const sources = [opts.taskJson ? "task-json" : null, opts.url ? "url" : null, opts.resource || opts.taskId ? "api" : null].filter(Boolean);
     if (sources.length !== 1) throw new UsageError("provide exactly one source: --task-json <file>, --url <url>, or --resource <id> --task-id <id>");
     if ((opts.resource && !opts.taskId) || (!opts.resource && opts.taskId)) throw new UsageError("--resource and --task-id go together");
@@ -182,13 +182,13 @@ export const downloadCommand = new Command("download")
     } else {
       enumeration = enumerateAssets(task!, descriptor);
       if (task!["status"] !== "SUCCEEDED" && enumeration.assets.length === 0) {
-        await emitResult(opened, null, { source: sourceInfo, assets: [], downloads: { state: "not_ready", files: [], metadata_path: null }, saved_json: savedJson, unknown_urls: enumeration.unknown_urls }, {
+        await emitResult(opened, { source: sourceInfo, assets: [], downloads: { state: "not_ready", files: [], metadata_path: null }, saved_json: savedJson, unknown_urls: enumeration.unknown_urls }, {
           warnings: [warning("task_not_ready", `task status is ${String(task!["status"])}; no assets to download yet`)],
         });
         return;
       }
       if (opts.list) {
-        await emitResult(opened, null, {
+        await emitResult(opened, {
           source: sourceInfo,
           assets: enumeration.assets.map(describeAsset),
           unknown_urls: enumeration.unknown_urls,
@@ -249,13 +249,13 @@ export const downloadCommand = new Command("download")
       if (err instanceof CliError) {
         const expired = err.httpStatus === 401 || err.httpStatus === 403 || err.httpStatus === 410;
         const hint = expired && !refreshUrls && descriptor && task
-          ? `signed URL rejected and a task JSON cannot refresh it; re-fetch with \`meshy ${descriptor.commandPath.join(" ")} get ${String(task["id"])} --save-json <file> --output-schema v1\` (no new task is created)`
+          ? `signed URL rejected and a task JSON cannot refresh it; re-fetch with \`meshy ${descriptor.commandPath.join(" ")} get ${String(task["id"])} --save-json <file>\` (no new task is created)`
           : undefined;
         throw new CliError({
           code: err.code,
           message: hint ? `${err.message}. ${hint}` : err.message,
           httpStatus: err.httpStatus,
-          recovery: hint && descriptor && task ? { action: "refresh_task", automatic: false, command: `meshy ${descriptor.commandPath.join(" ")} get ${String(task["id"])} --save-json <file> --output-schema v1` } : err.recovery,
+          recovery: hint && descriptor && task ? { action: "refresh_task", automatic: false, command: `meshy ${descriptor.commandPath.join(" ")} get ${String(task["id"])} --save-json <file>` } : err.recovery,
           result: { source: sourceInfo, ...(err.result ?? {}), saved_json: savedJson },
           warnings: [...warnings, ...err.warnings],
           cause: err,
@@ -319,7 +319,7 @@ export const downloadCommand = new Command("download")
         throw projectRecordFailure(err, { projectDir, workspace, dir, input, written: written.length, outcome, warnings });
       }
     }
-    await emitResult(opened, null, { ...outcome, project }, { warnings });
+    await emitResult(opened, { ...outcome, project }, { warnings });
   });
 
 /**

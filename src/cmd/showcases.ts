@@ -8,7 +8,7 @@
 
 import { Command, Option } from "commander";
 import { SHOWCASE_FORMATS, SHOWCASE_SORT_BY, SHOWCASE_TYPES } from "../client/endpoints/showcases.js";
-import { emitResult, openCommand, rejectOutputFlagForV1, saveRawJson } from "../internal/command-helpers.js";
+import { emitResult, openCommand, rejectOutputFlag, saveRawJson } from "../internal/command-helpers.js";
 import { abortSignal } from "../internal/context.js";
 import { UsageError } from "../internal/errors.js";
 import { parseInt10 } from "../internal/flags.js";
@@ -34,8 +34,8 @@ const listCommand = new Command("list")
       opts: { search?: string; pageSize?: number; sortBy?: string; modelFormat?: string; showcaseType?: string; includeRaw?: boolean; saveJson?: string },
       thisCmd: Command,
     ) => {
-      const opened = openCommand(thisCmd, "showcases.list", "v1");
-      rejectOutputFlagForV1(opened, opts.saveJson);
+      const opened = openCommand(thisCmd, "showcases.list");
+      rejectOutputFlag(opened, opts.saveJson);
       if (opts.pageSize !== undefined && (opts.pageSize < 1 || opts.pageSize > 10)) {
         throw new UsageError("--page-size must be between 1 and 10");
       }
@@ -62,7 +62,6 @@ const listCommand = new Command("list")
       const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
       await emitResult(
         opened,
-        items,
         {
           items,
           count: items.length,

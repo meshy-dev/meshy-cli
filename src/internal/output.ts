@@ -9,44 +9,18 @@
  * moves: a pipe still gets exactly the same bytes as before, and `--format
  * json` / `--json` still force it.
  *
- * Legacy path (`emit`): bare payloads, optionally decorated with
- * `_notice.update` when a newer meshy-cli version is available. See
- * update-notifier.ts for the two-channel design.
- *
- * v1 path (`emitEnvelope`): exactly one envelope object, never decorated —
- * the six top-level keys are the contract. Humans on a TTY still get the
- * update hint on stderr.
+ * `emitEnvelope` prints exactly one envelope object, never decorated — the
+ * six top-level keys are the contract. A newer meshy-cli version is announced
+ * to people on stderr (update-notifier.ts), never inside the envelope.
  */
 
-import { writeFileSync } from "node:fs";
-import { attachUpdateNotice, getUpdateNotice, printHumanUpdateHint } from "./update-notifier.js";
+import { getUpdateNotice, printHumanUpdateHint } from "./update-notifier.js";
 import { painterFor, plain, type Painter } from "./color.js";
 import { currentCommand } from "./context.js";
 import { renderView } from "./views.js";
 import type { StreamEventEnvelope, V1Envelope } from "./result.js";
 
 export type OutputFormat = "json" | "pretty" | "ndjson";
-
-export interface OutputOptions {
-  format: OutputFormat;
-  file?: string;
-}
-
-export function emit(value: unknown, opts: OutputOptions): void {
-  const notice = getUpdateNotice();
-  const decorated = attachUpdateNotice(value, opts.format, notice);
-  const paint = opts.file ? plain : painterFor(process.stdout);
-  const text = opts.format === "pretty" ? pretty(decorated, paint) : render(decorated, opts.format, paint);
-  if (opts.file) {
-    writeFileSync(opts.file, text.endsWith("\n") ? text : `${text}\n`, "utf8");
-  } else {
-    process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
-  }
-  // After the output write in both branches: interactive users get the hint
-  // even when JSON goes to a file; -o task flows don't double-print because
-  // they bypass emit() via printReport.
-  printHumanUpdateHint(notice, process);
-}
 
 /**
  * Write to stdout and resolve once the bytes are handed to the OS. Needed
@@ -91,7 +65,7 @@ export async function emitStreamEvent(event: StreamEventEnvelope): Promise<void>
 
 /**
  * The raw renderings. `pretty` here is the generic dump; what a person sees
- * goes through the per-command views in views.ts (emit / emitEnvelope).
+ * goes through the per-command views in views.ts (emitEnvelope).
  *
  * `paint` defaults to plain: a caller that does not say where the text is going
  * gets no escapes. Only the stdout paths opt in — a file must never receive

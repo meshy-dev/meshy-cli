@@ -442,12 +442,12 @@ test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the 
     assert.equal(mo.result.downloads.state, "partial");
     assert.deepEqual(mo.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "written"], ["thumbnail", "failed"]]);
     assert.ok(existsSync(join(makeOut, "model.glb")));
-    // Legacy schema keeps the class in its payload too.
-    const legacy = await runCli(["text-to-3d", "get", "round2-task", "-o", join(dir, "legacy-out")], { env: api.env(), cwd: dir });
-    assert.equal(legacy.code, 7, legacy.stderr);
-    const lp = parseSingleJson(legacy.stdout) as { code: string; status: number; result: { downloads: { state: string; files: unknown[] } } };
-    assert.equal(lp.code, "network");
-    assert.equal(lp.status, 503);
+    // Without the flag: the same envelope keeps the class.
+    const bare = await runCli(["text-to-3d", "get", "round2-task", "-o", join(dir, "bare-out")], { env: api.env(), cwd: dir });
+    assert.equal(bare.code, 7, bare.stderr);
+    const lp = parseSingleJson(bare.stdout) as { error: { code: string; http_status: number }; result: { downloads: { state: string; files: unknown[] } } };
+    assert.equal(lp.error.code, "network");
+    assert.equal(lp.error.http_status, 503);
     assert.equal(lp.result.downloads.state, "partial");
     assert.equal(lp.result.downloads.files.length, 2);
   } finally {

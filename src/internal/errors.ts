@@ -3,18 +3,12 @@
  * human-friendly line, emits the structured payload when --format=json, and
  * maps error classes to conventional exit codes for scripting.
  *
- * Two output schemas share this module:
- *   - legacy: the additive `{name,message,status,code,path,hint,docs}` payload
- *     that 0.2.0 consumers parse (toErrorPayload / reportError).
- *   - v1: `classifyError` yields the stable code/exit/http/recovery tuple that
- *     result.ts wraps into the `meshy.cli/v1` envelope.
+ * `classifyError` yields the stable code/exit/http/recovery tuple that
+ * result.ts wraps into the `meshy.cli/v1` error envelope; index.ts prints it.
  */
 
 import { CommanderError } from "commander";
 import { MeshyApiError } from "../client/errors.js";
-import { emit, type OutputFormat } from "./output.js";
-import { painterFor } from "./color.js";
-import { humanHint } from "./views.js";
 
 export const EXIT_CODES = {
   OK: 0,
@@ -320,8 +314,14 @@ export function classifyError(err: unknown): ClassifiedError {
     else if (err.code === "oauth_timeout" || err.code === "step_timeout") code = "timed_out";
     else if (err.code === "step_failed") code = "task_failed";
     const exitCode = err.exitCode ?? EXIT_FOR_CODE[code];
+    // DeviceFlowError (a HintedError subclass) carries the OAuth error code
+    // (access_denied / expired_token / invalid_grant …); machines read it as
+    // `details.oauth_error`. Read loosely to avoid importing device.ts.
+    const oauthError = (err as unknown as Record<string, unknown>)["oauthErrorCode"];
     return {
-      ...base(code, err.message, { details: { code: err.code, docs: err.docs } }),
+      ...base(code, err.message, {
+        details: { code: err.code, docs: err.docs, ...(typeof oauthError === "string" ? { oauth_error: oauthError } : {}) },
+      }),
       exitCode,
       hint: err.hint,
       recovery: err.hint ? { action: "run_hint", automatic: false, command: err.hint } : null,
@@ -353,83 +353,3 @@ function base(
   };
 }
 
-/** Legacy stderr + payload reporter (unchanged shape for 0.2.0 consumers). */
-export function reportError(err: unknown, format: OutputFormat): void {
-  const payload = toErrorPayload(err);
-  // Painted against stderr, not stdout: `meshy ... | jq` still shows a red
-  // error line in the terminal, and `2> log` gets clean text.
-  const paint = painterFor(process.stderr);
-  process.stderr.write(`${paint("error:", "red")} ${payload.message}\n`);
-  // A person also gets a way forward when there is no hint (make's interrupt,
-  // a poll that lost the network). Machines read it from the payload.
-  const hint =
-    format === "pretty"
-      ? humanHint(payload["hint"], err instanceof CliError ? err.recovery?.command : undefined, payload["result"])
-      : typeof payload["hint"] === "string" ? (payload["hint"] as string) : undefined;
-  if (hint) process.stderr.write(`${paint("hint:", "yellow")} ${hint}\n`);
-  if (format !== "pretty") {
-    try {
-      emit(payload, { format });
-    } catch {
-      /* ignore: stderr already carries the human message */
-    }
-  }
-}
-
-/**
- * The payload shape stays additive: `hint` and `docs` join the existing
- * name/message/status/code/path fields rather than moving everything under an
- * `{ok:false, error:{…}}` envelope. Successful commands emit bare API payloads
- * with no `ok` field, so an envelope on failures only would force consumers to
- * probe for two different shapes.
- */
-export function toErrorPayload(err: unknown): { name: string; message: string; [k: string]: unknown } {
-  if (err instanceof MeshyApiError) {
-    return { ...err.toJSON(), ...hintForApiError(err), name: err.name, message: err.message };
-  }
-  if (err instanceof CliError) {
-    // Additive convenience fields: a legacy consumer reading an error after a
-    // create must find the accepted task without digging into `result`.
-    const result = err.result ?? undefined;
-    const taskId = typeof result?.["task_id"] === "string" ? (result["task_id"] as string) : undefined;
-    const submission = result?.["submission"] as { operation_id?: unknown } | undefined;
-    const operationId = typeof submission?.operation_id === "string" ? submission.operation_id : undefined;
-    return {
-      name: err.name,
-      message: err.message,
-      code: err.code,
-      ...(err.httpStatus !== null ? { status: err.httpStatus } : {}),
-      ...(err.hint ? { hint: err.hint } : {}),
-      ...(taskId ? { task_id: taskId } : {}),
-      ...(operationId ? { operation_id: operationId } : {}),
-      ...(result ? { result } : {}),
-    };
-  }
-  if (err instanceof CommanderError) {
-    return { name: "UsageError", message: err.message.replace(/^error:\s*/i, "").trim(), code: err.code };
-  }
-  if (err instanceof HintedError) {
-    // DeviceFlowError (a HintedError subclass) carries an oauthErrorCode field
-    // that machine consumers need to distinguish access_denied / invalid_grant /
-    // expired_token etc. Serialise it as `oauth_error` (snake_case, consistent
-    // with the rest of the JSON error payload) without importing the subclass
-    // (which would create a circular dependency through device.ts → errors.ts).
-    const errAsUnknown = err as unknown as Record<string, unknown>;
-    const oauthError =
-      typeof errAsUnknown["oauthErrorCode"] === "string"
-        ? errAsUnknown["oauthErrorCode"]
-        : undefined;
-    return {
-      name: err.name,
-      message: err.message,
-      code: err.code,
-      ...(oauthError !== undefined ? { oauth_error: oauthError } : {}),
-      ...(err.hint ? { hint: err.hint } : {}),
-      ...(err.docs ? { docs: err.docs } : {}),
-    };
-  }
-  if (err instanceof Error) {
-    return { name: err.name, message: err.message };
-  }
-  return { name: "Error", message: String(err) };
-}

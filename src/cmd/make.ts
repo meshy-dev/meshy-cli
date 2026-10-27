@@ -35,7 +35,7 @@ import { parseInt10 } from "../internal/flags.js";
 import { normalizeMediaPayload } from "../internal/file-input.js";
 import { logger } from "../internal/logger.js";
 import { planMake, type MakePlan, type MakeStep } from "../internal/make-plan.js";
-import { emit, emitEnvelope } from "../internal/output.js";
+import { emitEnvelope } from "../internal/output.js";
 import { emitResult, openCommand, type OpenedCommand } from "../internal/command-helpers.js";
 import { downloadArtifacts } from "../internal/download.js";
 import { parseTimeoutSeconds, pollUntilTerminal, type PollResult } from "../internal/poll.js";
@@ -45,7 +45,6 @@ import { okEnvelope, warning, type Warning } from "../internal/result.js";
 import { buildRuntime, type Runtime } from "../internal/runtime.js";
 import {
   buildTaskResult,
-  emitTerminalOutcome,
   preflightOutputPath,
   retriedWarning,
   submitCreate,
@@ -96,7 +95,7 @@ export const makeCommand = new Command("make")
   )
   .addOption(new Option("--timeout <seconds>", "max seconds to poll each step; the task keeps running after it (resume with the printed command)").default("600"))
   .action(async (input: string, opts: MakeOptions, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, "make", "legacy");
+    const opened = openCommand(thisCmd, "make");
     if (opts.async && opts.stopAfterFirst) {
       throw new UsageError("--async and --stop-after-first are mutually exclusive (--async submits and returns; --stop-after-first waits for step 1)");
     }
@@ -113,7 +112,7 @@ export const makeCommand = new Command("make")
     }
 
     if (opts.dryRun) {
-      await emitResult(opened, planPayload(plan), { ...planPayload(plan), dry_run: true, requests_made: 0 });
+      await emitResult(opened, { ...planPayload(plan), dry_run: true, requests_made: 0 });
       return;
     }
 
@@ -182,34 +181,18 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
     if (opts.async) {
       // Exactly one POST, zero polls: the caller owns the rest of the plan.
       const pending = pendingSteps(plan, step.index, null, runtime.flags.output);
-      if (opened.schema === "v1") {
-        await emitEnvelope(
-          okEnvelope("make", {
-            route: plan.route,
-            submitted: { step: step.index, resource: step.resource, action: step.action, task_id: taskId, operation_id: operationId },
-            submission,
-            task: null,
-            executed,
-            pending_steps: pending,
-            estimated_credits: plan.estimatedCredits,
-            next: taskNextCommands(descriptor, taskId),
-          }, warnings),
-          opened.format,
-        );
-        return;
-      }
-      emit(
-        {
-          command: "make",
+      await emitEnvelope(
+        okEnvelope("make", {
           route: plan.route,
-          submitted: step.action,
-          task_id: taskId,
-          status: null,
-          operation_id: operationId,
+          submitted: { step: step.index, resource: step.resource, action: step.action, task_id: taskId, operation_id: operationId },
+          submission,
+          task: null,
+          executed,
           pending_steps: pending,
-          hint: `meshy ${step.resource} wait ${taskId}`,
-        },
-        { format: runtime.flags.format },
+          estimated_credits: plan.estimatedCredits,
+          next: taskNextCommands(descriptor, taskId),
+        }, warnings),
+        opened.format,
       );
       return;
     }
@@ -271,7 +254,7 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
     }
 
     if (timedOut || !task || task.status !== "SUCCEEDED") {
-      throw stepFailure(plan, step, task, taskId, raw, timedOut, completedTaskId, runtime, executed, opened);
+      throw stepFailure(plan, step, task, taskId, raw, timedOut, completedTaskId, runtime, executed);
     }
 
     if (step.index === plan.steps.length) {
@@ -284,30 +267,16 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
 
     if (opts.stopAfterFirst) {
       const pending = pendingSteps(plan, step.index, task.id, runtime.flags.output);
-      if (opened.schema === "v1") {
-        await emitEnvelope(
-          okEnvelope("make", {
-            route: plan.route,
-            stopped_after: { step: step.index, resource: step.resource, action: step.action, task_id: task.id, status: task.status },
-            task: buildTaskResult({ task, raw, descriptor, includeRaw: false, submission }).task,
-            executed,
-            pending_steps: pending,
-            resume: resumeCommand(plan, task.id, runtime) ?? null,
-          }, warnings),
-          opened.format,
-        );
-        return;
-      }
-      emit(
-        {
-          command: "make",
+      await emitEnvelope(
+        okEnvelope("make", {
           route: plan.route,
-          stopped_after: step.action,
-          task_id: task.id,
-          status: task.status,
-          hint: resumeCommand(plan, task.id, runtime),
-        },
-        { format: runtime.flags.format },
+          stopped_after: { step: step.index, resource: step.resource, action: step.action, task_id: task.id, status: task.status },
+          task: buildTaskResult({ task, raw, descriptor, includeRaw: false, submission }).task,
+          executed,
+          pending_steps: pending,
+          resume: resumeCommand(plan, task.id, runtime) ?? null,
+        }, warnings),
+        opened.format,
       );
       return;
     }
@@ -327,30 +296,6 @@ async function finalOutcome(
 ): Promise<void> {
   const descriptor = requireTaskResource(step.resource);
   const submission = { state: "accepted", operation_id: executed[executed.length - 1]?.operation_id ?? null, task_id: task.id };
-  if (opened.schema !== "v1") {
-    // Legacy shape, same rule as the resource commands: a download failure
-    // after the chain succeeded still names the task, its submission and the
-    // command that fetches the assets again.
-    try {
-      await emitTerminalOutcome(task, false, elapsed, step.resource, runtime);
-    } catch (err) {
-      const wrapped = wrapWithResult(err, { route: plan.route, executed, task_id: task.id, submission, next: taskNextCommands(descriptor, task.id) });
-      throw new CliError({
-        code: wrapped.code,
-        message: wrapped.message,
-        exitCode: wrapped.exitCode,
-        httpStatus: wrapped.httpStatus,
-        retryable: wrapped.retryable,
-        recovery: wrapped.recovery ?? { action: "download", automatic: false, command: `meshy download --resource ${step.resource} --task-id ${task.id} --all --output-dir <dir>` },
-        hint: wrapped.hint ?? wrapped.recovery?.command ?? `meshy download --resource ${step.resource} --task-id ${task.id} --all --output-dir <dir>`,
-        details: wrapped.details,
-        warnings: wrapped.warnings,
-        result: wrapped.result,
-        cause: err,
-      });
-    }
-    return;
-  }
   const base = buildTaskResult({ task, raw, descriptor, includeRaw: false, submission });
   let downloads = base.downloads as Record<string, unknown>;
   if (runtime.flags.output) {
@@ -455,45 +400,24 @@ function stepFailure(
   completedTaskId: string,
   runtime: Runtime,
   executed: ExecutedStep[],
-  opened: OpenedCommand,
 ): Error {
   const descriptor = requireTaskResource(step.resource);
   const taskView = task ? buildTaskResult({ task, raw, descriptor, includeRaw: false, submission: { state: "accepted", operation_id: null, task_id: taskId } }).task : null;
   const resume = resumeCommand(plan, completedTaskId, runtime);
   const status = task?.status ?? "unknown";
-  if (opened.schema === "v1") {
-    if (timedOut) {
-      return new CliError({
-        code: "timed_out",
-        message: `make: ${step.label} did not finish within the timeout — task ${taskId} is still running`,
-        recovery: { action: "wait", automatic: false, command: `meshy ${step.resource} wait ${taskId}` },
-        result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, null, runtime.flags.output), resume: resume ?? null, next: taskNextCommands(descriptor, taskId) },
-      });
-    }
-    return new CliError({
-      code: "task_failed",
-      message: task?.task_error?.message || `make: ${step.label} ended as ${status} — task ${taskId}`,
-      recovery: resume ? { action: "resume", automatic: false, command: resume } : null,
-      result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, completedTaskId || null, runtime.flags.output), resume: resume ?? null },
-    });
-  }
   if (timedOut) {
-    return new HintedError({
+    return new CliError({
+      code: "timed_out",
       message: `make: ${step.label} did not finish within the timeout — task ${taskId} is still running`,
-      code: "step_timeout",
-      hint: `meshy ${step.resource} wait ${taskId}`,
-      exitCode: 8,
+      recovery: { action: "wait", automatic: false, command: `meshy ${step.resource} wait ${taskId}` },
+      result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, null, runtime.flags.output), resume: resume ?? null, next: taskNextCommands(descriptor, taskId) },
     });
   }
-  // A resume is only offered when an earlier step actually succeeded; without
-  // one, a suggested command would be a guess, and a wrong command is worse
-  // than none.
-  return new HintedError({
-    message:
-      task?.task_error?.message ||
-      `make: ${step.label} ended as ${status} — task ${taskId}`,
-    code: "step_failed",
-    ...(resume ? { hint: `${resume}   # step ${step.index} failed; step ${step.index - 1} is kept` } : {}),
+  return new CliError({
+    code: "task_failed",
+    message: task?.task_error?.message || `make: ${step.label} ended as ${status} — task ${taskId}`,
+    recovery: resume ? { action: "resume", automatic: false, command: resume } : null,
+    result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, completedTaskId || null, runtime.flags.output), resume: resume ?? null },
   });
 }
 

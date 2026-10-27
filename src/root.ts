@@ -53,26 +53,6 @@ import { usageCommand } from "./cmd/usage.js";
 import { uvUnwrapCommand } from "./cmd/uv-unwrap.js";
 
 /**
- * Commands added in S1. They only speak the v1 envelope; the error exit uses
- * this set to pick the schema when a parse error happens before any action.
- */
-export const V1_ONLY_COMMANDS: ReadonlySet<string> = new Set([
-  "uv-unwrap",
-  "creative-lab",
-  "animation-catalog",
-  "showcases",
-  "download",
-  "project",
-  "operations",
-  "inspect",
-  "mesh",
-  "slicer",
-  "doctor",
-  "auto-split",
-  "usage",
-]);
-
-/**
  * Commands that never need the authenticated API. The background update check
  * is skipped for them so local work spawns no network child.
  */
@@ -137,7 +117,6 @@ GLOBAL FLAGS (accepted at any position in the command line):
     --base-url-v2 <url>      override MESHY_BASE_URL_V2
     --base-url-creative-lab <url>  override the Creative Lab base (default: <v1 origin>/openapi/creative-lab)
     --format <fmt>           pretty on a terminal, json when piped | json | pretty | ndjson
-    --output-schema <s>      legacy (default for existing commands) | v1 (stable envelope; new commands)
     --output, -o <path>      download task artifacts to a file or directory,
                              write meta.json alongside, and replace stdout
                              with a status report (without -o: stdout keeps

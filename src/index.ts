@@ -6,20 +6,20 @@
  *   - decide whether the background update check may run before anything else;
  *   - turn SIGINT / SIGTERM / SIGHUP into a cooperative abort (exit 130) instead of a hard kill;
  *   - route every failure — including Commander parse errors — through one
- *     exit that renders the payload in the schema the command would have used;
+ *     exit that renders the v1 error envelope in the format the command would have used;
  *   - flush stdout before exiting.
  */
 
 import type { Command } from "commander";
 
-import { buildRootCommand, V1_ONLY_COMMANDS, LOCAL_COMMANDS } from "./root.js";
+import { buildRootCommand, LOCAL_COMMANDS } from "./root.js";
 import { currentCommand, interruptedBy, markInterrupted, wasInterrupted } from "./internal/context.js";
-import { exitCodeFor, isCommanderInformational, reportError, CliError } from "./internal/errors.js";
+import { isCommanderInformational, CliError } from "./internal/errors.js";
 import { painterFor } from "./internal/color.js";
-import { emitEnvelope, printWarnings, writeStdout, type OutputFormat } from "./internal/output.js";
+import { emitEnvelope, printWarnings, type OutputFormat } from "./internal/output.js";
 import { humanHint } from "./internal/views.js";
 import { stopActiveProgress } from "./internal/progress.js";
-import { errorEnvelope, type OutputSchema } from "./internal/result.js";
+import { errorEnvelope } from "./internal/result.js";
 import { resolveFormat } from "./internal/runtime.js";
 import { refreshCache, shouldSkip } from "./internal/update-notifier.js";
 
@@ -96,7 +96,6 @@ function installSignalHandlers(): void {
 async function reportFailure(program: Command, argv: string[], err: unknown): Promise<number> {
   stopActiveProgress();
   const ctx = currentCommand();
-  const schema: OutputSchema = ctx?.schema ?? resolveSchemaHeuristically(program, argv);
   const format: OutputFormat = ctx?.format ?? resolveErrorFormat(program, argv);
   // A SIGINT that surfaced as some other failure is still reported as
   // interrupted — but whatever the command already knew (task id, submission,
@@ -114,34 +113,24 @@ async function reportFailure(program: Command, argv: string[], err: unknown): Pr
         })
       : err;
 
-  if (schema === "v1") {
-    const command = ctx?.command ?? commandNameFromArgv(program, argv);
-    const { envelope, exitCode } = errorEnvelope(command, interruptedErr);
-    const paint = painterFor(process.stderr);
-    process.stderr.write(`${paint("error:", "red")} ${envelope.error?.message ?? "unknown error"}\n`);
-    const hint = format === "pretty" ? humanHint(envelope.error?.hint, envelope.error?.recovery?.command, envelope.result) : envelope.error?.hint;
-    if (hint) process.stderr.write(`${paint("hint:", "yellow")} ${hint}\n`);
-    // A person at a terminal has the message and the hint; the envelope is for
-    // machines, which never get `pretty` unless they ask for it.
-    if (format === "pretty") {
-      printWarnings(envelope.warnings);
-      return exitCode;
-    }
-    try {
-      await emitEnvelope(envelope, format);
-    } catch {
-      /* stderr already carries the human message */
-    }
+  const command = ctx?.command ?? commandNameFromArgv(program, argv);
+  const { envelope, exitCode } = errorEnvelope(command, interruptedErr);
+  const paint = painterFor(process.stderr);
+  process.stderr.write(`${paint("error:", "red")} ${envelope.error?.message ?? "unknown error"}\n`);
+  const hint = format === "pretty" ? humanHint(envelope.error?.hint, envelope.error?.recovery?.command, envelope.result) : envelope.error?.hint;
+  if (hint) process.stderr.write(`${paint("hint:", "yellow")} ${hint}\n`);
+  // A person at a terminal has the message and the hint; the envelope is for
+  // machines, which never get `pretty` unless they ask for it.
+  if (format === "pretty") {
+    printWarnings(envelope.warnings);
     return exitCode;
   }
-
-  reportError(interruptedErr, format);
   try {
-    await writeStdout("");
+    await emitEnvelope(envelope, format);
   } catch {
-    /* nothing to flush */
+    /* stderr already carries the human message */
   }
-  return exitCodeFor(interruptedErr);
+  return exitCode;
 }
 
 /**
@@ -173,23 +162,6 @@ function resolveErrorFormat(program: Command, argv: string[]): OutputFormat {
   const i = argv.indexOf("--output-schema");
   const typedV1 = argv.includes("--output-schema=v1") || (i >= 0 && argv[i + 1]?.toLowerCase() === "v1");
   return resolveFormat({ outputSchema: typedV1 ? "v1" : undefined });
-}
-
-/**
- * Before an action ran we only know argv. `--output-schema` is a root option,
- * so a parsed value is authoritative; otherwise the first command token decides
- * (new commands are v1-only, everything else is legacy).
- */
-function resolveSchemaHeuristically(program: Command, argv: string[]): OutputSchema {
-  const parsed = program.opts()["outputSchema"];
-  if (parsed === "v1" || parsed === "legacy") return parsed;
-  const idx = argv.indexOf("--output-schema");
-  if (idx !== -1) {
-    const v = argv[idx + 1];
-    if (v === "v1" || v === "legacy") return v;
-  }
-  const first = firstCommandToken(program, argv);
-  return first && V1_ONLY_COMMANDS.has(first) ? "v1" : "legacy";
 }
 
 function firstCommandToken(program: Command, argv: string[]): string | undefined {

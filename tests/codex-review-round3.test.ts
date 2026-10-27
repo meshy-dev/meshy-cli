@@ -54,13 +54,11 @@ function journalOperationIds(configDir: string): string[] {
     .map((f) => (JSON.parse(readFileSync(join(ops, f), "utf8")) as { operation_id: string; state: string; task_id: string | null }).operation_id);
 }
 
-interface LegacyErrorPayload {
-  code: string;
-  status?: number;
-  hint?: string;
-  task_id?: string;
-  operation_id?: string;
-  result?: { task_id?: string; submission?: { state: string; operation_id: string | null; task_id?: string }; next?: { wait: string; get: string }; downloads?: { state: string; files: Array<{ key: string; status: string }>; failed_step?: string } };
+/** The error envelope a run without `--output-schema v1` prints (the same envelope). */
+interface BareErrorEnvelope {
+  ok: boolean;
+  error: { code: string; http_status: number | null; hint?: string; message: string };
+  result: { task_id?: string; submission?: { state: string; operation_id: string | null; task_id?: string }; next?: { wait: string; get: string }; downloads?: { state: string; files: Array<{ key: string; status: string }>; failed_step?: string } } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,17 +121,17 @@ test("C01+C02/R3-F01,R3-F04 sidecar targets planted after the preflight (symlink
     assert.equal(s.code, 11, `${s.stderr}\n${s.stdout}`);
     assert.equal(readFileSync(outside, "utf8"), "original-user-data");
     assert.ok(existsSync(single), "the model itself was published");
-    // Legacy schema: same refusal, the task stays discoverable.
-    const legacyOut = join(workspace, "race-legacy");
+    // Without the flag: same refusal, same envelope, the task stays discoverable.
+    const bareOut = join(workspace, "race-bare");
     plant = () => {
-      mkdirSync(legacyOut, { recursive: true });
-      symlinkSync(outside, join(legacyOut, "meta.json"));
+      mkdirSync(bareOut, { recursive: true });
+      symlinkSync(outside, join(bareOut, "meta.json"));
     };
-    const legacy = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", legacyOut], { env, cwd: dir });
-    assert.equal(legacy.code, 11, legacy.stderr);
-    const lp = parseSingleJson(legacy.stdout) as LegacyErrorPayload;
-    assert.equal(lp.code, "local_io");
-    assert.equal(lp.task_id, "round3-task");
+    const bare = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", bareOut], { env, cwd: dir });
+    assert.equal(bare.code, 11, bare.stderr);
+    const lp = parseSingleJson(bare.stdout) as BareErrorEnvelope;
+    assert.equal(lp.error.code, "local_io");
+    assert.equal(lp.result?.task_id, "round3-task");
     assert.equal(lp.result?.downloads?.failed_step, "sidecar");
     assert.deepEqual(lp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model_glb", "written"]]);
     assert.equal(readFileSync(outside, "utf8"), "original-user-data");
@@ -360,10 +358,10 @@ test("R3-F03 without source evidence a saved-name match is still accepted (conse
 });
 
 // ---------------------------------------------------------------------------
-// R3-F02 / C06 — legacy schema keeps the accepted task on every download failure
+// R3-F02 / C06 — a run without the flag keeps the accepted task on every download failure
 // ---------------------------------------------------------------------------
 
-test("C06/R3-F02 legacy sync create/wait/get: an asset 503, a sidecar failure and SIGINT still report task_id, the real operation_id, next and the manifest; exactly one POST (make: codex-review-round4 R4-T01 with distinct step ids)", async () => {
+test("C06/R3-F02 bare (no --output-schema) sync create/wait/get: an asset 503, a sidecar failure and SIGINT still report task_id, the real operation_id, next and the manifest; exactly one POST (make: codex-review-round4 R4-T01 with distinct step ids)", async () => {
   let assetMode: "503" | "ok" | "slow" = "503";
   let plant: (() => void) | null = null;
   let child: ChildProcess | null = null;
@@ -393,34 +391,34 @@ test("C06/R3-F02 legacy sync create/wait/get: an asset 503, a sidecar failure an
     const env = api.env();
     const configDir = String(env["MESHY_CONFIG_DIR"]);
 
-    // Sync create (default schema), asset host 503.
+    // Sync create (no flag), asset host 503.
     const created = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture legacy", "-o", join(dir, "legacy-created")], { env, cwd: dir });
     assert.equal(created.code, 7, `${created.stderr}\n${created.stdout}`);
-    const payload = parseSingleJson(created.stdout) as LegacyErrorPayload;
-    assert.equal(payload.code, "network");
-    assert.equal(payload.status, 503);
-    assert.equal(payload.task_id, "paid-legacy-created-id");
+    const payload = parseSingleJson(created.stdout) as BareErrorEnvelope;
+    assert.equal(payload.error.code, "network");
+    assert.equal(payload.error.http_status, 503);
+    assert.equal(payload.result?.task_id, "paid-legacy-created-id");
     assert.equal(payload.result?.task_id, "paid-legacy-created-id");
     assert.equal(payload.result?.submission?.state, "accepted");
     const [operationId] = journalOperationIds(configDir);
     assert.ok(operationId, "the journal holds the accepted record");
-    assert.equal(payload.operation_id, operationId, "the error names the journal's operation id");
+    assert.equal(payload.result?.submission?.operation_id, operationId, "the error names the journal's operation id");
     assert.equal(payload.result?.submission?.operation_id, operationId);
     assert.match(payload.result?.next?.wait ?? "", /wait paid-legacy-created-id/);
     assert.deepEqual(payload.result?.downloads?.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]]);
-    assert.ok(payload.hint && /paid-legacy-created-id/.test(payload.hint), "the hint (also printed on stderr) names the task");
+    assert.ok(payload.error.hint && /paid-legacy-created-id/.test(payload.error.hint), "the hint (also printed on stderr) names the task");
     assert.match(created.stderr, /paid-legacy-created-id/);
     assert.equal(api.requests.filter((q) => q.method === "POST").length, 1);
     assert.equal(api.requests.filter((q) => q.method === "DELETE").length, 0);
 
-    // Legacy wait -o: same fields.
+    // wait -o: same fields.
     const waited = await runCli(["text-to-3d", "wait", "paid-legacy-created-id", "-o", join(dir, "legacy-wait")], { env, cwd: dir });
     assert.equal(waited.code, 7, waited.stderr);
-    const wp = parseSingleJson(waited.stdout) as LegacyErrorPayload;
-    assert.equal(wp.task_id, "paid-legacy-created-id");
-    assert.equal(wp.status, 503);
+    const wp = parseSingleJson(waited.stdout) as BareErrorEnvelope;
+    assert.equal(wp.result?.task_id, "paid-legacy-created-id");
+    assert.equal(wp.error.http_status, 503);
 
-    // Legacy sidecar failure after the asset landed.
+    // Sidecar failure after the asset landed.
     assetMode = "ok";
     const sideDir = join(dir, "legacy-sidecar");
     plant = () => {
@@ -429,21 +427,21 @@ test("C06/R3-F02 legacy sync create/wait/get: an asset 503, a sidecar failure an
     };
     const side = await runCli(["text-to-3d", "get", "paid-legacy-created-id", "-o", sideDir], { env, cwd: dir });
     assert.equal(side.code, 11, `${side.stderr}\n${side.stdout}`);
-    const sp = parseSingleJson(side.stdout) as LegacyErrorPayload;
-    assert.equal(sp.task_id, "paid-legacy-created-id");
+    const sp = parseSingleJson(side.stdout) as BareErrorEnvelope;
+    assert.equal(sp.result?.task_id, "paid-legacy-created-id");
     assert.equal(sp.result?.downloads?.state, "partial");
     assert.equal(sp.result?.downloads?.failed_step, "sidecar");
     assert.deepEqual(sp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model_glb", "written"]]);
     assert.ok(existsSync(join(sideDir, "model.glb")));
 
-    // Legacy SIGINT during the transfer.
+    // SIGINT during the transfer.
     assetMode = "slow";
     const target = join(dir, "legacy-int.glb");
     const interrupted = await runCli(["text-to-3d", "get", "paid-legacy-created-id", "-o", target], { env, cwd: dir, onSpawn: (c) => (child = c) });
     assert.equal(interrupted.code, 130, `${interrupted.stderr}\n${interrupted.stdout}`);
-    const ip = parseSingleJson(interrupted.stdout) as LegacyErrorPayload;
-    assert.equal(ip.code, "interrupted");
-    assert.equal(ip.task_id, "paid-legacy-created-id");
+    const ip = parseSingleJson(interrupted.stdout) as BareErrorEnvelope;
+    assert.equal(ip.error.code, "interrupted");
+    assert.equal(ip.result?.task_id, "paid-legacy-created-id");
     assert.ok(!existsSync(target));
 
   } finally {

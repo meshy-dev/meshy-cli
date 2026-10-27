@@ -121,7 +121,7 @@ export function judgeTask(task: Record<string, unknown>, limit: number): FaceVer
  */
 export function remeshSuggestion(taskId: string | null, limit: number): RemeshSuggestion {
   const target = Math.min(Math.max(Math.trunc(limit), REMESH_POLYCOUNT_RANGE.min), REMESH_POLYCOUNT_RANGE.max);
-  const flags = `--target-polycount ${target} --output-schema v1`;
+  const flags = `--target-polycount ${target}`;
   if (taskId && SAFE_TASK_ID.test(taskId)) {
     const command = `meshy remesh create --input-task-id ${taskId} ${flags}`;
     return {

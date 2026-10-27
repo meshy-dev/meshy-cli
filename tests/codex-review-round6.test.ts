@@ -188,8 +188,8 @@ test("R6-F01 download --project P --workspace W --output-dir W/assets: when P (l
 type Verb = "get" | "wait" | "stream" | "create-async" | "create-sync";
 type Swap = "directory" | "alias";
 
-test("R6-F02 legacy/v1 × get/wait/stream/create-async/create-sync × workspace replaced (the directory itself swapped for a symlink to an outside copy, or the alias the workspace was given through re-pointed) while the request is in flight: exit 11, task and accepted journal kept, single POST, exact method/path, outside tree byte-identical, no snapshot/lock/temp, no cross-boundary record command", async () => {
-  for (const schema of ["legacy", "v1"] as const) {
+test("R6-F02 bare/v1 × get/wait/stream/create-async/create-sync × workspace replaced (the directory itself swapped for a symlink to an outside copy, or the alias the workspace was given through re-pointed) while the request is in flight: exit 11, task and accepted journal kept, single POST, exact method/path, outside tree byte-identical, no snapshot/lock/temp, no cross-boundary record command", async () => {
+  for (const schema of ["bare", "v1"] as const) {
     for (const verb of ["get", "wait", "stream", "create-async", "create-sync"] as Verb[]) {
       for (const swap of ["directory", "alias"] as Swap[]) {
         const id = `${schema}-${verb}-${swap}`;
@@ -240,20 +240,15 @@ test("R6-F02 legacy/v1 × get/wait/stream/create-async/create-sync × workspace 
           const result = out["result"] as { task_id: string; submission: { state: string; operation_id: string | null } };
           assert.equal(result.task_id, id, `${id}: the task is kept`);
           assert.equal(result.submission.state, "accepted");
-          const message = schema === "v1" ? (out["error"] as { message: string }).message : String(out["message"]);
+          const message = (out["error"] as { message: string }).message;
           assert.match(message, /no longer a target inside the authorised boundary/, id);
           assert.match(message, /changed since the command started|outside the authorised root|symbolic link/, id);
           assert.match(message, /nothing was recorded/, id);
-          const hint = schema === "v1" ? (out["error"] as { hint?: string }).hint : (out["hint"] as string | undefined);
+          const hint = (out["error"] as { hint?: string }).hint;
           assert.ok(!(hint ?? "").startsWith("meshy project record"), `${id}: no record command that would cross the boundary`);
-          if (schema === "v1") {
-            assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, id);
-            assert.equal((out["error"] as { code: string }).code, "local_io", id);
-            assert.equal((out["error"] as { recovery: unknown }).recovery, null, `${id}: recovery null`);
-          } else {
-            assert.equal(out["code"], "local_io", id);
-            assert.equal(out["task_id"], id, id);
-          }
+          assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, id);
+          assert.equal((out["error"] as { code: string }).code, "local_io", id);
+          assert.equal((out["error"] as { recovery: unknown }).recovery, null, `${id}: recovery null`);
           const records = journal(configDir);
           const isCreate = verb.startsWith("create");
           if (isCreate) {
@@ -261,7 +256,6 @@ test("R6-F02 legacy/v1 × get/wait/stream/create-async/create-sync × workspace 
             assert.equal(records[0]!.state, "accepted");
             assert.equal(records[0]!.task_id, id);
             assert.equal(result.submission.operation_id, records[0]!.operation_id, id);
-            if (schema === "legacy") assert.equal(out["operation_id"], records[0]!.operation_id, id);
           } else {
             assert.equal(records.length, 0, id);
           }

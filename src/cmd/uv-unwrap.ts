@@ -19,7 +19,6 @@ export const UV_UNWRAP_FACE_CEILING = 40_000;
 
 const spec: ResourceCommandSpec = {
   name: "uv-unwrap",
-  defaultSchema: "v1",
   description:
     "Generate fresh UVs for a GLB model (input task or GLB file, at most 40k faces) — outputs a UV " +
     "white model for external texturing. Remesh first if the mesh is denser",

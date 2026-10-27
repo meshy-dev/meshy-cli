@@ -8,7 +8,7 @@
  */
 
 import { Command, Option } from "commander";
-import { emitResult, listItems, openCommand, rejectOutputFlagForV1, saveRawJson } from "../internal/command-helpers.js";
+import { emitResult, listItems, openCommand, rejectOutputFlag, saveRawJson } from "../internal/command-helpers.js";
 import { abortSignal } from "../internal/context.js";
 import { UsageError } from "../internal/errors.js";
 import { parseCsv } from "../internal/flags.js";
@@ -31,8 +31,8 @@ const listCommand = new Command("list")
       opts: { category?: string; subCategory?: string; search?: string; actionIds?: string[]; includeRaw?: boolean; saveJson?: string },
       thisCmd: Command,
     ) => {
-      const opened = openCommand(thisCmd, "animation-catalog.list", "v1");
-      rejectOutputFlagForV1(opened, opts.saveJson);
+      const opened = openCommand(thisCmd, "animation-catalog.list");
+      rejectOutputFlag(opened, opts.saveJson);
       if (opts.actionIds && (opts.actionIds.length > MAX_LOOKUP_IDS || opts.actionIds.some((id) => !/^-?\d+$/.test(id)))) {
         throw new UsageError(`--action-ids takes at most ${MAX_LOOKUP_IDS} integer ids`);
       }
@@ -51,7 +51,7 @@ const listCommand = new Command("list")
       }, { signal: abortSignal() });
       const items = listItems(raw, ANIMATION_LIBRARY_PATH);
       const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
-      await emitResult(opened, items, {
+      await emitResult(opened, {
         items,
         count: items.length,
         filters,

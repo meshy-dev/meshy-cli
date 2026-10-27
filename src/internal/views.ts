@@ -7,11 +7,11 @@
  * Nothing here is a contract — json/ndjson are, and they never pass through
  * this file.
  *
- * Views are pure (command, value, painter) → text and accept either schema:
- * tasks are normalised through toTaskView, so a legacy summary and a v1
- * result of the same command read the same. A command without a view — or a
- * payload its view does not recognise — gets the generic fallback: the v1
- * `result` only, epoch-ms times as local time, URLs shortened.
+ * Views are pure (command, value, painter) → text. They read the envelope's
+ * `result` (or a bare payload in tests); tasks are normalised through
+ * toTaskView. A command without a view — or a payload its view does not
+ * recognise — gets the generic fallback: the `result` only, epoch-ms times as
+ * local time, URLs shortened.
  */
 
 import { relative } from "node:path";
@@ -57,6 +57,8 @@ function viewFor(command: string, body: unknown, paint: Painter, facts: ViewFact
       return profileChangeView(body, paint);
     case "auth.list":
       return profileListView(body, paint);
+    case "resources":
+      return resourcesView(body, paint);
   }
   const dot = command.lastIndexOf(".");
   const prefix = command.slice(0, Math.max(0, dot));
@@ -441,14 +443,28 @@ function humanize(v: unknown, key = ""): unknown {
 }
 
 // ---------------------------------------------------------------------------
+// resources
+// ---------------------------------------------------------------------------
+
+/** One line per command: `command  kind  summary`, then where the verb contract lives. */
+function resourcesView(body: unknown, paint: Painter): string | null {
+  if (!isObj(body) || !Array.isArray(body["items"])) return null;
+  const items = (body["items"] as unknown[]).filter(isObj);
+  const name = (i: Obj): string => String(i["command"] ?? i["name"] ?? "");
+  const width = Math.max(0, ...items.map((i) => name(i).length));
+  const lines = items.map((i) => `  ${name(i).padEnd(width)}  ${paint(String(i["kind"] ?? "").padEnd(6), "dim")}  ${String(i["summary"] ?? "")}`);
+  const verbsHelp = typeof body["verbs_help"] === "string" ? body["verbs_help"] : "meshy resources --help";
+  return `${lines.join("\n")}\n\n${paint(`verbs: ${verbsHelp}`, "dim")}`;
+}
+
+// ---------------------------------------------------------------------------
 // Small formatters
 // ---------------------------------------------------------------------------
 
 /**
  * A recovery command as a person should run it. Hints are written for agents
- * (`--output-schema v1 --format json`), and since D-065 an explicit
- * `--output-schema v1` means JSON — copied at a terminal it would answer in
- * braces. The views are the same in both schemas, so the flags only get in the way.
+ * (`--format json`; older ones still carry `--output-schema v1`, which since
+ * D-065 means JSON) — copied at a terminal they would answer in braces.
  */
 export function forHumans(text: string): string {
   return text.replace(/\s+--output-schema[ =]v1\b/g, "").replace(/\s+--format[ =](?:json|ndjson)\b/g, "");
@@ -551,7 +567,7 @@ function isEnvelope(v: unknown): v is Obj {
   return isObj(v) && v["schema_version"] === SCHEMA_VERSION && "result" in v;
 }
 
-/** A v1 result's `task` (a TaskView), or a legacy summary normalised into one. */
+/** A result's `task` (a TaskView), or a bare task-shaped body normalised into one. */
 function taskFrom(body: Obj): TaskView | null {
   const t = body["task"];
   if (isObj(t) && typeof t["task_id"] === "string") return t as unknown as TaskView;

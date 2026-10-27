@@ -220,11 +220,11 @@ test("T-041/T-042 make: --async is one POST and zero polls with pending_steps; -
     assert.equal(gets, 0);
 
     api.requests.length = 0;
-    const legacyAsync = await runCli(["make", "a red sports car", "--async"], { env: api.env() });
-    assert.equal(legacyAsync.code, 0, legacyAsync.stderr);
-    const lp = parseSingleJson(legacyAsync.stdout) as Record<string, unknown>;
-    assert.equal(lp["task_id"], "prev-1");
-    assert.equal(lp["submitted"], "preview");
+    const bareAsync = await runCli(["make", "a red sports car", "--async"], { env: api.env() });
+    assert.equal(bareAsync.code, 0, bareAsync.stderr);
+    const lp = parseSingleJson(bareAsync.stdout) as { result: { submitted: { task_id: string; action: string } } };
+    assert.equal(lp.result.submitted.task_id, "prev-1");
+    assert.equal(lp.result.submitted.action, "preview");
     assert.deepEqual(api.requests.map((q) => q.method), ["POST"]);
 
     api.requests.length = 0;

@@ -1,8 +1,8 @@
 /**
  * Small shared pieces every command action uses:
- *   - open the command context (name, schema, format) so the error exit can
- *     render in the right shape;
- *   - render a result in either schema;
+ *   - open the command context (name, format) so the error exit can render
+ *     the failure the way the success path would have;
+ *   - print a result as the meshy.cli/v1 envelope;
  *   - save the raw API JSON (--save-json) with exclusive publication.
  */
 
@@ -11,9 +11,9 @@ import { MeshyApiError } from "../client/errors.js";
 import { dirname, resolve as resolvePath } from "node:path";
 import { beginCommand, type CommandContext } from "./context.js";
 import { UsageError, type Warning } from "./errors.js";
-import { emit, emitEnvelope, type OutputFormat } from "./output.js";
-import { okEnvelope, type OutputSchema } from "./result.js";
-import { readGlobalFlags, resolveSchema, type GlobalFlags } from "./runtime.js";
+import { emitEnvelope, type OutputFormat } from "./output.js";
+import { okEnvelope } from "./result.js";
+import { readGlobalFlags, type GlobalFlags } from "./runtime.js";
 import { writeJsonFile } from "./atomic-file.js";
 import { resolveWithinRoot, type AuthorisedRoot } from "./paths.js";
 
@@ -21,47 +21,29 @@ export interface OpenedCommand extends CommandContext {
   flags: GlobalFlags;
 }
 
-/** Read global flags, decide the schema and register the command context. */
-export function openCommand(thisCmd: Command, command: string, defaultSchema: OutputSchema): OpenedCommand {
+/** Read global flags and register the command context. */
+export function openCommand(thisCmd: Command, command: string): OpenedCommand {
   const flags = readGlobalFlags(thisCmd);
-  const schema = resolveSchema(flags, defaultSchema);
-  const ctx = beginCommand({ command, schema, format: flags.format });
+  const ctx = beginCommand({ command, format: flags.format });
   return { ...ctx, flags };
 }
 
-/**
- * Print a command result. Legacy keeps the bare payload (and the historical
- * `-o <file>` meaning "write the JSON there" for non-task commands); v1 prints
- * the envelope and treats `-o` on a non-task command as a usage error that
- * points at --save-json.
- */
+/** Print a command result as one v1 envelope in the resolved rendering. */
 export async function emitResult(
   opened: OpenedCommand,
-  legacyValue: unknown,
-  v1Result: unknown,
-  opts: { warnings?: Warning[]; legacyFile?: string | undefined; format?: OutputFormat } = {},
+  result: unknown,
+  opts: { warnings?: Warning[]; format?: OutputFormat } = {},
 ): Promise<void> {
-  const format = opts.format ?? opened.format;
-  if (opened.schema === "v1") {
-    await emitEnvelope(okEnvelope(opened.command, v1Result, opts.warnings ?? []), format);
-    return;
-  }
-  // Legacy `-o <file>` writes the payload to disk instead of stdout. The TTY
-  // default describes a terminal, not a file, so an untyped --format must not
-  // leak `pretty` into what callers have always read back as JSON.
-  const fileFormat =
-    opts.legacyFile && !opened.flags.formatExplicit && opts.format === undefined ? "json" : format;
-  emit(legacyValue, { format: fileFormat, file: opts.legacyFile });
+  await emitEnvelope(okEnvelope(opened.command, result, opts.warnings ?? []), opts.format ?? opened.format);
 }
 
-/** v1: `-o` is reserved for assets; JSON goes through --save-json. */
-export function rejectOutputFlagForV1(opened: OpenedCommand, saveJson: string | undefined): void {
-  if (opened.schema !== "v1") return;
+/** `-o` is reserved for task assets; a command that produces JSON points at --save-json. */
+export function rejectOutputFlag(opened: OpenedCommand, saveJson: string | undefined): void {
   if (opened.flags.output && saveJson) {
     throw new UsageError("--output/-o and --save-json cannot be combined on this command; -o is for assets, --save-json for the raw JSON");
   }
   if (opened.flags.output) {
-    throw new UsageError("this command produces JSON, not assets: use --save-json <file> instead of --output/-o under --output-schema v1");
+    throw new UsageError("this command produces JSON, not assets: use --save-json <file> instead of --output/-o");
   }
 }
 

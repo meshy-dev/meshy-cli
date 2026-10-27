@@ -16,7 +16,7 @@ import { Command } from "commander";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { findTaskResource, TASK_RESOURCES } from "../client/resource-registry.js";
-import { emitResult, openCommand, rejectOutputFlagForV1, saveRawJson, type SavedJson } from "../internal/command-helpers.js";
+import { emitResult, openCommand, rejectOutputFlag, saveRawJson, type SavedJson } from "../internal/command-helpers.js";
 import { abortSignal } from "../internal/context.js";
 import { CliError, UsageError } from "../internal/errors.js";
 import { judgeTask, remeshSuggestion, type RemeshSuggestion } from "../internal/inspect.js";
@@ -160,8 +160,8 @@ export function buildInspectCommand(): Command {
     .option("--max-faces <n>", "maximum accepted face count (required; e.g. 300000 for rigging, 40000 for uv-unwrap — no default)", parseMaxFaces)
     .option("--save-json <file>", "API source only: save the task JSON as received (never overwrites)")
     .action(async (opts: FacesOptions, thisCmd: Command) => {
-      const opened = openCommand(thisCmd, "inspect.faces", "v1");
-      rejectOutputFlagForV1(opened, opts.saveJson);
+      const opened = openCommand(thisCmd, "inspect.faces");
+      rejectOutputFlag(opened, opts.saveJson);
       if (opts.maxFaces === undefined) {
         throw new UsageError(
           "--max-faces <n> is required: the limit belongs to the caller (rigging accepts up to 300000 faces, uv-unwrap up to 40000); no default is assumed",
@@ -211,7 +211,7 @@ export function buildInspectCommand(): Command {
       if (verdict.verdict === "unknown") {
         throw new CliError({ code: "check_unknown", message: `face count unknown: ${verdict.reason}`, result: { ...result } });
       }
-      await emitResult(opened, result, result);
+      await emitResult(opened, result);
     });
 
   return new Command("inspect").description("Local checks on task results (face-count gate)").addCommand(faces);

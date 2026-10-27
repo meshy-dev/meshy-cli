@@ -1,12 +1,9 @@
 /**
- * Update notifier — two-channel design.
+ * Update notifier.
  *
- * Channel 1 (agents / machines): JSON outputs carry `_notice.update` when a
- * newer version is available. Injected by attachUpdateNotice() in output.ts
- * and report.ts.
- *
- * Channel 2 (humans on TTY): a single stderr line printed by
- * printHumanUpdateHint() after emit() renders its output.
+ * A newer version is announced to people only: one stderr line printed by
+ * printHumanUpdateHint() after emitEnvelope() renders its output. The v1
+ * envelope is never decorated — its six top-level keys are the contract.
  *
  * Hard rule: this module MUST NEVER slow down, hang, or break the main
  * command. Network I/O runs in a detached child process (see refreshCache)
@@ -259,70 +256,13 @@ export function isCacheStale(stateFile: string = stateFilePath(), now: number = 
 
 /**
  * Returns the cached update notice if applicable, or null.
- * This is what emit() and report paths call — synchronous, never throws.
+ * Synchronous, never throws.
  */
 export function getUpdateNotice(): UpdateNotice | null {
   if (shouldSkip()) return null;
   return checkCached();
 }
 
-// ---------------------------------------------------------------------------
-// attachUpdateNotice
-// ---------------------------------------------------------------------------
-
-/**
- * Merges the update notice into an existing `_notice` value.
- * If existing is a plain object, spreads it and adds `update`.
- * If existing is a non-object (string/number/array/null/undefined), replaces it.
- */
-function mergeNotice(existing: unknown, notice: UpdateNotice): Record<string, unknown> {
-  if (existing !== null && existing !== undefined && typeof existing === "object" && !Array.isArray(existing)) {
-    return { ...(existing as Record<string, unknown>), update: notice };
-  }
-  return { update: notice };
-}
-
-/**
- * Injects the update notice into a value before JSON serialization.
- *
- * Injection rules:
- *   - notice null → value unchanged
- *   - format "pretty" → unchanged (humans get the stderr line instead)
- *   - Array + format "ndjson": if non-empty and first element is a plain
- *     object, return new array with first element replaced by
- *     { ...first, _notice: { update: notice } }. Attaches ONCE on the first
- *     line only — never per-line.
- *   - Array + any other format (e.g. "json") → unchanged. A JSON array has
- *     no clean metadata slot without breaking the schema, so we leave it alone.
- *   - plain object → { ...value, _notice: { update: notice } }
- *   - anything else (string/number/null) → unchanged
- */
-export function attachUpdateNotice(
-  value: unknown,
-  format: OutputFormat,
-  notice: UpdateNotice | null,
-): unknown {
-  if (notice === null) return value;
-  if (format === "pretty") return value;
-
-  if (Array.isArray(value)) {
-    if (format === "ndjson" && value.length > 0) {
-      const first = value[0];
-      if (first !== null && typeof first === "object" && !Array.isArray(first)) {
-        const decorated = { ...(first as Record<string, unknown>), _notice: mergeNotice((first as Record<string, unknown>)["_notice"], notice) };
-        return [decorated, ...value.slice(1)];
-      }
-    }
-    return value;
-  }
-
-  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    const obj = value as Record<string, unknown>;
-    return { ...obj, _notice: mergeNotice(obj["_notice"], notice) };
-  }
-
-  return value;
-}
 
 // ---------------------------------------------------------------------------
 // printHumanUpdateHint

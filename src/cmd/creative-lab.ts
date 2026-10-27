@@ -223,7 +223,6 @@ function prototypeSpec(p: ProductDescriptor): ResourceCommandSpec {
   return {
     name: `creative-lab.${p.product}.prototype`,
     commandName: "prototype",
-    defaultSchema: "v1",
     description: `Creative Lab ${p.label} — prototype stage: photo → ${p.prototypeMeaning}`,
     create: {
       description: `Create a ${p.label} prototype from a photo`,
@@ -260,7 +259,6 @@ function buildSpec(p: ProductDescriptor): ResourceCommandSpec {
   return {
     name: `creative-lab.${p.product}.build`,
     commandName: "build",
-    defaultSchema: "v1",
     description: `Creative Lab ${p.label} — build stage: SUCCEEDED prototype → ${p.buildMeaning}`,
     create: {
       description: `Create a ${p.label} build from a prototype task created through this API`,
@@ -336,7 +334,6 @@ function collapsibleFidgetSpec(): ResourceCommandSpec {
   return {
     name: "creative-lab.fidget-collapsible",
     commandName: "fidget-collapsible",
-    defaultSchema: "v1",
     description: "Creative Lab collapsible fidget — one stage: photo → printable STL (plus a preview GLB when available)",
     create: {
       description: "Create a collapsible fidget from a photo",

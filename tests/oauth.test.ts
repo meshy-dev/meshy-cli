@@ -31,6 +31,11 @@ import {
 } from "../src/internal/oauth.js";
 import { USER_AGENT } from "../src/internal/user-agent.js";
 
+/** The `result` of the v1 envelope every command prints on stdout. */
+function envelopeResult(stdout: string): Record<string, unknown> {
+  return (JSON.parse(stdout) as { result: Record<string, unknown> }).result;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -920,7 +925,7 @@ test(
       assert.ok(stdoutData.trim().length > 0, "stdout should not be empty");
       let parsed: Record<string, unknown>;
       try {
-        parsed = JSON.parse(stdoutData) as Record<string, unknown>;
+        parsed = envelopeResult(stdoutData);
       } catch {
         assert.fail(`stdout is not valid JSON: ${stdoutData}`);
       }
@@ -1186,7 +1191,7 @@ test("E2E — --with-key output has no `kind` field (backward-compatible shape)"
 
   assert.equal(result.code, 0, `expected exit 0\nstderr: ${result.stderr}`);
 
-  const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+  const parsed = envelopeResult(result.stdout);
   assert.equal(parsed["status"], "logged_in");
   // --with-key must NOT emit `kind` (backward-compatible with pre-ENG-1519 shape).
   assert.ok(!("kind" in parsed), `--with-key output must not contain 'kind', got: ${result.stdout}`);
@@ -1370,7 +1375,7 @@ test(
 
       assert.equal(exitCode, 0, `expected exit 0\nstdout: ${stdout}\nstderr: ${stderr}`);
 
-      const parsed = JSON.parse(stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(stdout);
       assert.equal(parsed["status"], "logged_in", "status must be logged_in");
       assert.equal(parsed["verified"], false, "verified must be false when balance call fails");
       assert.ok(!("balance" in parsed), `balance must not be present on verify failure, got: ${stdout}`);
@@ -1430,7 +1435,7 @@ test(
 
       assert.equal(exitCode, 0, `expected exit 0\nstdout: ${stdout}\nstderr: ${stderr}`);
 
-      const parsed = JSON.parse(stdout) as Record<string, unknown>;
+      const parsed = envelopeResult(stdout);
       assert.equal(parsed["status"], "logged_in", "status must be logged_in");
       assert.equal(parsed["verified"], true, "verified must be true when balance call succeeds");
       assert.ok("balance" in parsed, `balance must be present on verify success, got: ${stdout}`);

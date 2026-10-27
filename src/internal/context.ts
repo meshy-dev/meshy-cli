@@ -1,8 +1,8 @@
 /**
  * Per-invocation command context. The CLI runs one command per process; the
- * action that owns the command registers its name, output schema and format
- * here so the top-level error exit can render the failure in the same shape
- * the success path would have used. Parse errors happen before any action
+ * action that owns the command registers its name and output format here so
+ * the top-level error exit can render the failure the way the success path
+ * would have. Parse errors happen before any action
  * runs, so the entry point falls back to argv heuristics when this is unset.
  *
  * The shared AbortController is what SIGINT, SIGTERM or SIGHUP trips; long
@@ -12,11 +12,9 @@
 
 import type { ViewFacts } from "./views.js";
 import type { OutputFormat } from "./output.js";
-import type { OutputSchema } from "./result.js";
 
 export interface CommandContext {
   command: string;
-  schema: OutputSchema;
   format: OutputFormat;
   /** Facts only the `pretty` view shows; never part of json/ndjson. */
   view?: ViewFacts;

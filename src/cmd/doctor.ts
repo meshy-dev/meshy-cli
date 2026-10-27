@@ -9,7 +9,7 @@
  */
 
 import { Command } from "commander";
-import { emitResult, openCommand, rejectOutputFlagForV1, saveRawJson } from "../internal/command-helpers.js";
+import { emitResult, openCommand, rejectOutputFlag, saveRawJson } from "../internal/command-helpers.js";
 import { runDoctorDetailed, type DoctorApiFailure } from "../internal/doctor.js";
 import { classifyError, CliError, type CliErrorCode } from "../internal/errors.js";
 import { buildLocalRuntime } from "../internal/runtime.js";
@@ -52,8 +52,8 @@ export function buildDoctorCommand(): Command {
     .option("--check-slicers", "detect installed slicers (local only)")
     .option("--save-json <file>", "save the report to this file (never overwrites)")
     .action(async (opts: DoctorCommandOptions, thisCmd: Command) => {
-      const opened = openCommand(thisCmd, "doctor", "v1");
-      rejectOutputFlagForV1(opened, opts.saveJson);
+      const opened = openCommand(thisCmd, "doctor");
+      rejectOutputFlag(opened, opts.saveJson);
       buildLocalRuntime(opened.flags);
       const { report, apiFailure } = await runDoctorDetailed({
         flags: opened.flags,
@@ -65,7 +65,7 @@ export function buildDoctorCommand(): Command {
       if (opts.checkApi && report.api_ready !== true) {
         throw apiCheckFailure(apiFailure ?? { stage: "balance", error: new Error("--check-api did not complete") }, result);
       }
-      await emitResult(opened, result, result);
+      await emitResult(opened, result);
     });
 }
 

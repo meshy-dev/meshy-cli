@@ -3,14 +3,11 @@
  * subcommands for any registered task resource. Per-resource modules only
  * contribute their unique `create` flag shape and payload validation.
  *
- * Two output schemas share one execution path:
- *   legacy — the 0.2.0 payloads and `-o` status report, with two documented
- *            fixes: `get` of a non-terminal task exits 0, and async create
- *            never polls.
- *   v1     — one `meshy.cli/v1` envelope whose result carries the TaskView,
- *            the submission record and the download manifest.
+ * Every verb prints one `meshy.cli/v1` envelope whose result carries the
+ * TaskView, the submission record and the download manifest. `get` of a task
+ * in any status is a successful query (exit 0); async create never polls.
  *
- * Money rules enforced here, independent of schema:
+ * Money rules enforced here:
  *   - every create is exactly one POST, journaled before it is sent;
  *   - a lost or malformed response is `submission_unknown` (exit 10), never a
  *     retry and never a "please run it again" hint;
@@ -29,8 +26,8 @@ import { MeshyApiError } from "../client/errors.js";
 import type { MeshyClient } from "../client/index.js";
 import { requireTaskResource, type TaskResourceDescriptor } from "../client/resource-registry.js";
 import { TransportError } from "../client/transport.js";
-import { isTerminalStatus, summarizeTask, type Task } from "../client/types.js";
-import { emitResult, openCommand, rejectOutputFlagForV1, saveRawJson, type OpenedCommand, type SavedJson } from "./command-helpers.js";
+import type { Task } from "../client/types.js";
+import { emitResult, openCommand, rejectOutputFlag, saveRawJson, type OpenedCommand, type SavedJson } from "./command-helpers.js";
 import { abortSignal, wasInterrupted } from "./context.js";
 import { downloadArtifacts, looksLikeFile } from "./download.js";
 import { classifyError, CliError, UsageError, type Warning } from "./errors.js";
@@ -38,15 +35,11 @@ import { normalizeMediaPayload } from "./file-input.js";
 import { logger } from "./logger.js";
 import type { MaterialLinkReport } from "./material-links.js";
 import { mergeNestedObjects, mergePayload, parseJsonFlag } from "./payload.js";
-import { painterFor } from "./color.js";
-import { taskCard } from "./views.js";
-import { emitEnvelope, emitStreamEvent, emit } from "./output.js";
+import { emitEnvelope, emitStreamEvent } from "./output.js";
 import { parseTimeoutSeconds, pollUntilTerminal, type PollResult } from "./poll.js";
 import { createProgress, withSpinner, type Progress } from "./progress.js";
-import { printReport } from "./report.js";
 import { errorEnvelope, okEnvelope, warning, type StreamEventEnvelope } from "./result.js";
 import { buildRuntime, type Runtime } from "./runtime.js";
-import { getUpdateNotice, printHumanUpdateHint } from "./update-notifier.js";
 import { streamTask } from "./stream.js";
 import { toTaskView, type TaskView } from "./task-view.js";
 import {
@@ -99,8 +92,6 @@ export interface ResourceCommandSpec {
   commandPrefix?: string;
   description: string;
   supportsList?: boolean;
-  /** Default output schema for this resource's verbs (`legacy` for 0.2.0 commands). */
-  defaultSchema?: "legacy" | "v1";
   create: CreateSpec;
   /** Optional override; defaults to the registry endpoint for `name`. */
   endpointOf?(client: MeshyClient): TaskEndpoint;
@@ -109,7 +100,7 @@ export interface ResourceCommandSpec {
 const TASK_JSON_OPTIONS = (cmd: Command): Command =>
   cmd
     .option("--save-json <file>", "save the full task JSON as received (never overwrites)")
-    .option("--include-raw", "v1: include the untouched task response under result.task.raw")
+    .option("--include-raw", "include the untouched task response under result.task.raw")
     .option("--project <dir>", "initialised meshy_output project: save task_<id>.json there and record the task in metadata.json")
     .option("--stage <name>", "stage label for the project record (default: derived from the task type, e.g. preview | refine | build)");
 
@@ -156,9 +147,9 @@ function taskResult(o: TaskResultOptions): Record<string, unknown> {
 function nextCommands(descriptor: TaskResourceDescriptor, taskId: string): { get: string; wait: string; stream: string } {
   const base = `meshy ${descriptor.commandPath.join(" ")}`;
   return {
-    get: `${base} get ${taskId} --output-schema v1`,
-    wait: `${base} wait ${taskId} --output-schema v1`,
-    stream: `${base} stream ${taskId} --format ndjson --output-schema v1`,
+    get: `${base} get ${taskId}`,
+    wait: `${base} wait ${taskId}`,
+    stream: `${base} stream ${taskId} --format ndjson`,
   };
 }
 
@@ -476,7 +467,6 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
   const descriptor = requireTaskResource(spec.name);
   const endpointOf = spec.endpointOf ?? ((client: MeshyClient) => client.endpointFor(descriptor));
   const prefix = spec.commandPrefix ?? spec.name;
-  const defaultSchema = spec.defaultSchema ?? "legacy";
   const cmd = new Command(spec.commandName ?? spec.name).description(spec.description);
 
   // create
@@ -498,7 +488,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       ),
     )
     .action(async (opts: Record<string, unknown>, thisCmd: Command) => {
-      const opened = openCommand(thisCmd, `${prefix}.create`, defaultSchema);
+      const opened = openCommand(thisCmd, `${prefix}.create`);
       const timeoutSeconds = parseTimeoutSeconds(opts.timeout ?? "600");
       const runAsync = Boolean(opts.async);
       const includeRaw = Boolean(opts.includeRaw);
@@ -530,35 +520,21 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         const ctx: TaskContext = { descriptor, taskId, task: null, raw: null, submission, includeRaw };
         const savedJson = saveJsonInContext(opts, opened, createRaw, ctx);
         const project = attachInContext(opts, opened, descriptor, taskId, null, null, { operationId, payload }, warnings, { ...ctx, savedJson });
-        if (opened.schema === "v1") {
-          await emitEnvelope(
-            okEnvelope(
-              opened.command,
-              taskResult({
-                task: null,
-                raw: null,
-                descriptor,
-                includeRaw: false,
-                submission,
-                savedJson,
-                extra: { task_id: taskId, next: nextCommands(descriptor, taskId), project },
-              }),
-              warnings,
-            ),
-            opened.format,
-          );
-          return;
-        }
-        emit(
-          {
-            resource: spec.name,
-            task_id: taskId,
-            status: "PENDING",
-            hint: `meshy-cli ${descriptor.commandPath.join(" ")} wait ${taskId}`,
-            operation_id: operationId,
-            ...(project ? { project_dir: project.project_dir } : {}),
-          },
-          { format: opened.format, file: undefined },
+        await emitEnvelope(
+          okEnvelope(
+            opened.command,
+            taskResult({
+              task: null,
+              raw: null,
+              descriptor,
+              includeRaw: false,
+              submission,
+              savedJson,
+              extra: { task_id: taskId, next: nextCommands(descriptor, taskId), project },
+            }),
+            warnings,
+          ),
+          opened.format,
         );
         return;
       }
@@ -571,7 +547,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
   // get
   TASK_JSON_OPTIONS(cmd.command("get <task-id>").description("Retrieve a single task by id (any status is a successful query)")).action(
     async (taskId: string, opts: Record<string, unknown>, thisCmd: Command) => {
-      const opened = openCommand(thisCmd, `${prefix}.get`, defaultSchema);
+      const opened = openCommand(thisCmd, `${prefix}.get`);
     beginProjectContext(opts, opened);
       const runtime = await buildRuntime(opened.flags);
       const { task, raw } = await endpointOf(runtime.client).retrieveDetailed(taskId, { signal: abortSignal() });
@@ -581,20 +557,12 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       const ctx: TaskContext = { descriptor, taskId, task, raw, submission, includeRaw };
       const savedJson = saveJsonInContext(opts, opened, raw, ctx);
       const project = attachInContext(opts, opened, descriptor, taskId, task, raw, {}, warnings, { ...ctx, savedJson });
-      if (opened.schema === "v1") {
-        const downloads = await maybeDownloadV1(opened, descriptor, task, raw, submission, warnings, { savedJson, includeRaw, project });
-        await emitEnvelope(
-          okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw, submission, downloads, savedJson, extra: project ? { project } : {} }), warnings),
-          opened.format,
-        );
-        return;
-      }
-      // Legacy shape, same rule: a download failure still names the task.
-      try {
-        await emitLegacyOutcome(task, false, undefined, spec.name, runtime, { query: true });
-      } catch (err) {
-        throw withTaskContext(err, { ...ctx, savedJson, extra: project ? { project } : {} });
-      }
+      const downloads = await maybeDownloadV1(opened, descriptor, task, raw, submission, warnings, { savedJson, includeRaw, project });
+      await emitEnvelope(
+        okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw, submission, downloads, savedJson, extra: project ? { project } : {} }), warnings),
+        opened.format,
+      );
+      return;
     },
   );
 
@@ -605,7 +573,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       .description("Poll until the task reaches a terminal status")
       .option("--timeout <seconds>", "max seconds to wait (0 = a single query); the task keeps running after it — the API advises allowing up to 60 min", "600"),
   ).action(async (taskId: string, opts: Record<string, unknown>, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, `${prefix}.wait`, defaultSchema);
+    const opened = openCommand(thisCmd, `${prefix}.wait`);
     beginProjectContext(opts, opened);
     const timeoutSeconds = parseTimeoutSeconds(opts.timeout ?? "600");
     const runtime = await buildRuntime(opened.flags);
@@ -621,7 +589,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       .option("--timeout <seconds>", "total deadline for the stream", "600")
       .option("--idle-timeout <seconds>", "abort when no bytes arrive for this long (keep-alives count)", "60"),
   ).action(async (taskId: string, opts: Record<string, unknown>, thisCmd: Command) => {
-    const opened = openCommand(thisCmd, `${prefix}.stream`, defaultSchema);
+    const opened = openCommand(thisCmd, `${prefix}.stream`);
     beginProjectContext(opts, opened);
     if (!descriptor.supports.stream) throw new UsageError(`${spec.name} does not support stream`);
     const timeoutSeconds = parseTimeoutSeconds(opts.timeout ?? "600");
@@ -643,8 +611,8 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         : "Permanently delete a task (a PENDING task is refunded; an IN_PROGRESS one cannot be stopped and is refused with exit 14; a finished one is deleted without a refund)",
     )
     .action(async (taskId: string, _opts: Record<string, unknown>, thisCmd: Command) => {
-      const opened = openCommand(thisCmd, `${prefix}.delete`, defaultSchema);
-      rejectOutputFlagForV1(opened, undefined);
+      const opened = openCommand(thisCmd, `${prefix}.delete`);
+      rejectOutputFlag(opened, undefined);
       const runtime = await buildRuntime(opened.flags);
       let raw: unknown;
       try {
@@ -653,12 +621,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         throw deleteFailure(err, taskId, nextCommands(descriptor, taskId).wait);
       }
       const outcome = cancels ? { deleted: false, canceled: true } : { deleted: true };
-      await emitResult(
-        opened,
-        { resource: spec.name, task_id: taskId, ...outcome },
-        { resource: spec.name, endpoint: descriptor.legacyEndpoint, task_id: taskId, ...outcome, response: raw ?? null },
-        { legacyFile: opened.flags.output },
-      );
+      await emitResult(opened, { resource: spec.name, endpoint: descriptor.legacyEndpoint, task_id: taskId, ...outcome, response: raw ?? null });
     });
 
   // list
@@ -670,10 +633,10 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       .option("--page-size <n>", "page size", "10")
       .option("--sort-by <field>", "sort order (e.g. -created_at)", "-created_at")
       .option("--save-json <file>", "save the raw list response (never overwrites)")
-      .option("--include-raw", "v1: include each raw task under items[].raw")
+      .option("--include-raw", "include each raw task under items[].raw")
       .action(async (opts: Record<string, unknown>, thisCmd: Command) => {
-        const opened = openCommand(thisCmd, `${prefix}.list`, defaultSchema);
-        rejectOutputFlagForV1(opened, opts.saveJson as string | undefined);
+        const opened = openCommand(thisCmd, `${prefix}.list`);
+        rejectOutputFlag(opened, opts.saveJson as string | undefined);
         const runtime = await buildRuntime(opened.flags);
         const page = { page_num: Number(opts.page ?? 1), page_size: Number(opts.pageSize ?? 10), sort_by: String(opts.sortBy ?? "-created_at") };
         if (!Number.isInteger(page.page_num) || page.page_num < 1) throw new UsageError("--page must be a positive integer");
@@ -683,14 +646,12 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         const rawItems = Array.isArray(raw) ? raw : [];
         await emitResult(
           opened,
-          tasks.map((t) => summarizeTask(t)),
           {
             items: tasks.map((t, i) => toTaskView(rawItems[i] ?? t, { descriptor, includeRaw: Boolean(opts.includeRaw) })),
             count: tasks.length,
             page,
             saved_json: savedJson,
           },
-          { legacyFile: opened.flags.output },
         );
       });
   } else {
@@ -850,7 +811,7 @@ export async function submitCreate(
       recovery: {
         action: "reconcile",
         automatic: false,
-        command: `meshy ${descriptor.commandPath.join(" ")} list --output-schema v1   # then match operation ${operationId} by time/prompt before creating again`,
+        command: `meshy ${descriptor.commandPath.join(" ")} list   # then match operation ${operationId} by time/prompt before creating again`,
       },
       hint: resolveHint(operationId),
       result: { submission: { state: "unknown", operation_id: operationId, task_id: null }, task: null, downloads: NOT_REQUESTED(), ...extra },
@@ -895,7 +856,7 @@ function replayExisting(record: OperationRecord, descriptor: TaskResourceDescrip
     throw new CliError({
       code: "submission_unknown",
       message: `operation ${operationId} is recorded as '${record.state}' since ${record.updated_at}; reconcile it before submitting again (nothing was sent now)`,
-      recovery: { action: "reconcile", automatic: false, command: `meshy ${descriptor.commandPath.join(" ")} list --output-schema v1` },
+      recovery: { action: "reconcile", automatic: false, command: `meshy ${descriptor.commandPath.join(" ")} list` },
       hint: resolveHint(operationId),
       result: { submission: { state: "unknown", operation_id: operationId, task_id: record.task_id }, task: null, ...extra },
     });
@@ -930,7 +891,7 @@ function attachSubmission(err: Error, submission: { state: string; operation_id:
 }
 
 /**
- * v1 `-o`: download a SUCCEEDED task's assets through the legacy layout,
+ * `-o`: download a SUCCEEDED task's assets through the 0.2.0 file layout,
  * confined to the workspace when one is set. A failure keeps the task in the
  * result — the assets are still on the server, the task still exists.
  */
@@ -1050,10 +1011,6 @@ async function waitAndReport(
 
   if (task === null) {
     // The deadline passed before the first response arrived; the task id is all we know — and it is enough.
-    if (opened.schema !== "v1") {
-      emitLegacyTimeoutWithoutTask(taskId, descriptor.id, runtime);
-      return;
-    }
     throw new CliError({
       code: "timed_out",
       message: `task ${taskId} did not answer within ${timeoutSeconds}s (no status was received in time${poll.lastError ? `; ${poll.failedPolls} status request(s) failed, last: ${poll.lastError.message}` : ""}); the server keeps running it`,
@@ -1077,18 +1034,6 @@ async function waitAndReport(
     { ...ctx, savedJson },
   );
   const projectExtra = project ? { project } : {};
-
-  if (opened.schema !== "v1") {
-    // The legacy reporter downloads too; whatever fails there — an asset host
-    // 503, a sidecar that cannot be published, Ctrl-C — the error still
-    // carries the accepted task id, the real submission and the resume command.
-    try {
-      await emitLegacyOutcome(task, timedOut, elapsed, descriptor.id, runtime, { query: false });
-    } catch (err) {
-      throw withTaskContext(err, { ...ctx, savedJson, extra: { wait: waitInfo, ...projectExtra } });
-    }
-    return;
-  }
 
   if (timedOut) {
     throw new CliError({
@@ -1122,19 +1067,6 @@ export function retriedPolls(poll: PollResult): Record<string, unknown> {
 
 export function retriedWarning(poll: PollResult): Warning {
   return warning("poll_retried", `${poll.failedPolls} status request(s) failed transiently and were retried at the next poll (last: ${poll.lastError?.message ?? "unknown"})`);
-}
-
-/** Legacy shape for a wait that timed out before any status arrived: still the task id, still exit 8. */
-function emitLegacyTimeoutWithoutTask(taskId: string, resourceName: string, runtime: Runtime): void {
-  if (runtime.flags.output) {
-    const report: Parameters<typeof printReport>[0] = { status: "FAIL", taskId, type: resourceName, timedOut: true };
-    const notice = getUpdateNotice();
-    if (notice) report._notice = notice;
-    printReport(report);
-  } else {
-    emit({ resource: resourceName, id: taskId, status: null, timed_out: true }, { format: runtime.flags.format });
-  }
-  process.exitCode = 8;
 }
 
 function interruptedError(
@@ -1189,7 +1121,7 @@ async function streamAndReport(
     },
     onTask: async (task, raw) => {
       progress.tick(task.status, task.progress);
-      if (opened.schema === "v1" && ndjson) {
+      if (ndjson) {
         sequence += 1;
         const event: StreamEventEnvelope = {
           ...okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw, submission })),
@@ -1260,19 +1192,6 @@ async function streamAndReport(
     }
   }
 
-  if (opened.schema !== "v1") {
-    // Legacy has no stream shape to preserve: reuse the terminal summary path (which honours -o itself).
-    if (finalError) throw finalError;
-    if (outcome.task) {
-      try {
-        await emitLegacyOutcome(outcome.task, false, outcome.elapsedMs / 1000, descriptor.id, runtime, { query: false });
-      } catch (err) {
-        throw withTaskContext(err, { ...ctx, savedJson, extra: { stream: streamInfo, ...projectExtra } });
-      }
-    }
-    return;
-  }
-
   // The terminal outcome includes the requested download whatever the output
   // format: `-o` means "put the assets on disk", not "only when printing JSON".
   if (!finalError && outcome.task && outcome.task.status === "SUCCEEDED") {
@@ -1308,99 +1227,12 @@ function wrapStreamError(err: MeshyApiError | CliError | null, result: Record<st
   return new CliError({ code: "protocol", message: "stream ended abnormally", result, warnings });
 }
 
-/**
- * Legacy reporter. `query: true` is `get`: a valid task is a successful query
- * whatever its status (0.2.0 exited 1 for PENDING/IN_PROGRESS — fixed); a
- * terminal FAILED/CANCELED still exits 1 for compatibility.
- */
-async function emitLegacyOutcome(
-  task: Task,
-  timedOut: boolean,
-  elapsedSeconds: number | undefined,
-  resourceName: string,
-  runtime: Runtime,
-  mode: { query: boolean },
-): Promise<void> {
-  const output = runtime.flags.output;
-  const succeeded = !timedOut && task.status === "SUCCEEDED";
-
-  const pretty = runtime.flags.format === "pretty";
-  if (output) {
-    if (succeeded) {
-      const { savedFiles, metadataPath } = await withSpinner(runtime.flags.format, "Downloading assets", () =>
-        downloadArtifacts(task, output, resourceName, { root: runtime.flags.workspaceRoot, signal: abortSignal() }),
-      );
-      if (pretty) {
-        printTaskCard(task, savedFiles);
-        return;
-      }
-      const successReport: Parameters<typeof printReport>[0] = {
-        status: "SUCCESS",
-        taskId: task.id,
-        type: task.type || resourceName,
-        savedFiles,
-        metadataPath,
-      };
-      const successNotice = getUpdateNotice();
-      if (successNotice) successReport._notice = successNotice;
-      printReport(successReport);
-      return;
-    }
-    const report: Parameters<typeof printReport>[0] = {
-      status: "FAIL",
-      taskId: task.id,
-      type: task.type || resourceName,
-    };
-    if (timedOut) report.timedOut = true;
-    else if (task.task_error?.message) report.error = task.task_error.message;
-    else if (task.status) report.error = `task status: ${task.status}`;
-    const failNotice = getUpdateNotice();
-    if (failNotice) report._notice = failNotice;
-    if (pretty) printTaskCard(task, []);
-    else printReport(report);
-    if (timedOut) process.exitCode = 8;
-    else if (mode.query && !isTerminalStatus(task.status)) process.exitCode = 0;
-    else process.exitCode = 1;
-    return;
-  }
-
-  emit(
-    {
-      resource: resourceName,
-      ...summarizeTask(task, elapsedSeconds),
-      ...(timedOut ? { timed_out: true } : {}),
-    },
-    { format: runtime.flags.format },
-  );
-  if (timedOut) process.exitCode = 8;
-  else if (task.status === "SUCCEEDED") process.exitCode = 0;
-  else if (!isTerminalStatus(task.status)) process.exitCode = mode.query ? 0 : 1;
-  else process.exitCode = 1;
-}
-
-/** Kept for make.ts (legacy path). */
-/** The `-o` report for a person: the task card with the files it saved, the update hint on stderr. */
-function printTaskCard(task: Task, saved: string[]): void {
-  process.stdout.write(`${taskCard(toTaskView(task), painterFor(process.stdout), { saved }).join("\n")}\n`);
-  printHumanUpdateHint(getUpdateNotice(), process);
-}
-
 /** Freeze the progress line with how the wait or stream ended. */
 function endProgress(progress: Progress, task: Task | null, timedOut: boolean, abandoned: boolean): void {
   if (abandoned) progress.stop();
   else if (timedOut) progress.finish("timeout");
   else if (task?.status === "SUCCEEDED") progress.finish("ok");
   else progress.finish("failed", task?.status ?? "no status received");
-}
-
-export async function emitTerminalOutcome(
-  task: Task,
-  timedOut: boolean,
-  elapsedSeconds: number | undefined,
-  resourceName: string,
-  runtime: Runtime,
-): Promise<void> {
-  await emitLegacyOutcome(task, timedOut, elapsedSeconds, resourceName, runtime, { query: false });
 }
 
 export { taskResult as buildTaskResult, nextCommands as taskNextCommands };

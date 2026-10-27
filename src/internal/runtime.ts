@@ -21,7 +21,6 @@ import { logger, setLogLevel } from "./logger.js";
 import { refreshTokens } from "./oauth.js";
 import type { LogLevel } from "./logger.js";
 import { defaultOutputFormat, parseOutputFormat, type OutputFormat } from "./output.js";
-import type { OutputSchema } from "./result.js";
 
 export interface GlobalFlags {
   apiKey?: string;
@@ -32,7 +31,8 @@ export interface GlobalFlags {
   /** true when --format/--json was actually typed; false when format came from the TTY default. */
   formatExplicit: boolean;
   json?: boolean;
-  outputSchema?: OutputSchema;
+  /** Set when the caller typed `--output-schema v1` (a compatibility no-op): D-065 keeps "a typed schema means JSON". */
+  outputSchema?: "v1";
   output?: string;
   /** Path given to --api-key-file (only MESHY_API_KEY is read from it). */
   envFile?: string;
@@ -269,27 +269,21 @@ export function resolveFormat(
 }
 
 /**
- * Decide which stdout data model a command uses.
- *   - `legacy` commands (everything 0.2.0 shipped) default to legacy and opt
- *     into v1 with `--output-schema v1`.
- *   - `v1` commands (everything new in S1) always emit v1; asking them for
- *     legacy is a usage error rather than a silent no-op.
+ * `--output-schema` survives only as a compatibility no-op: since 0.5.0 every
+ * command prints the meshy.cli/v1 envelope. `legacy` names the removed data
+ * model, so it is refused with the migration in the message rather than
+ * silently honoured as v1.
  */
-export function resolveSchema(flags: GlobalFlags, commandDefault: OutputSchema): OutputSchema {
-  if (commandDefault === "v1") {
-    if (flags.outputSchema === "legacy") {
-      throw new UsageError("--output-schema legacy is not available for this command; it only emits the v1 envelope");
-    }
-    return "v1";
-  }
-  return flags.outputSchema ?? "legacy";
-}
-
-function normalizeSchema(raw: string | undefined): OutputSchema | undefined {
+function normalizeSchema(raw: string | undefined): "v1" | undefined {
   if (raw === undefined) return undefined;
   const v = raw.toLowerCase();
-  if (v === "v1" || v === "legacy") return v;
-  throw new UsageError(`invalid --output-schema '${raw}'. Expected: legacy | v1`);
+  if (v === "v1") return v;
+  if (v === "legacy") {
+    throw new UsageError(
+      "--output-schema legacy was removed in 0.5.0: every command prints the meshy.cli/v1 envelope (schema_version, command, ok, result, error, warnings). Drop the flag and read `result`",
+    );
+  }
+  throw new UsageError(`invalid --output-schema '${raw}'. Only v1 is accepted (the default; the flag is a no-op)`);
 }
 
 function normalizeLogLevel(raw: string | undefined): LogLevel | undefined {
