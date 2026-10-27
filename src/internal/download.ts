@@ -29,8 +29,8 @@ import sharp from "sharp";
 import type { TaskResourceDescriptor } from "../client/resource-registry.js";
 import type { Task } from "../client/types.js";
 import { publishTempFile, tempPathFor, writeJsonFile } from "./atomic-file.js";
-import { CliError, UsageError } from "./errors.js";
-import { isInside, looksLikeFile, resolveWithinRoot, safeExtension } from "./paths.js";
+import { CliError, UsageError, type ErrorRecovery } from "./errors.js";
+import { isInside, looksLikeFile, realpathLenient, resolveWithinRoot, safeExtension } from "./paths.js";
 import { USER_AGENT } from "./user-agent.js";
 import { enumerateAssets, selectDefaultAssets, type Asset, type DefaultSelection, type SkipReason } from "./artifacts.js";
 import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";
@@ -314,6 +314,8 @@ export interface DownloadAssetsOptions extends FetchOptions {
   /** Single-file mode (exactly one asset). */
   targetFile?: string;
   overwrite?: boolean;
+  /** Real paths an earlier `-o` of the same task saved: replaced like --overwrite would. */
+  replace?: ReadonlySet<string>;
   /** Root every final path must stay inside: --workspace, or the output directory. */
   root: string;
   /** Validate magic/content-type for models (default on). */
@@ -330,6 +332,10 @@ export interface DownloadAssetsResult {
   warnings: Array<{ code: string; message: string }>;
   /** OBJ/MTL/texture reference report when the set contained a text OBJ. */
   materialLinks: MaterialLinkReport | null;
+}
+
+function replaceable(opts: DownloadAssetsOptions, path: string): boolean {
+  return Boolean(opts.overwrite) || Boolean(opts.replace?.has(path));
 }
 
 function plannedName(asset: Asset, targetFile: string | undefined): string {
@@ -366,7 +372,7 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
     try {
       if (asset.kind === "report") {
         const target = resolveWithinRoot(planned.endsWith(".json") ? planned : `${planned}.json`, opts.root, { label: "report path" }).path;
-        const res = writeJsonFile(target, asset.report, { overwrite: opts.overwrite ?? false });
+        const res = writeJsonFile(target, asset.report, { overwrite: replaceable(opts, target) });
         const bytes = statSync(target).size;
         entry = { key: asset.key, path: target, relative_path: rel(rootReal, target), bytes, sha256: createHash("sha256").update(readFileSync(target)).digest("hex"), content_type: "application/json", format: "json", container_format: null, extracted: null, status: "written", error: null, publish_method: res.method, relinked: false };
       } else {
@@ -536,7 +542,7 @@ async function placeFetched(
     throw err;
   }
   const resolved = target.path;
-  const res = publishTempFile(tmp, resolved, { overwrite: opts.overwrite ?? false });
+  const res = publishTempFile(tmp, resolved, { overwrite: replaceable(opts, resolved) });
   return {
     key: asset.key,
     path: resolved,
@@ -637,7 +643,10 @@ function pickSingleFile(selection: DefaultSelection, outputPath: string): Asset 
  * `-o`: save a SUCCEEDED task's default selection (or every asset with
  * `allAssets`) into a directory with a `meta.json` sidecar, or one asset into
  * a file path with a `<stem>_meta.json` sidecar. Every planned path is checked
- * before any request: inside the workspace, and not already there.
+ * before any request: inside the workspace, and not already there — unless the
+ * sidecar there says an earlier `-o` of this task saved it, in which case the
+ * rerun replaces it. A transfer that fails part-way still writes the sidecar
+ * for what landed, so the same command (the error's recovery) picks up from there.
  */
 export async function downloadTaskAssets(task: Task, outputPath: string, descriptor: TaskResourceDescriptor, opts: TaskDownloadOptions = {}): Promise<TaskDownloadResult> {
   const all = enumerateAssets(task as unknown as Record<string, unknown>, descriptor).assets;
@@ -661,30 +670,111 @@ export async function downloadTaskAssets(task: Task, outputPath: string, descrip
   }
 
   const targetDir = singleFile ? dirname(resolvePath(outputPath)) : resolvePath(outputPath);
-  const metadataPath = singleFile ? `${stripExt(resolvePath(outputPath))}_meta.json` : join(targetDir, "meta.json");
+  const metadataPath = sidecarPath(outputPath);
   const planned = singleFile ? [resolvePath(outputPath)] : selection.selected.map((a) => join(targetDir, a.filename));
-  const existing = [...planned, metadataPath].filter((p) => existsSync(p));
-  if (existing.length > 0) {
-    throw new UsageError(`refusing to overwrite existing file(s):\n  ${existing.join("\n  ")}\n(delete them or choose a different --output path to rerun)`);
+  const earlier = earlierRunFiles(metadataPath, task.id, descriptor.id);
+  const foreign = [...planned, metadataPath].filter((p) => existsSync(p) && !(earlier && (p === metadataPath || earlier.has(realpathLenient(p)))));
+  if (foreign.length > 0) {
+    throw new CliError({
+      code: "local_io",
+      message: `refusing to overwrite file(s) no earlier -o of task ${task.id} saved:\n  ${foreign.join("\n  ")}\n(delete them or choose another --output path)`,
+      recovery: { action: "choose_path", automatic: false },
+    });
   }
   const root = opts.root ?? targetDir;
   resolveWithinRoot(targetDir, root, { label: "output directory" });
   for (const p of [...planned, metadataPath]) resolveWithinRoot(p, root, { label: "planned download path" });
   mkdirSync(targetDir, { recursive: true });
 
-  const result = await downloadAssets(selection.selected, {
-    ...(singleFile ? { targetFile: resolvePath(outputPath) } : { targetDir }),
-    root,
-    ...(opts.signal ? { signal: opts.signal } : {}),
-  });
   const skipped = selection.skipped.map((s) => ({ key: s.asset.key, reason: s.reason }));
+  const rerun: ErrorRecovery = { action: "download", automatic: false, command: rerunCommand(descriptor, task.id, outputPath, opts) };
+  // The sidecar lists this run's files and every file an earlier run of the task left here.
+  const writeSidecar = (files: DownloadedFile[]): void => {
+    const saved = files.filter((f) => f.status === "written").map((f) => f.path);
+    const kept = [...(earlier ?? [])].filter((p) => !saved.includes(p) && existsSync(p));
+    writeMeta(task, descriptor.id, metadataPath, [...saved, ...kept], skipped, root, earlier !== null);
+  };
+
+  let result: DownloadAssetsResult;
+  try {
+    result = await downloadAssets(selection.selected, {
+      ...(singleFile ? { targetFile: resolvePath(outputPath) } : { targetDir }),
+      root,
+      ...(earlier ? { replace: earlier } : {}),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    });
+  } catch (err) {
+    throw transferFailure(err, writeSidecar, metadataPath, rerun);
+  }
   try {
     if (opts.signal?.aborted) throw new CliError({ code: "interrupted", message: "interrupted before the sidecar was written; nothing further was written" });
-    writeMeta(task, descriptor.id, metadataPath, result.files.map((f) => f.path), skipped, root);
+    writeSidecar(result.files);
   } catch (err) {
-    throw sidecarFailure(err, result.files, opts.signal);
+    throw sidecarFailure(err, result.files, opts.signal, rerun);
   }
   return { files: result.files, skipped, metadataPath, materialLinks: result.materialLinks, warnings: result.warnings };
+}
+
+/** Where `-o` writes its sidecar: `<dir>/meta.json`, or `<stem>_meta.json` beside a single file. */
+export function sidecarPath(outputPath: string): string {
+  return looksLikeFile(outputPath) ? `${stripExt(resolvePath(outputPath))}_meta.json` : join(resolvePath(outputPath), "meta.json");
+}
+
+/** The files a sidecar of this same task lists (real paths), or null when there is none or it belongs to something else. */
+function earlierRunFiles(metadataPath: string, taskId: string, resource: string): Set<string> | null {
+  let meta: { resource?: unknown; task?: { id?: unknown }; saved_files?: unknown };
+  try {
+    meta = JSON.parse(readFileSync(metadataPath, "utf8")) as typeof meta;
+  } catch {
+    return null;
+  }
+  if (meta?.resource !== resource || meta.task?.id !== taskId || !Array.isArray(meta.saved_files)) return null;
+  return new Set(meta.saved_files.filter((f): f is string => typeof f === "string"));
+}
+
+/** The same `-o` again, runnable from anywhere: absolute paths, the original --all-assets and --workspace. */
+function rerunCommand(descriptor: TaskResourceDescriptor, taskId: string, outputPath: string, opts: TaskDownloadOptions): string {
+  const words = ["meshy", ...descriptor.commandPath, "get", taskId, "-o", shellWord(resolvePath(outputPath))];
+  if (opts.allAssets) words.push("--all-assets");
+  if (opts.root) words.push("--workspace", shellWord(resolvePath(opts.root)));
+  return words.join(" ");
+}
+
+function shellWord(s: string): string {
+  return /^[\w./:@%+=,-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The transfer failed part-way (an asset error, Ctrl-C, the relink): the files
+ * that landed are recorded in the sidecar, so rerunning the same command
+ * replaces them and fetches the rest. A refusal before any transfer carries no
+ * manifest and is passed on as it is.
+ */
+function transferFailure(err: unknown, writeSidecar: (files: DownloadedFile[]) => void, metadataPath: string, rerun: ErrorRecovery): unknown {
+  const downloads = err instanceof CliError ? (err.result?.["downloads"] as { files: DownloadedFile[] } | undefined) : undefined;
+  if (!(err instanceof CliError) || !downloads) return err;
+  let recorded: string | null = null;
+  if (downloads.files.some((f) => f.status === "written")) {
+    try {
+      writeSidecar(downloads.files);
+      recorded = metadataPath;
+    } catch {
+      // The transfer failure is the outcome; without a sidecar a rerun names the files to delete.
+    }
+  }
+  return new CliError({
+    code: err.code,
+    message: err.message,
+    exitCode: err.exitCode,
+    httpStatus: err.httpStatus,
+    retryable: err.retryable,
+    recovery: rerun,
+    hint: err.hint,
+    details: err.details,
+    warnings: err.warnings,
+    result: { ...err.result, downloads: { ...downloads, metadata_path: recorded } },
+    cause: err.cause ?? err,
+  });
 }
 
 /**
@@ -692,25 +782,25 @@ export async function downloadTaskAssets(task: Task, outputPath: string, descrip
  * manifest keeps each committed file with the bytes on disk; an interrupt is
  * `interrupted` (130), everything else keeps its class.
  */
-function sidecarFailure(err: unknown, files: DownloadedFile[], signal: AbortSignal | undefined): CliError {
+function sidecarFailure(err: unknown, files: DownloadedFile[], signal: AbortSignal | undefined, rerun: ErrorRecovery): CliError {
   redigest(files);
   const downloads = { state: "partial", files, metadata_path: null, failed_step: "sidecar" };
   const interrupted = (err instanceof CliError && err.code === "interrupted") || Boolean(signal?.aborted);
   const message = `${files.length} file(s) were written but the sidecar step ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`;
   if (err instanceof CliError) {
-    return new CliError({ code: interrupted ? "interrupted" : err.code, message, httpStatus: err.httpStatus, retryable: err.retryable, recovery: err.recovery, hint: err.hint, details: err.details, warnings: err.warnings, result: { ...(err.result ?? {}), downloads }, cause: err });
+    return new CliError({ code: interrupted ? "interrupted" : err.code, message, httpStatus: err.httpStatus, retryable: err.retryable, recovery: err.recovery ?? rerun, hint: err.hint, details: err.details, warnings: err.warnings, result: { ...(err.result ?? {}), downloads }, cause: err });
   }
-  return new CliError({ code: interrupted ? "interrupted" : "local_io", message, result: { downloads }, cause: err });
+  return new CliError({ code: interrupted ? "interrupted" : "local_io", message, recovery: rerun, result: { downloads }, cause: err });
 }
 
 /**
  * The sidecar (`meta.json` / `<stem>_meta.json`): the full task — every URL,
  * so `meshy download --task-json` can fetch a skipped asset later — the saved
- * paths and what was skipped. The write is exclusive and atomic, and a
- * symlink at the sidecar path is refused, never followed.
+ * paths and what was skipped. The write is atomic and replaces only a sidecar
+ * of the same task; a symlink at the sidecar path is refused, never followed.
  */
-function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], skipped: SkippedAsset[], root: string): void {
+function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], skipped: SkippedAsset[], root: string, overwrite: boolean): void {
   const meta = { resource, task, saved_files: savedFiles, skipped, downloaded_at: new Date().toISOString() };
   const resolved = resolveWithinRoot(path, root, { label: "sidecar path" }).path;
-  writeJsonFile(resolved, meta, { overwrite: false, mode: 0o644 });
+  writeJsonFile(resolved, meta, { overwrite, mode: 0o644 });
 }

@@ -29,7 +29,7 @@ import { TransportError } from "../client/transport.js";
 import type { Task } from "../client/types.js";
 import { emitResult, openCommand, rejectOutputFlag, saveRawJson, type OpenedCommand, type SavedJson } from "./command-helpers.js";
 import { abortSignal, wasInterrupted } from "./context.js";
-import { downloadTaskAssets, type SkippedAsset } from "./download.js";
+import { downloadTaskAssets, sidecarPath, type SkippedAsset } from "./download.js";
 import { classifyError, CliError, UsageError, type Warning } from "./errors.js";
 import { normalizeMediaPayload } from "./file-input.js";
 import { allAssetsOption, outputOption } from "./global-options.js";
@@ -264,14 +264,19 @@ function saveJsonInContext(opts: Record<string, unknown>, opened: OpenedCommand,
 // and can be detected now is refused now, with "nothing was submitted".
 // ---------------------------------------------------------------------------
 
-/** `-o` target: inside the workspace (or its own directory), no symlink leaf, not an existing file. */
+/**
+ * `-o` target of a create: inside the workspace (or its own directory), no
+ * symlink leaf, and holding nothing an earlier `-o` saved — a new task can
+ * never replace another task's files, so that conflict is refused before the POST.
+ */
 export function preflightOutputPath(output: string, workspace: string | undefined, cwd = process.cwd()): void {
   const abs = resolvePath(cwd, output);
   resolveWithinRoot(abs, workspace ?? dirname(abs), { cwd, label: "--output" });
-  if (looksLikeFile(abs) && existsSync(abs)) {
+  const taken = [looksLikeFile(abs) ? abs : null, sidecarPath(abs)].filter((p): p is string => p !== null && existsSync(p));
+  if (taken.length > 0) {
     throw new CliError({
       code: "local_io",
-      message: `--output ${output} already exists; choose another path (nothing was submitted)`,
+      message: `--output ${output}: ${taken.join(" and ")} already exist${taken.length === 1 ? "s" : ""}; a new task does not replace them — choose another path (nothing was submitted)`,
       recovery: { action: "choose_path", automatic: false },
     });
   }
@@ -762,7 +767,7 @@ async function maybeDownloadV1(
       message: `task ${task.id} is SUCCEEDED but downloading its assets ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`,
       httpStatus: err instanceof CliError ? err.httpStatus : null,
       retryable: err instanceof CliError ? err.retryable : false,
-      recovery: err instanceof CliError && err.recovery ? err.recovery : { action: "download", automatic: false, command: `meshy download --resource ${descriptor.id} --task-id ${task.id} --all --output-dir <dir>` },
+      recovery: err instanceof CliError ? err.recovery : null,
       hint: err instanceof CliError ? err.hint : undefined,
       details: err instanceof CliError ? err.details : undefined,
       result: { downloads: partial },

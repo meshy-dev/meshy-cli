@@ -215,10 +215,10 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
 - Exit 14 → the task is running: it cannot be stopped and its credits are spent.
   `wait` for the result; delete it afterwards only if the user wants the result
   gone (permanent, no refund).
-- Exit 130 after `-o` → the transfer (or the material rewrite) was cancelled;
-  `result.downloads.files` lists what already landed (`status: written`), the rest can
-  be fetched with `meshy download`. `downloads.failed_step` (`relink` | `digest` |
-  `sidecar`) means every asset is on disk and only that step is missing.
+- Exit 7 or 130 after `-o` on a task that SUCCEEDED → the task and its credits are
+  fine; only the files are incomplete. Run `error.recovery.command` (the same `get … -o`)
+  once the cause is gone: it replaces what that task already saved there and fetches
+  the rest. Never create again to get the files.
 - `result.downloads.material_links.status: "incomplete"` → name the references that
   stayed unresolved (`texture_maps[].resolved_to: null`) instead of claiming the model
   loads.
