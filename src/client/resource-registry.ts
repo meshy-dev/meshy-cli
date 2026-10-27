@@ -253,7 +253,6 @@ export interface LocalToolDescriptor {
 
 export const LOCAL_TOOLS: readonly LocalToolDescriptor[] = [
   { id: "download", commandPath: ["download"], summary: "download selected assets of a task (from a saved task JSON, a URL or the API)" },
-  { id: "project", commandPath: ["project"], summary: "meshy_output project folders: init | record | show | list | rebuild-index" },
   { id: "inspect.faces", commandPath: ["inspect", "faces"], summary: "face-count gate: pass | fail | unknown" },
   { id: "mesh.prepare-print", commandPath: ["mesh", "prepare-print"], summary: "OBJ Y-up → Z-up, scale to a target height, centre, bottom at Z=0" },
   { id: "slicer", commandPath: ["slicer"], summary: "detect installed slicers | open a file in one" },

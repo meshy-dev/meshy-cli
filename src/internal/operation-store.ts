@@ -58,8 +58,6 @@ export interface OperationRecord {
   error: string | null;
   pid: number;
   cli_version: string;
-  /** Optional link to the project that owns the task (set by --project). */
-  project: string | null;
   /** Set by `meshy operations resolve`: the caller's reconciliation of a `started`/`unknown` record. */
   resolution?: { as: "created" | "not_created"; previous_state: OperationState; at: string };
 }
@@ -76,7 +74,6 @@ export interface OperationIdentity {
    */
   credentialVerified?: boolean;
   payloadFingerprint: string;
-  project?: string | null;
 }
 
 export function operationsRoot(env: NodeJS.ProcessEnv = process.env): string {
@@ -260,7 +257,6 @@ export function beginOperation(root: string, operationId: string, identity: Oper
       error: null,
       pid: process.pid,
       cli_version: VERSION,
-      project: identity.project ?? null,
     };
     writeJsonFile(recordPath(root, operationId), record, { overwrite: false, mode: 0o600 });
     return { outcome: "created", record };
@@ -270,7 +266,7 @@ export function beginOperation(root: string, operationId: string, identity: Oper
 export function updateOperation(
   root: string,
   operationId: string,
-  patch: Partial<Pick<OperationRecord, "state" | "task_id" | "request_id" | "http_status" | "error" | "project">>,
+  patch: Partial<Pick<OperationRecord, "state" | "task_id" | "request_id" | "http_status" | "error">>,
   now: () => Date = () => new Date(),
 ): OperationRecord {
   return withFileLock(lockPath(root), () => {

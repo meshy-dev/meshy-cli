@@ -1,14 +1,10 @@
 /**
- * Codex review round 3 (reviews/cli-s1-cf8905d, R3-F01–R3-F06) as positive
- * regressions. Each scenario mirrors the reviewer's probe (C01–C06) with real
- * subprocesses, a loopback API/asset host that records every request, synthetic
- * credentials and isolated temp directories, and asserts the required outcome:
- * the sidecar is published like an asset (no overwrite, no new symlink, root
- * re-proven at publication), every failure after the transfers keeps the
- * per-file manifest with the bytes actually on disk, Ctrl-C during the material
- * rewrite is an interrupt, errors after an accepted create still name the task,
- * texture identity follows the server-side name even when it collides with a
- * generated one, and an aliased project path still records its files.
+ * Codex review round 3 (reviews/cli-s1-cf8905d: R3-F01, R3-F02, R3-F04) as
+ * positive regressions with real subprocesses, a loopback API/asset host that
+ * records every request, synthetic credentials and isolated temp directories:
+ * the sidecar is published like an asset (no overwrite, no symlink followed),
+ * every failure after the transfers keeps the per-file manifest with the bytes
+ * actually on disk, and errors after an accepted create still name the task.
  */
 
 import test from "node:test";
@@ -135,53 +131,6 @@ test("C01+C02/R3-F01,R3-F04 sidecar targets planted after the preflight (symlink
     await api.close();
   }
 });
-
-// ---------------------------------------------------------------------------
-// R3-F06 / C04 — project reached through an alias path
-// ---------------------------------------------------------------------------
-
-test("C04/R3-F06 a project reached through a symlinked parent (or the macOS /var alias) still records its downloaded files; files truly outside are not recorded", async () => {
-  const host = await startMockApi((_req, res) => {
-    res.writeHead(200, { "content-type": "model/gltf-binary" });
-    res.end(glb());
-  });
-  try {
-    const dir = tmpDir(); // on macOS this is itself an alias (/var → /private/var)
-    const realRoot = join(dir, "real-projects");
-    mkdirSync(realRoot);
-    const alias = join(dir, "alias-projects");
-    symlinkSync(realRoot, alias);
-    const env = host.env({ MESHY_API_KEY: undefined });
-    const init = await runCli(["project", "init", "--root", alias, "--name", "alias-review"], { env, cwd: dir });
-    assert.equal(init.code, 0, init.stderr);
-    const projectDir = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
-    assert.ok(projectDir.startsWith(alias), "the project is addressed through the alias");
-    const fixture = join(projectDir, "task.json");
-    writeFileSync(fixture, JSON.stringify(taskBody({ model_urls: { glb: `${host.url}/model.glb` } })));
-    const r = await runCli(["download", "--task-json", fixture, "--all", "--project", projectDir], { env, cwd: dir });
-    assert.equal(r.code, 0, `${r.stderr}\n${r.stdout}`);
-    const out = parseSingleJson(r.stdout) as { result: { project: { recorded_files: string[] } }; warnings: Array<{ code: string }> };
-    assert.deepEqual(out.result.project.recorded_files, ["model.glb"]);
-    assert.ok(!out.warnings.some((w) => w.code === "files_outside_project"), "no false files_outside_project warning");
-    const meta = JSON.parse(readFileSync(join(projectDir, "metadata.json"), "utf8")) as { tasks: Array<{ files: string[] }> };
-    assert.deepEqual(meta.tasks[0]!.files, ["model.glb"]);
-    assert.ok(existsSync(join(realRoot, readdirSync(realRoot).find((n) => n !== "history.json")!, "model.glb")));
-    // Files written outside the project (explicit --output-dir elsewhere, no workspace) are still not recorded.
-    const elsewhere = join(dir, "elsewhere");
-    const outside = await runCli(["download", "--task-json", fixture, "--all", "--project", projectDir, "--output-dir", elsewhere], { env, cwd: dir });
-    assert.equal(outside.code, 0, outside.stderr);
-    const oo = parseSingleJson(outside.stdout) as { result: { project: { recorded_files: string[] } }; warnings: Array<{ code: string }> };
-    assert.deepEqual(oo.result.project.recorded_files, []);
-    assert.ok(oo.warnings.some((w) => w.code === "files_outside_project"));
-    assert.ok(existsSync(join(elsewhere, "model.glb")));
-  } finally {
-    await host.close();
-  }
-});
-
-// ---------------------------------------------------------------------------
-// R3-F03 / C05 — texture identity when source names collide with generated names
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // R3-F02 / C06 — a run without the flag keeps the accepted task on every download failure

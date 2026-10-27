@@ -208,7 +208,7 @@ export function buildInspectCommand(): Command {
           const { raw } = await runtime.client.endpointFor(descriptor).retrieveDetailed(source.taskId, { signal: abortSignal() });
           const extracted = extractTaskObject(raw);
           task = extracted?.task ?? (raw as Record<string, unknown>);
-          savedJson = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
+          savedJson = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspace }) : null;
           sourceInfo = { kind: "api", resource: descriptor.id, task_id: source.taskId, endpoint: descriptor.endpoint, requests_made: 1 };
         }
         verdict = judgeTask(task, limit);

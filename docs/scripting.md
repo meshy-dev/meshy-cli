@@ -76,10 +76,10 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   `credential_unverified`) until you log in again. This is a local record, not a
   server-side idempotency key.
 - Local targets that would fail after the POST are checked before it: an
-  existing `--save-json` file, an `-o` path outside `--workspace`, a missing
-  `--project` all exit 11 with "nothing was submitted" and cost no request.
+  existing `--save-json` file or an `-o` path outside `--workspace` exits 11
+  with "nothing was submitted" and costs no request.
 - Once the server has accepted a task, every later failure — saving JSON,
-  polling (a 503), downloading, recording, Ctrl-C — still reports
+  polling (a 503), downloading, Ctrl-C — still reports
   `result.task_id`, `result.submission` and `result.next` (the `get`/`wait`/
   `stream` commands that pick the task up). A bookkeeping problem never reads
   as "no task was created".
@@ -133,7 +133,7 @@ one JSON document (`ndjson` streams emit one line per event plus a final
 | 8 | timed out waiting for or streaming a task (the task keeps running) |
 | 9 | credit exhausted (`402`) |
 | 10 | submission unknown — a create was sent but its outcome could not be confirmed |
-| 11 | local I/O — refused overwrite, path outside the authorised root, journal/project write failure |
+| 11 | local I/O — refused overwrite, path outside `--workspace` or the output directory, journal write failure |
 | 12 | check failed (`inspect faces` over the limit) |
 | 13 | check unknown (`inspect faces` without a usable face count) |
 | 14 | conflict (`409`: `delete` of an IN_PROGRESS task — it cannot be stopped and its credits are spent; deleting it after it finishes is permanent, with no refund) |

@@ -53,7 +53,7 @@ import { finished } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
 import { copyFilePublished, publishTempFile, tempPathFor } from "./atomic-file.js";
 import { CliError, UsageError, type Warning } from "./errors.js";
-import { freezeRoot, isInside, realpathLenient, resolveWithinRoot, type AuthorisedRoot } from "./paths.js";
+import { isInside, realpathLenient, resolveWithinRoot } from "./paths.js";
 import { warning } from "./result.js";
 
 export type Vec3 = [number, number, number];
@@ -122,13 +122,11 @@ export interface PrepareObjOptions {
   /** Refuse inputs larger than this many bytes (default 2 GiB). */
   maxBytes?: number;
   /**
-   * Authorised root for every write (the output and each copied dependency).
-   * Defaults to the output's directory; pass the --workspace (frozen with the
-   * flags) to confine writes to it. Checked on real paths against the frozen
-   * directory, so symlinked parents cannot escape it and a root replaced
-   * mid-run is refused.
+   * Root for every write (the output and each copied dependency). Defaults to
+   * the output's directory; pass the --workspace to confine writes to it.
+   * Checked on real paths, so symlinked parents cannot escape it.
    */
-  root?: string | AuthorisedRoot;
+  root?: string;
 }
 
 export function rotateYUpToZUp(v: Vec3): Vec3 {
@@ -663,7 +661,7 @@ export async function prepareObjForPrint(inputPath: string, opts: PrepareObjOpti
   // Every path written by this run must resolve inside the write root: the
   // output itself and each dependency copy, checked on real paths before any
   // directory is created. A `materials/` symlink pointing elsewhere fails here.
-  const writeRoot: AuthorisedRoot = opts.root === undefined ? freezeRoot(outputDir, { label: "output directory" }) : typeof opts.root === "string" ? freezeRoot(opts.root, { label: "--workspace" }) : opts.root;
+  const writeRoot = opts.root ?? outputDir;
   if (!inPlace) resolveWithinRoot(output, writeRoot, { label: "output" });
   for (const copy of plan.copies) {
     copy.real = resolveWithinRoot(copy.target, writeRoot, { label: `material dependency target for '${copy.ref}'` }).path;
@@ -711,8 +709,6 @@ export async function prepareObjForPrint(inputPath: string, opts: PrepareObjOpti
       renameSync(tmp, output);
     } else {
       for (const copy of plan.copies) {
-        // Re-proven at publication time: the tree may have changed since planning.
-        copy.real = resolveWithinRoot(copy.target, writeRoot, { label: `material dependency target for '${copy.ref}'` }).path;
         if (copyDependency(copy.source, copy.real) === "copied") {
           copied.push(copy.target);
         } else {
@@ -721,7 +717,6 @@ export async function prepareObjForPrint(inputPath: string, opts: PrepareObjOpti
           );
         }
       }
-      resolveWithinRoot(output, writeRoot, { label: "output" });
       publishTempFile(tmp, output);
     }
   } catch (err) {

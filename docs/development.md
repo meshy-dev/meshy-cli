@@ -23,7 +23,7 @@ meshy-cli/
 │   ├── root.ts              # root command + global flag wiring
 │   ├── cmd/                 # make, auth, balance, resources, api, one file per endpoint,
 │   │                        # uv-unwrap, creative-lab, animation-catalog, showcases,
-│   │                        # download, project, inspect, mesh, slicer, doctor
+│   │                        # download, inspect, mesh, slicer, doctor
 │   ├── client/
 │   │   ├── resource-registry.ts  # every resource: path, family, verbs, billing, media fields
 │   │   ├── transport.ts     # per-family HTTP transport (auth scope, deadlines, redirects)
@@ -35,7 +35,6 @@ meshy-cli/
 │       ├── operation-store.ts      # submission journal (single POST, unknown outcomes)
 │       ├── stream.ts / poll.ts     # SSE parser + cancellable polling
 │       ├── artifacts.ts / download.ts  # asset keys, safe downloads, the -o layout
-│       ├── project-store.ts # meshy_output metadata + history
 │       ├── inspect.ts / obj-transform.ts / slicers.ts / doctor.ts
 │       ├── config.ts / runtime.ts / env-file.ts / credentials.ts / oauth.ts
 │       └── atomic-file.ts / paths.ts / lock.ts

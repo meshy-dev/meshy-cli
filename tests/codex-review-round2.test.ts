@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { credentialBinding } from "../src/internal/operation-store.js";
 import { jsonReply, parseNdjson, parseSingleJson, runCli, startMockApi, tmpDir } from "./helpers/cli.js";
@@ -100,67 +100,6 @@ test("N01/R2-F01 analyze-printability get/wait/stream -o: outside targets are re
 });
 
 // ---------------------------------------------------------------------------
-// R2-F01 / N02 — the implicit history root is confined too
-// ---------------------------------------------------------------------------
-
-test("N02/R2-F01 --workspace equal to the project dir: metadata is recorded, the parent's index/lock/temp files are never touched (record, task --project, download --project)", async () => {
-  const api = await startMockApi((req, res) => {
-    if (req.path === "/asset.glb") {
-      res.writeHead(200, { "content-type": "model/gltf-binary" });
-      return void res.end(glb());
-    }
-    return jsonReply(res, 200, taskBody({ model_urls: { glb: `${api.url}/asset.glb` } }));
-  });
-  try {
-    const dir = tmpDir();
-    const root = join(dir, "project-root");
-    const env = api.env();
-    const init = await runCli(["project", "init", "--root", root, "--name", "review"], { env, cwd: dir });
-    assert.equal(init.code, 0, init.stderr);
-    const projectDir = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
-    unlinkSync(join(root, "history.json"));
-    const rootBefore = listing(root);
-
-    const rec = await runCli(["project", "record", "--project", projectDir, "--workspace", projectDir, "--task-id", "round2-task", "--stage", "preview"], { env, cwd: dir });
-    assert.equal(rec.code, 0, `${rec.stderr}\n${rec.stdout}`);
-    const ro = parseSingleJson(rec.stdout) as { result: { index: { updated: boolean; error: string }; task_count: number }; warnings: Array<{ code: string }> };
-    assert.equal(ro.result.index.updated, false);
-    assert.match(ro.result.index.error, /outside --workspace/);
-    assert.equal(ro.result.task_count, 1, "metadata inside the workspace was recorded");
-    assert.ok(ro.warnings.some((w) => w.code === "index_dirty"));
-    assert.deepEqual(listing(root), rootBefore, "no history.json, lock or temp file appeared in the parent");
-
-    const get = await runCli(["text-to-3d", "get", "round2-task", "--project", projectDir, "--workspace", projectDir], { env, cwd: dir });
-    assert.equal(get.code, 0, `${get.stderr}\n${get.stdout}`);
-    const go = parseSingleJson(get.stdout) as { result: { project: { index: { updated: boolean } } }; warnings: Array<{ code: string }> };
-    assert.equal(go.result.project.index.updated, false);
-    assert.ok(go.warnings.some((w) => w.code === "index_dirty"));
-    assert.deepEqual(listing(root), rootBefore);
-
-    const taskJson = join(projectDir, "t.json");
-    writeFileSync(taskJson, JSON.stringify(taskBody({ model_urls: { glb: `${api.url}/asset.glb` } })));
-    const dl = await runCli(["download", "--task-json", taskJson, "--asset", "model.glb", "--project", projectDir, "--workspace", projectDir], { env, cwd: dir });
-    assert.equal(dl.code, 0, `${dl.stderr}\n${dl.stdout}`);
-    assert.ok((parseSingleJson(dl.stdout) as { warnings: Array<{ code: string }> }).warnings.some((w) => w.code === "index_dirty"));
-    assert.ok(existsSync(join(projectDir, "model.glb")));
-    assert.deepEqual(listing(root), rootBefore);
-
-    // An explicit --root outside the workspace stays a refusal before any write.
-    const outsideRoot = join(dir, "elsewhere");
-    const explicit = await runCli(["project", "record", "--project", projectDir, "--workspace", projectDir, "--root", outsideRoot, "--task-id", "t2", "--stage", "preview"], { env, cwd: dir });
-    assert.equal(explicit.code, 11, explicit.stderr);
-    assert.ok(!existsSync(outsideRoot));
-    // Workspace containing both project and root: the index is written normally.
-    const normal = await runCli(["project", "record", "--project", projectDir, "--workspace", root, "--task-id", "t3", "--stage", "preview"], { env, cwd: dir });
-    assert.equal(normal.code, 0, normal.stderr);
-    assert.equal((parseSingleJson(normal.stdout) as { result: { index: { updated: boolean } } }).result.index.updated, true);
-    assert.ok(existsSync(join(root, "history.json")));
-  } finally {
-    await api.close();
-  }
-});
-
-// ---------------------------------------------------------------------------
 // R2-F01 / N03 — a refused download creates no directory
 // ---------------------------------------------------------------------------
 
@@ -200,7 +139,7 @@ test("N03/R2-F01 download: a target outside --workspace is refused before mkdir 
 // R2-F03 / N05 — every post-stream failure ends in one outcome event
 // ---------------------------------------------------------------------------
 
-test("N05/R2-F03 stream: save-json conflict, project failure and download failure each end in exactly one outcome with the next sequence", async () => {
+test("N05/R2-F03 stream: a save-json conflict and a download failure each end in exactly one outcome with the next sequence", async () => {
   const api = await startMockApi((req, res) => {
     if (req.path.endsWith("/stream")) {
       res.writeHead(200, { "content-type": "text/event-stream" });
@@ -215,7 +154,6 @@ test("N05/R2-F03 stream: save-json conflict, project failure and download failur
     writeFileSync(occupied, "do not overwrite");
     const cases: Array<[string, string[], number, string]> = [
       ["save-json conflict", ["--save-json", occupied], 11, "local_io"],
-      ["project not initialised", ["--project", join(dir, "nope")], 11, "local_io"],
       ["asset 404", ["-o", join(dir, "asset.glb")], 5, "not_found"],
     ];
     for (const [label, extra, exitCode, code] of cases) {

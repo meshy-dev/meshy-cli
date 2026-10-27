@@ -1,6 +1,6 @@
 ---
 name: meshy-cli
-description: "Generate 3D models, motion clips, 2D images and Creative Lab print products with the Meshy API through the meshy-cli command — text-to-3D, image-to-3D, text-to-motion, remesh, UV unwrap, rigging, animation, retexture, printability, auto split into printable parts, per-task credit usage, selective downloads, project folders, face checks, OBJ print preparation and slicer launch. Use for any Meshy asset or 3D-printing request."
+description: "Generate 3D models, motion clips, 2D images and Creative Lab print products with the Meshy API through the meshy-cli command — text-to-3D, image-to-3D, text-to-motion, remesh, UV unwrap, rigging, animation, retexture, printability, auto split into printable parts, per-task credit usage, selective downloads, face checks, OBJ print preparation and slicer launch. Use for any Meshy asset or 3D-printing request."
 license: MIT
 compatibility: Requires meshy-cli on PATH (Node 22.12+, no Python) and a stored credential, MESHY_API_KEY or --api-key-file for API commands; network access to api.meshy.ai. Local helpers work offline.
 metadata:
@@ -87,9 +87,8 @@ meshy <resource> list [--page-size <n>]
   stay on the server, listed in `result.downloads.skipped`; `--all-assets` (directory
   only) saves them too. Between pipeline steps pass the task id
   (`--input-task-id`, `--rig-task-id`) instead of downloading.
-- `--save-json <file>` stores the raw API task (use it as the input of `download`,
-  `inspect faces` and `project record`); `--include-raw` puts the raw response under
-  `result.task.raw`; `--project <dir>` records the task in a project folder.
+- `--save-json <file>` stores the raw API task (use it as the input of `download` and
+  `inspect faces`); `--include-raw` puts the raw response under `result.task.raw`.
 - `--data '<json>'` reaches any field the CLI has no flag for (flags win, explicit
   `false`/`0` survive); `meshy api <METHOD> <PATH>` reaches any endpoint it has no
   command for. Media flags and the same fields inside `--data` accept URLs, local
@@ -117,15 +116,13 @@ output `lamp_stl`/`base_stl` or `bundle_zip`; keychain/fridge-magnet `obj` and
 keycap `obj_zip` are ZIP bundles saved as `.zip`; fidget-pixel builds a 3MF.
 Never call `showcases` in a health check.
 
-## Downloads, projects, printing (local, no key)
+## Downloads, printing (local, no key)
 
 ```bash
 meshy download --task-json ./task.json --list
 meshy download --task-json ./task.json --model-format glb --output ./model.glb
 meshy download --task-json ./rig.json --asset result.basic_animations.walking_glb_url --output ./walking.glb
 meshy download --resource image-to-3d --task-id <id> --all --output-dir ./out/
-meshy project init --root ./meshy_output --name "<prompt>" --task-id <id>
-meshy project record --project <dir> --task-id <id> --resource text-to-3d --stage preview --file preview.glb
 meshy inspect faces --model ./model.glb --max-faces 300000      # exit 0 pass | 12 fail | 13 unknown
 meshy mesh prepare-print ./model.obj --height-mm 75              # writes ./model.print.obj (Y-up → Z-up, grounded)
 meshy slicer detect
@@ -223,17 +220,8 @@ Exit codes: `0` ok · `1` task FAILED/CANCELED while waiting, or unclassified ·
   be fetched with `meshy download`. `downloads.failed_step` (`relink` | `digest` |
   `sidecar`) means every asset is on disk and only that step is missing.
 - `result.downloads.material_links.status: "incomplete"` → name the references that
-  stayed unresolved or ambiguous (`texture_maps[].method`, `note`) instead of claiming the
-  model loads; two material groups that would share one texture without evidence are
-  deliberately left as written.
-- `result.project.action: "failed"` (download `--project`, exit 11) → the assets are on
-  disk (`result.downloads.files`); repair the project's `metadata.json`, then run
-  `error.recovery.command` (`meshy project record …`, it already carries the original
-  `--workspace` and `--operation-id`) verbatim — do not download or create again. The same
-  command appears after a task verb's `--project` record failure; when the
-  error says the project is *no longer a target inside the authorised boundary* (it moved
-  mid-request) there is deliberately no command and `recovery` is null — restore the
-  directory first, then record with `meshy project record` from inside the original workspace.
+  stayed unresolved (`texture_maps[].resolved_to: null`) instead of claiming the model
+  loads.
 - Exit 10 → reconcile with `<resource> list`; never submit the same create again blindly.
   Then record the finding: `meshy operations resolve <operation-id> --task-id <id>` if the
   task is in the list, `--not-created` if it is not (the same `--operation-id` then submits

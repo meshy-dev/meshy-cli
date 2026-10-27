@@ -155,7 +155,7 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
   const payloadFor = await buildPayloads(plan);
   // -o is checked before the first billable request: an unwritable or
   // out-of-workspace target must refuse while the run is still free.
-  if (runtime.flags.output) preflightOutputPath(runtime.flags.output, runtime.flags.workspaceRoot);
+  if (runtime.flags.output) preflightOutputPath(runtime.flags.output, runtime.flags.workspace);
   const executed: ExecutedStep[] = [];
   const warnings: Warning[] = [];
   const progress = createProgress(opened.format);
@@ -311,7 +311,7 @@ async function finalOutcome(
     try {
       const output = runtime.flags.output;
       const { files, metadataPath, materialLinks, skipped, warnings: transferWarnings } = await withSpinner(opened.format, "Downloading assets", () =>
-        downloadTaskAssets(task, output, descriptor, { root: runtime.flags.workspaceRoot, signal: abortSignal(), allAssets: runtime.flags.allAssets }),
+        downloadTaskAssets(task, output, descriptor, { root: runtime.flags.workspace, signal: abortSignal(), allAssets: runtime.flags.allAssets }),
       );
       warnings.push(...transferWarnings.map((w) => warning(w.code, w.message)));
       downloads = { state: "completed", files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })), metadata_path: metadataPath, material_links: materialLinks, skipped };

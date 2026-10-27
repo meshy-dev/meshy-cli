@@ -50,7 +50,7 @@ const listCommand = new Command("list")
         action_ids: filters.action_ids ?? undefined,
       }, { signal: abortSignal() });
       const items = listItems(raw, ANIMATION_LIBRARY_PATH);
-      const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
+      const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspace }) : null;
       await emitResult(opened, {
         items,
         count: items.length,

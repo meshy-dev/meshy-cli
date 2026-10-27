@@ -155,7 +155,6 @@ meshy showcases list --search car --page-size 3 --model-format glb
 
 # local helpers (no key, no network)
 meshy download --task-json ./task.json --asset result.basic_animations.walking_glb_url --output walking.glb
-meshy project init --root ./meshy_output --name demo
 meshy inspect faces --model ./model.glb --max-faces 300000
 meshy mesh prepare-print ./model.obj --height-mm 75
 meshy slicer detect
@@ -239,7 +238,7 @@ Per-resource actions (all single-HTTP-call except `wait`/`stream`):
 
 ```
 meshy-cli <resource> create [flags] [--data <json>] [--async] [--timeout <s>] [--operation-id <id>]
-meshy-cli <resource> get    <task-id> [--save-json <file>] [--include-raw] [--project <dir>]
+meshy-cli <resource> get    <task-id> [--save-json <file>] [--include-raw]
 meshy-cli <resource> list   [--page <n>] [--page-size <n>] [--sort-by <field>]
 meshy-cli <resource> wait   <task-id> [--timeout <s>]
 meshy-cli <resource> stream <task-id> [--timeout <s>] [--idle-timeout <s>]
@@ -369,55 +368,19 @@ Sources are `--task-json` (an API task, a `meta.json` sidecar, or a v1 envelope)
 `--model-format`, `--kind`, `--all`. With several assets and no selector the
 command lists the candidates and exits 2 instead of guessing. Selecting an OBJ
 pulls its MTL and textures (`--geometry-only` to skip); once the set has landed
-the OBJ's `mtllib` and the MTL's `map_*` references are rewritten to the names
-actually saved (`model.mtl`, `texture_0_base_color.png`, …) so the model loads
-from that directory. Textures are matched by the name the server served them
-under (then by channel), one candidate only: with several material groups a
-reference that could mean two files is left as written and reported as
-ambiguous, and a reference that merely equals one of the CLI's generated names
-(`texture_0_base_color.png`) while the server called that image something else
-is ambiguous too — identity follows the source, never the file name on disk.
-Channel fallbacks (a channel word in the reference, the MTL key's channel, the
-only texture there is) are heuristics and compete on the texture they actually
-reach: when two different references would both fall back to the same image, or
-one reference would go to different images under different keys, they all stay
-as written and are reported as ambiguous — the CLI never merges material groups
-without evidence that they name the same file. Every link is listed under `result.downloads.material_links`
-(`status: complete | incomplete`, the `newmtl` group of each map), rewritten
-files carry `relinked: true` with their final sha256, and a reference that
-matches no or several downloaded files stays as written and is warned
-(`material_reference_unresolved` / `material_reference_ambiguous`). Files are published
-exclusively (never overwritten without `--overwrite`), checked against the
-content type and magic bytes, kept inside the output directory (or `--workspace`),
-and listed with size and sha256 in `result.downloads.files`. With `--project <dir>`
-the files that landed inside the project are recorded in its `metadata.json`;
-when that record fails after the transfer (metadata.json replaced by a symlink,
-damaged, or locked) the command exits 11 with the complete `result` — manifest,
-`saved_json`, `project.action: "failed"` — and `error.recovery.command` is the
-one `meshy project record …` invocation that redoes the record — carrying the
-original `--workspace`, so a recovery never writes further than the command that
-failed; the assets stay where they landed. Problems visible before the transfer (no metadata.json, a
-symlink or invalid JSON in its place, a blank `--stage`) are refused with no
-request made. Asset hosts never
-receive the API credential; an expired signed URL is refreshed once when the
-task came from the API and reported as unrefreshable when it came from a file.
-
-## Projects (`meshy_output/`)
-
-The Skills' project layout, without Python:
-
-```bash
-meshy project init --root ./meshy_output --name "demo" --task-id <id>
-meshy text-to-3d wait <id> --project ./meshy_output/<folder>          # saves task_<id>.json, records the stage
-meshy project record --project ./meshy_output/<folder> --task-id <id> --resource text-to-3d --stage preview --file preview.glb
-meshy project show --project ./meshy_output/<folder>
-meshy project list --root ./meshy_output
-meshy project rebuild-index --root ./meshy_output
-```
-
-`metadata.json` (`schema_version: 2`; any other file is refused) is the source
-of truth; `history.json` is a rebuildable
-index. A repeat `(task_id, stage)` merges instead of duplicating.
+the MTL's `map_*` references are pointed at the names actually saved
+(`texture_0.png` is saved as `texture_0_base_color.png`) so the model loads from
+that directory. A reference is rewritten only when exactly one saved texture was
+served under that name; anything else stays as written and is warned
+(`material_reference_unresolved`), and an OBJ whose `mtllib` names a file other
+than the saved MTL is reported, never rewritten. Every link is listed under
+`result.downloads.material_links` (`status: complete | incomplete`). Files are
+published exclusively (never overwritten without `--overwrite`), checked against
+the content type and magic bytes, kept inside the output directory (or
+`--workspace`), and listed with size and sha256 in `result.downloads.files`.
+Asset hosts never receive the API credential; an expired signed URL is refreshed
+once when the task came from the API and reported as unrefreshable when it came
+from a file.
 
 ## Printing helpers
 
@@ -478,7 +441,7 @@ URI is accepted when its bytes are a GLB.
 | `--format json\|pretty\|ndjson` | Stdout rendering. Defaults to `pretty` when stdout is a terminal and `json` everywhere else — piped, redirected, or spawned as a subprocess, which is every agent, script and CI run. `--json` is shorthand for `--format json` |
 | `-o, --output <path>` | Task verbs and `make`: save the primary files of a SUCCEEDED task into a directory (+ `meta.json`), or the one file of a format into a file path (`car.glb`); stdout keeps the envelope and adds `result.downloads`. `mesh prepare-print`: the output file |
 | `--all-assets` | With `-o <dir>`: also save texture maps, the rig's bundled clips, FBX copies and the pre-remesh model (listed in `result.downloads.skipped` otherwise) |
-| `--workspace <dir>` | Confine every written file to this directory: `download`, `-o` on task verbs and `make` (report-only tasks included), `--save-json`, `--project`/project folders and the history index (skipped with `index_dirty` when its root would fall outside), `mesh prepare-print` outputs and their copied materials — checked on real paths before anything, even a directory, is created. The boundary is frozen when the command starts (real path and directory identity): a workspace or project replaced by a symlink while a request is in flight is refused, never followed |
+| `--workspace <dir>` | Confine every written file to this directory: `download`, `-o` on task verbs and `make` (report-only tasks included), `--save-json`, `mesh prepare-print` outputs and their copied materials — checked on real paths before anything, even a directory, is created; for a create, before the request is sent |
 | `--no-update-check` | Skip the background npm version check in this process |
 | `NO_COLOR` / `FORCE_COLOR` (env) | Colour is on only when the stream is a terminal. `NO_COLOR` turns it off, `FORCE_COLOR` forces it on (`FORCE_COLOR=0` off), `TERM=dumb` disables it. `json` and `ndjson` are never coloured, and neither is anything written to a file |
 | `-v, --verbose` | Debug logging to stderr |
@@ -503,7 +466,7 @@ URI is accepted when its bytes are a GLB.
 
 ## Update notifications
 
-meshy-cli checks the npm registry for a newer version at most once per 24 hours. The result is cached at `<MESHY_CONFIG_DIR>/update-state.json`. The refresh runs in a detached background process so it can never slow down or fail a command, and it never runs for local commands (`resources`, `project`, `inspect`, `mesh`, `slicer`, `doctor`, `download`, `animation-catalog`), for `make --dry-run`, or with `--no-update-check`.
+meshy-cli checks the npm registry for a newer version at most once per 24 hours. The result is cached at `<MESHY_CONFIG_DIR>/update-state.json`. The refresh runs in a detached background process so it can never slow down or fail a command, and it never runs for local commands (`resources`, `operations`, `inspect`, `mesh`, `slicer`, `doctor`, `download`), for `make --dry-run`, `--help`, `--version`, or with `--no-update-check`.
 
 When a newer version is available:
 

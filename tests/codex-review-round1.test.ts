@@ -424,43 +424,6 @@ test("R07/F09 download: the MTL's texture references point at the saved names, b
   }
 });
 
-test("R08/F03 project init/record/rebuild-index refuse roots and projects outside --workspace before writing", async () => {
-  const dir = tmpDir();
-  const workspace = join(dir, "workspace");
-  const outside = join(dir, "outside");
-  mkdirSync(workspace);
-  mkdirSync(outside);
-  const env = { PATH: process.env["PATH"], HOME: process.env["HOME"], MESHY_CLI_NO_UPDATE_NOTIFIER: "1", MESHY_CONFIG_DIR: tmpDir("cfg-") };
-  const init = await runCli(["project", "init", "--workspace", workspace, "--root", join(outside, "projects"), "--name", "review"], { cwd: dir, env });
-  assert.equal(init.code, 11, `${init.stderr}\n${init.stdout}`);
-  assert.equal((parseSingleJson(init.stdout) as { error: { code: string } }).error.code, "local_io");
-  assert.deepEqual(readdirSync(outside), [], "nothing was created outside the workspace");
-
-  const inside = await runCli(["project", "init", "--workspace", workspace, "--root", join(workspace, "projects"), "--name", "review"], { cwd: dir, env });
-  assert.equal(inside.code, 0, inside.stderr);
-  const projectDir = (parseSingleJson(inside.stdout) as { result: { project_dir: string } }).result.project_dir;
-  assert.ok(existsSync(join(projectDir, "metadata.json")));
-
-  // A project that lives outside the workspace cannot be written to.
-  const foreign = await runCli(["project", "init", "--root", join(outside, "projects"), "--name", "foreign"], { cwd: dir, env });
-  assert.equal(foreign.code, 0, foreign.stderr);
-  const foreignDir = (parseSingleJson(foreign.stdout) as { result: { project_dir: string } }).result.project_dir;
-  const rec = await runCli(["project", "record", "--workspace", workspace, "--project", foreignDir, "--task-id", "t", "--stage", "preview"], { cwd: dir, env });
-  assert.equal(rec.code, 11, rec.stderr);
-  assert.equal((JSON.parse(readFileSync(join(foreignDir, "metadata.json"), "utf8")) as { tasks: unknown[] }).tasks.length, 0);
-  const rebuild = await runCli(["project", "rebuild-index", "--workspace", workspace, "--root", join(outside, "projects")], { cwd: dir, env });
-  assert.equal(rebuild.code, 11, rebuild.stderr);
-  // Task verbs: --project outside the workspace is refused before the POST.
-  const api = await startMockApi((req, res) => (req.method === "POST" ? jsonReply(res, 200, { result: "never" }) : jsonReply(res, 404, {})));
-  try {
-    const create = await runCli([...CREATE, "--workspace", workspace, "--project", foreignDir], { cwd: dir, env: api.env() });
-    assert.equal(create.code, 11, create.stderr);
-    assert.equal(api.requests.length, 0);
-  } finally {
-    await api.close();
-  }
-});
-
 test("R09/F03 task -o (get/wait/create/make) honours --workspace like standalone download; nothing outside is written or fetched", async () => {
   const dir = tmpDir();
   const workspace = join(dir, "workspace");
