@@ -235,7 +235,7 @@ function collectUnknownUrls(value: unknown, path: string, out: Array<{ path: str
   }
 }
 
-/** 0.2.0 artifact keys → stable keys, so old scripts and internal tests keep resolving. */
+/** `-o` manifest keys (`downloads.files[].key`, `downloads.skipped[].key`) that differ from the stable keys. */
 export const LEGACY_KEY_ALIASES: Readonly<Record<string, string>> = {
   thumbnail: "thumbnail.primary",
   motion_url: "result.motion_url",
@@ -252,6 +252,8 @@ export function resolveAssetKey(requested: string, assets: readonly Asset[]): As
   if (m) return assets.find((a) => a.key === `image.${m![1]}`);
   m = /^texture_(\d+)_([a-z0-9_]+)$/i.exec(requested);
   if (m) return assets.find((a) => a.key === `texture.${m![1]}.${m![2]}`);
+  m = /^basic_animations_([a-z0-9_]+_url)$/i.exec(requested);
+  if (m) return assets.find((a) => a.key === `result.basic_animations.${m![1]}`);
   m = /^([a-z0-9_]+_url)$/i.exec(requested);
   if (m) return assets.find((a) => a.key === `result.${m![1]}` || a.key === `result.basic_animations.${m![1]}`);
   return undefined;

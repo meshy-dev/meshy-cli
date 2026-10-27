@@ -12,8 +12,9 @@ import sharp from "sharp";
 import {
   downloadArtifacts,
   enumerateArtifacts,
-  looksLikeFile,
+  selectPrimaryArtifacts,
 } from "../src/internal/download.js";
+import { looksLikeFile } from "../src/internal/paths.js";
 import type { Task } from "../src/client/types.js";
 
 function task(overrides: Partial<Task>): Task {
@@ -127,6 +128,65 @@ test("enumerateArtifacts — text-to-motion uses motion_format for the extension
     url: "https://example.com/motion-clip",
     preferredExt: "bvh",
   }]);
+});
+
+const cdn = (name: string): string => `https://cdn.example.com/${name}`;
+const keysOf = (arts: { key: string }[]): string[] => arts.map((a) => a.key);
+const skippedOf = (sel: ReturnType<typeof selectPrimaryArtifacts>): Array<[string, string]> => sel.skipped.map((s) => [s.artifact.key, s.reason]);
+
+test("selectPrimaryArtifacts — GLB-only model task: model + thumbnail, the embedded texture maps stay on the server", () => {
+  const sel = selectPrimaryArtifacts(
+    enumerateArtifacts(task({ model_urls: { glb: cdn("m.glb") }, thumbnail_url: cdn("t.png"), texture_urls: [{ base_color: cdn("bc.png"), normal: cdn("n.png") }] })),
+  );
+  assert.deepEqual(keysOf(sel.selected), ["model_glb", "thumbnail"]);
+  assert.deepEqual(skippedOf(sel), [["texture_0_base_color", "embedded_textures"], ["texture_0_normal", "embedded_textures"]]);
+});
+
+test("selectPrimaryArtifacts — texture maps stay when a delivered model does not embed them (OBJ, FBX, glTF)", () => {
+  const deliveries: Array<Record<string, string>> = [{ obj: cdn("m.obj"), mtl: cdn("m.mtl") }, { glb: cdn("m.glb"), fbx: cdn("m.fbx") }, { gltf: cdn("m.gltf") }];
+  for (const model_urls of deliveries) {
+    const sel = selectPrimaryArtifacts(enumerateArtifacts(task({ model_urls, texture_urls: [{ base_color: cdn("bc.png") }] })));
+    assert.ok(keysOf(sel.selected).includes("texture_0_base_color"), JSON.stringify(model_urls));
+    assert.deepEqual(sel.skipped, []);
+  }
+});
+
+test("selectPrimaryArtifacts — every requested model format is kept; the pre-remesh GLB is not", () => {
+  const sel = selectPrimaryArtifacts(enumerateArtifacts(task({ model_urls: { glb: cdn("m.glb"), stl: cdn("m.stl"), pre_remeshed_glb: cdn("p.glb") } })));
+  assert.deepEqual(keysOf(sel.selected), ["model_glb", "model_stl"]);
+  assert.deepEqual(skippedOf(sel), [["model_pre_remeshed_glb", "pre_remesh_variant"]]);
+});
+
+test("selectPrimaryArtifacts — rigging keeps the GLB rigged character, not its FBX copy or the bundled clips", () => {
+  const sel = selectPrimaryArtifacts(
+    enumerateArtifacts(task({ result: { rigged_character_fbx_url: cdn("r.fbx"), rigged_character_glb_url: cdn("r.glb"), basic_animations: { running_glb_url: cdn("run.glb"), running_fbx_url: cdn("run.fbx") } } })),
+  );
+  assert.deepEqual(keysOf(sel.selected), ["rigged_character_glb_url"]);
+  assert.deepEqual(skippedOf(sel), [
+    ["rigged_character_fbx_url", "alternate_format"],
+    ["basic_animations_running_glb_url", "bundled_animation"],
+    ["basic_animations_running_fbx_url", "bundled_animation"],
+  ]);
+});
+
+test("selectPrimaryArtifacts — animate keeps the GLB clip and every post-process output", () => {
+  const sel = selectPrimaryArtifacts(
+    enumerateArtifacts(task({ result: { animation_fbx_url: cdn("a.fbx"), animation_glb_url: cdn("a.glb"), processed_usdz_url: cdn("a.usdz"), processed_armature_fbx_url: cdn("arm.fbx") } })),
+  );
+  assert.deepEqual(keysOf(sel.selected), ["animation_glb_url", "processed_usdz_url", "processed_armature_fbx_url"]);
+  assert.deepEqual(skippedOf(sel), [["animation_fbx_url", "alternate_format"]]);
+});
+
+test("selectPrimaryArtifacts — an FBX-only result, images and motion are kept as they are", () => {
+  assert.deepEqual(keysOf(selectPrimaryArtifacts(enumerateArtifacts(task({ result: { animation_fbx_url: cdn("a.fbx") } }))).selected), ["animation_fbx_url"]);
+  assert.deepEqual(keysOf(selectPrimaryArtifacts(enumerateArtifacts(task({ image_urls: [cdn("0.png"), cdn("1.png")] }))).selected), ["image_0", "image_1"]);
+  assert.deepEqual(keysOf(selectPrimaryArtifacts(enumerateArtifacts(task({ result: { motion_url: cdn("m.fbx"), motion_format: "fbx" } }))).selected), ["motion_url"]);
+});
+
+test("selectPrimaryArtifacts — a task with nothing primary keeps everything", () => {
+  const sel = selectPrimaryArtifacts(enumerateArtifacts(task({ result: { basic_animations: { walking_glb_url: cdn("w.glb") } } })));
+  assert.deepEqual(keysOf(sel.selected), ["basic_animations_walking_glb_url"]);
+  assert.deepEqual(sel.skipped, []);
 });
 
 test("downloadArtifacts — single 2D file, content-type matches user ext, no conversion", async () => {
@@ -283,7 +343,59 @@ test("downloadArtifacts — multi-file 3D fans out into a directory", async () =
   }
 });
 
-test("downloadArtifacts — refuses a file-looking path when task has multiple artifacts", async () => {
+test("downloadArtifacts — a file path picks the one asset of that format (make -o car.glb)", async () => {
+  const urls = { glb: "https://cdn.example.com/m.glb", thumb: "https://cdn.example.com/t.png", bc: "https://cdn.example.com/bc.png" };
+  const restore = installFetch({
+    [urls.glb]: { body: "GLB", contentType: "model/gltf-binary" },
+    [urls.thumb]: { body: "THUMB", contentType: "image/png" },
+    [urls.bc]: { body: "BC", contentType: "image/png" },
+  });
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
+    const out = join(dir, "car.glb");
+    const { savedFiles, skipped } = await downloadArtifacts(
+      task({ id: "t3", type: "text-to-3d", model_urls: { glb: urls.glb }, thumbnail_url: urls.thumb, texture_urls: [{ base_color: urls.bc }] }),
+      out,
+      "text-to-3d",
+    );
+    assert.deepEqual(savedFiles, [out]);
+    assert.equal(readFileSync(out, "utf8"), "GLB");
+    assert.deepEqual(readdirSync(dir).sort(), ["car.glb", "car_meta.json"]);
+    assert.deepEqual(skipped, [
+      { key: "thumbnail", reason: "not_selected" },
+      { key: "texture_0_base_color", reason: "embedded_textures" },
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("downloadArtifacts — a file path picks the FBX copy when the extension asks for it (rigging -o hero.fbx)", async () => {
+  const urls = { glb: "https://cdn.example.com/rig.glb", fbx: "https://cdn.example.com/rig.fbx", walk: "https://cdn.example.com/walk.glb" };
+  const restore = installFetch({
+    [urls.glb]: { body: "RIG-GLB", contentType: "model/gltf-binary" },
+    [urls.fbx]: { body: "RIG-FBX", contentType: "application/octet-stream" },
+  });
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
+    const out = join(dir, "hero.fbx");
+    const { savedFiles, skipped } = await downloadArtifacts(
+      task({ id: "r1", type: "rig", result: { rigged_character_glb_url: urls.glb, rigged_character_fbx_url: urls.fbx, basic_animations: { walking_glb_url: urls.walk } } }),
+      out,
+      "rigging",
+    );
+    assert.deepEqual(savedFiles, [out]);
+    assert.equal(readFileSync(out, "utf8"), "RIG-FBX");
+    assert.deepEqual(skipped, [
+      { key: "rigged_character_glb_url", reason: "not_selected" },
+      { key: "basic_animations_walking_glb_url", reason: "bundled_animation" },
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test("downloadArtifacts — refuses a file path that matches none of several assets", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
   await assert.rejects(
     () =>
@@ -294,11 +406,60 @@ test("downloadArtifacts — refuses a file-looking path when task has multiple a
           model_urls: { glb: "https://cdn.example.com/m.glb" },
           thumbnail_url: "https://cdn.example.com/t.png",
         }),
-        join(dir, "robot.glb"),
+        join(dir, "robot.obj"),
         "image-to-3d",
       ),
-    /Pass a directory path/,
+    /model\.glb, thumbnail\.png.*Pass a directory path/,
   );
+  assert.deepEqual(readdirSync(dir), [], "nothing is written");
+});
+
+test("downloadArtifacts — a directory gets the primary set; meta.json and the result list what stayed on the server", async () => {
+  const base = "https://cdn.example.com/r/";
+  const result = {
+    rigged_character_glb_url: `${base}rig.glb`,
+    rigged_character_fbx_url: `${base}rig.fbx`,
+    basic_animations: { walking_glb_url: `${base}w.glb`, walking_fbx_url: `${base}w.fbx`, walking_armature_glb_url: `${base}wa.glb` },
+  };
+  const restore = installFetch({ [`${base}rig.glb`]: { body: "RIG", contentType: "model/gltf-binary" } });
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
+    const outDir = join(dir, "rig");
+    const { files, skipped, metadataPath } = await downloadArtifacts(task({ id: "r2", type: "rig", result }), outDir, "rigging");
+    assert.deepEqual(readdirSync(outDir).sort(), ["meta.json", "rigged_character_glb.glb"]);
+    assert.deepEqual(files.map((f) => f.key), ["rigged_character_glb_url"]);
+    const expected = [
+      { key: "rigged_character_fbx_url", reason: "alternate_format" },
+      { key: "basic_animations_walking_glb_url", reason: "bundled_animation" },
+      { key: "basic_animations_walking_fbx_url", reason: "bundled_animation" },
+      { key: "basic_animations_walking_armature_glb_url", reason: "bundled_animation" },
+    ];
+    assert.deepEqual(skipped, expected);
+    const meta = JSON.parse(readFileSync(metadataPath, "utf8"));
+    assert.deepEqual(meta.skipped, expected);
+    assert.equal(meta.task.result.rigged_character_fbx_url, result.rigged_character_fbx_url, "meta.json keeps every URL for meshy download");
+  } finally {
+    restore();
+  }
+});
+
+test("downloadArtifacts — allAssets saves every artifact (the 0.5.0 set) and refuses a file path", async () => {
+  const base = "https://cdn.example.com/a/";
+  const t = task({ id: "a1", type: "image-to-3d", model_urls: { glb: `${base}m.glb` }, thumbnail_url: `${base}t.png`, texture_urls: [{ base_color: `${base}bc.png` }] });
+  const restore = installFetch({
+    [`${base}m.glb`]: { body: "GLB", contentType: "model/gltf-binary" },
+    [`${base}t.png`]: { body: "T", contentType: "image/png" },
+    [`${base}bc.png`]: { body: "BC", contentType: "image/png" },
+  });
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
+    const { skipped } = await downloadArtifacts(t, join(dir, "all"), "image-to-3d", { allAssets: true });
+    assert.deepEqual(readdirSync(join(dir, "all")).sort(), ["meta.json", "model.glb", "texture_0_base_color.png", "thumbnail.png"]);
+    assert.deepEqual(skipped, []);
+    await assert.rejects(() => downloadArtifacts(t, join(dir, "x.glb"), "image-to-3d", { allAssets: true }), /--all-assets saves all 3 files.*needs a directory/);
+  } finally {
+    restore();
+  }
 });
 
 test("downloadArtifacts — 2D image with no extension hint gets content-type extension", async () => {

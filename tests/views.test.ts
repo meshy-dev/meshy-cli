@@ -80,6 +80,24 @@ test("saved files replace the tip", () => {
   assert.doesNotMatch(out, /tip:/);
 });
 
+test("what -o left on the server is one dim line, counted by reason; nothing when everything was saved", () => {
+  const withSkipped = (skipped: unknown[]) => ({
+    ...V1,
+    result: { ...(V1.result as object), downloads: { state: "completed", files: [{ key: "model_glb", path: "/tmp/husky/model.glb", status: "written" }], metadata_path: "/tmp/husky/meta.json", skipped } },
+  });
+  const out = renderView(
+    "text-to-3d.wait",
+    withSkipped([
+      { key: "texture_0_base_color", reason: "embedded_textures" },
+      { key: "texture_0_normal", reason: "embedded_textures" },
+      { key: "rigged_character_fbx_url", reason: "alternate_format" },
+    ]),
+    plain,
+  );
+  assert.match(out, /^not saved: 2 texture maps, 1 alternate-format copy \(-o <dir> --all-assets saves everything\)$/m);
+  assert.doesNotMatch(renderView("text-to-3d.wait", withSkipped([]), plain), /not saved/);
+});
+
 test("--async create and make: the id and what to run next", () => {
   assert.equal(
     renderView("text-to-3d.create", { resource: "text-to-3d", task_id: "t-1", status: "PENDING", hint: "meshy-cli text-to-3d wait t-1" }, plain),

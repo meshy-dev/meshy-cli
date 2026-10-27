@@ -224,6 +224,75 @@ test("T-009 get -o: non-terminal → downloads.not_ready, exit 0, no asset reque
   }
 });
 
+test("get -o <dir>: saves the primary assets, lists the rest under downloads.skipped; --all-assets saves everything", async () => {
+  const files: Record<string, string> = { "/files/rig.glb": "RIG-GLB", "/files/rig.fbx": "RIG-FBX", "/files/walk.glb": "WALK-GLB", "/files/walk.fbx": "WALK-FBX" };
+  let origin = "";
+  const api = await startMockApi((req, res) => {
+    const body = files[req.path];
+    if (body !== undefined) {
+      res.writeHead(200, { "Content-Type": "application/octet-stream" });
+      res.end(body);
+      return;
+    }
+    return jsonReply(res, 200, {
+      ...taskBody("SUCCEEDED"),
+      type: "rig",
+      result: {
+        rigged_character_glb_url: `${origin}/files/rig.glb`,
+        rigged_character_fbx_url: `${origin}/files/rig.fbx`,
+        basic_animations: { walking_glb_url: `${origin}/files/walk.glb`, walking_fbx_url: `${origin}/files/walk.fbx` },
+      },
+    });
+  });
+  origin = api.origin;
+  try {
+    const dir = tmpDir();
+    const r = await runCli(["rigging", "get", "task-1", "-o", join(dir, "rig"), "--format", "json"], { env: envOf(api), cwd: dir });
+    assert.equal(r.code, 0, r.stderr);
+    const out = parseSingleJson(r.stdout) as { result: { downloads: { state: string; files: Array<{ key: string }>; skipped: Array<{ key: string; reason: string }> } } };
+    assert.equal(out.result.downloads.state, "completed");
+    assert.deepEqual(out.result.downloads.files.map((f) => f.key), ["rigged_character_glb_url"]);
+    assert.deepEqual(out.result.downloads.skipped, [
+      { key: "rigged_character_fbx_url", reason: "alternate_format" },
+      { key: "basic_animations_walking_glb_url", reason: "bundled_animation" },
+      { key: "basic_animations_walking_fbx_url", reason: "bundled_animation" },
+    ]);
+    assert.deepEqual(readdirSync(join(dir, "rig")).sort(), ["meta.json", "rigged_character_glb.glb"]);
+    assert.equal(api.requests.filter((q) => q.path.startsWith("/files/")).length, 1, "skipped assets are never fetched");
+
+    const all = await runCli(["rigging", "get", "task-1", "-o", join(dir, "all"), "--all-assets", "--format", "json"], { env: envOf(api), cwd: dir });
+    assert.equal(all.code, 0, all.stderr);
+    assert.deepEqual(readdirSync(join(dir, "all")).sort(), ["basic_animations_walking_fbx.fbx", "basic_animations_walking_glb.glb", "meta.json", "rigged_character_fbx.fbx", "rigged_character_glb.glb"]);
+    assert.deepEqual((parseSingleJson(all.stdout) as { result: { downloads: { skipped: unknown[] } } }).result.downloads.skipped, []);
+  } finally {
+    await api.close();
+  }
+});
+
+test("--all-assets without -o, or with a file path, is a usage error before any request", async () => {
+  const api = await startMockApi((_req, res) => jsonReply(res, 200, taskBody("SUCCEEDED")));
+  try {
+    const dir = tmpDir();
+    for (const args of [["--all-assets"], ["-o", join(dir, "x.glb"), "--all-assets"]]) {
+      const r = await runCli(["rigging", "get", "task-1", ...args, "--format", "json"], { env: envOf(api), cwd: dir });
+      assert.equal(r.code, 2, `${args.join(" ")}: ${r.stderr}`);
+      assert.match((parseSingleJson(r.stdout) as { error: { message: string } }).error.message, /--all-assets/);
+    }
+    assert.equal(api.requests.length, 0);
+  } finally {
+    await api.close();
+  }
+});
+
+test("-o and --all-assets are listed in the help of the verbs that download", async () => {
+  for (const argv of [["image-to-3d", "create"], ["rigging", "get"], ["animate", "wait"], ["make"]]) {
+    const r = await runCli([...argv, "--help"]);
+    assert.equal(r.code, 0, `${argv.join(" ")}: ${r.stderr}`);
+    assert.match(r.stdout, /-o, --output <path>/, argv.join(" "));
+    assert.match(r.stdout, /--all-assets/, argv.join(" "));
+  }
+});
+
 test("T-048 SIGINT during wait exits 130, sends no DELETE and no second POST, keeps the task id", async () => {
   const api = await startMockApi((req, res) => {
     if (req.method === "POST") return jsonReply(res, 200, { result: "task-slow" });

@@ -117,10 +117,12 @@ GLOBAL FLAGS (accepted at any position in the command line):
     --base-url-v2 <url>      override MESHY_BASE_URL_V2
     --base-url-creative-lab <url>  override the Creative Lab base (default: <v1 origin>/openapi/creative-lab)
     --format <fmt>           pretty on a terminal, json when piped | json | pretty | ndjson
-    --output, -o <path>      download task artifacts to a file or directory,
-                             write meta.json alongside, and replace stdout
-                             with a status report (without -o: stdout keeps
-                             the JSON summary).
+    --output, -o <path>      save the finished task's files: a directory gets the
+                             model / images / thumbnail + meta.json, a file path
+                             (car.glb) the one file of that format. stdout keeps
+                             the envelope and adds result.downloads.
+    --all-assets             with -o <dir>: also save texture maps, bundled rig
+                             clips, FBX copies (listed in result.downloads.skipped)
     --api-key-file <path>    read MESHY_API_KEY from an explicit dotenv-style file
                              (only that key; never auto-discovered; do not use Node's --env-file)
     --workspace <dir>        confine every written file to this directory

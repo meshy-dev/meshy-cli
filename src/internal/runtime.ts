@@ -12,7 +12,7 @@
  */
 
 import { Command } from "commander";
-import { freezeRoot, type AuthorisedRoot } from "./paths.js";
+import { freezeRoot, looksLikeFile, type AuthorisedRoot } from "./paths.js";
 import { MeshyClient } from "../client/index.js";
 import { loadConfig, type ConfigOverrides, type MeshyConfig } from "./config.js";
 import { credentialsPath, readCredentials, saveProfile } from "./credentials.js";
@@ -34,6 +34,8 @@ export interface GlobalFlags {
   /** Set when the caller typed `--output-schema v1` (a compatibility no-op): D-065 keeps "a typed schema means JSON". */
   outputSchema?: "v1";
   output?: string;
+  /** --all-assets: `-o <dir>` saves every artifact of the task, not just the primary set. */
+  allAssets: boolean;
   /** Path given to --api-key-file (only MESHY_API_KEY is read from it). */
   envFile?: string;
   workspace?: string;
@@ -214,6 +216,7 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
     json?: boolean;
     outputSchema?: string;
     output?: string;
+    allAssets?: boolean;
     apiKeyFile?: string;
     envFile?: string;
     workspace?: string;
@@ -225,6 +228,14 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
     throw new UsageError(
       "--env-file is intercepted by Node.js itself (it loads the whole file into the environment before meshy-cli starts and exits 9 when the file is missing). Use --api-key-file <path>; only MESHY_API_KEY is read from it.",
     );
+  }
+  // --all-assets only widens what -o saves into a directory; anywhere else it
+  // would be silently ignored, so it is refused before any request.
+  if (opts.allAssets && !opts.output) {
+    throw new UsageError("--all-assets only changes what -o/--output <dir> saves; pass it together with -o (meshy download selects with --all)");
+  }
+  if (opts.allAssets && opts.output && looksLikeFile(opts.output)) {
+    throw new UsageError(`--all-assets saves every file of the task and needs a directory — '${opts.output}' looks like a file`);
   }
   // --json is an alias for --format json; --json wins if both are set.
   // Untyped --format resolves against the TTY (see output.ts); remember that it
@@ -242,6 +253,7 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
     json: opts.json,
     outputSchema: normalizeSchema(opts.outputSchema),
     output: opts.output,
+    allAssets: opts.allAssets === true,
     envFile: opts.apiKeyFile,
     workspace: opts.workspace,
     workspaceRoot: opts.workspace ? freezeRoot(opts.workspace, { label: "--workspace" }) : undefined,

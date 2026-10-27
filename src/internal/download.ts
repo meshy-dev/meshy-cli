@@ -11,9 +11,10 @@
  * any MIME-driven extension change — is checked against the authorised root.
  *
  * Two entry points share the core:
- *   downloadArtifacts — the 0.2.0 `-o` behaviour (all artifacts, role-based
- *                       names, meta.json sidecar); output shape unchanged. An
- *                       explicit `root` (the --workspace) confines every path.
+ *   downloadArtifacts — `-o`: the primary artifacts (or every one with
+ *                       --all-assets) under the 0.2.0 role-based names, plus
+ *                       the meta.json sidecar. An explicit `root` (the
+ *                       --workspace) confines every path.
  *   downloadAssets    — the selective downloader behind `meshy download` and
  *                       the v1 manifest.
  * Both relink OBJ → MTL → texture references after the set has landed (see
@@ -31,7 +32,7 @@ import type { Task } from "../client/types.js";
 import { publishTempFile, tempPathFor, writeJsonFile } from "./atomic-file.js";
 import { CliError, UsageError } from "./errors.js";
 import { logger } from "./logger.js";
-import { freezeRoot, isInside, realpathLenient, resolveWithinRoot, safeExtension, safeSegment, type AuthorisedRoot } from "./paths.js";
+import { freezeRoot, isInside, looksLikeFile, realpathLenient, resolveWithinRoot, safeExtension, safeSegment, type AuthorisedRoot } from "./paths.js";
 import { USER_AGENT } from "./user-agent.js";
 import { modelAsset, productFromTaskType, type Asset } from "./artifacts.js";
 import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";
@@ -594,7 +595,7 @@ async function convertImage(buffer: Buffer, targetExt: string, targetPath: strin
 }
 
 // ---------------------------------------------------------------------------
-// Legacy `-o` wrapper (0.2.0 layout preserved)
+// `-o` downloader (0.2.0 file layout preserved)
 // ---------------------------------------------------------------------------
 
 export interface Artifact {
@@ -674,9 +675,86 @@ export function enumerateArtifacts(task: Task): Artifact[] {
   return out;
 }
 
-/** Heuristic: does this look like a file path (has an extension) or a dir? */
-export function looksLikeFile(path: string): boolean {
-  return /\.[A-Za-z0-9]{2,6}$/.test(path);
+// ---------------------------------------------------------------------------
+// `-o` selection: the files a person asked for, not every URL of the task
+// ---------------------------------------------------------------------------
+
+/** Why `-o` left an artifact on the server. meta.json keeps its URL for `meshy download`. */
+export type SkipReason = "embedded_textures" | "bundled_animation" | "alternate_format" | "pre_remesh_variant" | "not_selected";
+
+/** Manifest entry (`result.downloads.skipped[]`, meta.json `skipped`). */
+export interface SkippedArtifact {
+  key: string;
+  reason: SkipReason;
+}
+
+export interface ArtifactSelection {
+  selected: Artifact[];
+  skipped: Array<{ artifact: Artifact; reason: SkipReason }>;
+}
+
+/**
+ * Model formats whose file already carries the textures (GLB, USDZ, the
+ * Creative Lab ZIP bundles) or has none to carry (STL, 3MF, VOX). OBJ, glTF,
+ * FBX and blend are not assumed self-contained: their maps stay.
+ */
+const SELF_CONTAINED_MODEL_FORMATS = new Set(["glb", "usdz", "stl", "3mf", "vox", "zip"]);
+
+/**
+ * Results the API delivers in two formats under one stem:
+ * `rigged_character_{glb,fbx}_url` (rigging), `animation_{glb,fbx}_url` (animate).
+ */
+const RESULT_PAIR = /^(rigged_character|animation)_(glb|fbx)_url$/;
+
+/**
+ * The default `-o` set: every model format the task produced, the thumbnail,
+ * images, motion and post-process outputs, the rig / animation result in GLB.
+ * Left on the server: the rig's bundled walking/running clips, the FBX copy of
+ * a result that also came as GLB, texture maps a delivered model already
+ * embeds, and the pre-remesh GLB. A task with nothing primary keeps everything.
+ *
+ * Classification reads the legacy slot keys built by enumerateArtifacts: they
+ * are the stable `downloads.files[].key` contract of `-o`.
+ */
+export function selectPrimaryArtifacts(artifacts: readonly Artifact[]): ArtifactSelection {
+  const models = artifacts.filter((a) => a.key.startsWith("model_") && a.key !== "model_pre_remeshed_glb");
+  const texturesEmbedded = models.length > 0 && models.every((m) => SELF_CONTAINED_MODEL_FORMATS.has(m.preferredExt));
+  const glbStems = new Set<string>();
+  for (const a of artifacts) {
+    const m = RESULT_PAIR.exec(a.key);
+    if (m && m[2] === "glb") glbStems.add(m[1]!);
+  }
+  const reasonFor = (a: Artifact): SkipReason | null => {
+    if (a.key.startsWith("basic_animations_")) return "bundled_animation";
+    if (a.key.startsWith("texture_")) return texturesEmbedded ? "embedded_textures" : null;
+    if (a.key === "model_pre_remeshed_glb") return models.length > 0 ? "pre_remesh_variant" : null;
+    const pair = RESULT_PAIR.exec(a.key);
+    return pair && pair[2] !== "glb" && glbStems.has(pair[1]!) ? "alternate_format" : null;
+  };
+  const selection: ArtifactSelection = { selected: [], skipped: [] };
+  for (const artifact of artifacts) {
+    const reason = reasonFor(artifact);
+    if (reason) selection.skipped.push({ artifact, reason });
+    else selection.selected.push(artifact);
+  }
+  return selection.selected.length > 0 ? selection : { selected: [...artifacts], skipped: [] };
+}
+
+/**
+ * Single-file `-o <file.ext>`: the artifact whose format matches the
+ * extension (`-o car.glb` → the model GLB), first among the selected files,
+ * then among the alternate formats (`-o hero.fbx` on rigging → the FBX rigged
+ * character). A sole selected file is taken as before (an image is converted
+ * to the requested format). Null when nothing or several match.
+ */
+function pickSingleFile(selection: ArtifactSelection, outputPath: string): Artifact | null {
+  const ext = extname(outputPath).slice(1).toLowerCase();
+  const matches = (a: Artifact): boolean => a.preferredExt === ext || extEquivalent(a.preferredExt, ext);
+  const direct = selection.selected.filter(matches);
+  if (direct.length > 0) return direct.length === 1 ? direct[0]! : null;
+  const alternates = selection.skipped.filter((s) => s.reason === "alternate_format" && matches(s.artifact));
+  if (alternates.length === 1) return alternates[0]!.artifact;
+  return selection.selected.length === 1 ? selection.selected[0]! : null;
 }
 
 export interface LegacyDownloadedFile {
@@ -704,6 +782,8 @@ export interface DownloadResult {
    * CliError's `result.downloads`, so nothing already on disk is forgotten.
    */
   files: LegacyDownloadedFile[];
+  /** Artifacts left on the server (not in --all-assets mode), each with its reason. */
+  skipped: SkippedArtifact[];
 }
 
 export interface DownloadArtifactsOptions {
@@ -711,6 +791,8 @@ export interface DownloadArtifactsOptions {
   root?: string | AuthorisedRoot;
   /** Cooperative cancellation (SIGINT): aborts the in-flight transfer and stops every later download, relink and publish. */
   signal?: AbortSignal;
+  /** --all-assets: save every artifact of the task (directory only) instead of the primary set. */
+  allAssets?: boolean;
 }
 
 function interruptedBefore(what: string): CliError {
@@ -778,11 +860,11 @@ export async function downloadArtifacts(
   resource: string,
   opts: DownloadArtifactsOptions = {},
 ): Promise<DownloadResult> {
-  const artifacts = enumerateArtifacts(task);
+  const all = enumerateArtifacts(task);
   // An explicit workspace is the root for everything written here — the
   // directory, every planned file and the sidecar — checked before mkdir.
   const workspaceRoot: AuthorisedRoot | null = opts.root === undefined ? null : typeof opts.root === "string" ? freezeRoot(opts.root, { label: "--workspace" }) : opts.root;
-  if (artifacts.length === 0) {
+  if (all.length === 0) {
     // Report-only tasks (analyze-printability) carry their result in a
     // structured field instead of downloadable files. Persist the full task
     // JSON so `-o` still means "give me the result on disk".
@@ -792,13 +874,27 @@ export async function downloadArtifacts(
     throw new Error(`task ${task.id} has no downloadable artifacts`);
   }
 
-  if (looksLikeFile(outputPath) && artifacts.length > 1) {
-    throw new UsageError(
-      `task ${task.id} produced ${artifacts.length} artifacts — '${outputPath}' looks like a file. ` +
-        `Pass a directory path for --output instead (e.g. '${stripExt(outputPath)}').`,
-    );
-  }
   const singleFileMode = looksLikeFile(outputPath);
+  if (singleFileMode && opts.allAssets && all.length > 1) {
+    throw new UsageError(`--all-assets saves all ${all.length} files of task ${task.id} and needs a directory — '${outputPath}' looks like a file (e.g. '${stripExt(outputPath)}').`);
+  }
+  let selection: ArtifactSelection = opts.allAssets ? { selected: [...all], skipped: [] } : selectPrimaryArtifacts(all);
+  if (singleFileMode) {
+    const chosen = pickSingleFile(selection, outputPath);
+    if (!chosen) {
+      throw new UsageError(
+        `task ${task.id} produced ${selection.selected.length} files to save (${selection.selected.map(deriveFilename).join(", ")}) and '${outputPath}' does not pick exactly one of them. ` +
+          `Pass a directory path for --output instead (e.g. '${stripExt(outputPath)}').`,
+      );
+    }
+    const reasons = new Map(selection.skipped.map((s) => [s.artifact, s.reason]));
+    selection = {
+      selected: [chosen],
+      skipped: all.filter((a) => a !== chosen).map((artifact) => ({ artifact, reason: reasons.get(artifact) ?? "not_selected" })),
+    };
+  }
+  const artifacts = selection.selected;
+  const skipped: SkippedArtifact[] = selection.skipped.map((s) => ({ key: s.artifact.key, reason: s.reason }));
 
   // Plan every path we'd write up front so we can bail before any network
   // work when a destination already exists. This prevents silent overwrite
@@ -873,11 +969,11 @@ export async function downloadArtifacts(
     }
     step = "sidecar";
     if (opts.signal?.aborted) throw interruptedBefore("the sidecar was written");
-    writeMeta(task, resource, metadataPath, saved, root);
+    writeMeta(task, resource, metadataPath, saved, skipped, root);
   } catch (err) {
     throw finalisationFailure(step, err, files, opts.signal);
   }
-  return { savedFiles: saved, metadataPath, materialLinks, files };
+  return { savedFiles: saved, metadataPath, materialLinks, files, skipped };
 }
 
 function deriveFilename(artifact: Artifact): string {
@@ -981,7 +1077,7 @@ function saveReportOnly(task: Task, outputPath: string, resource: string, worksp
     }
     if (workspaceRoot) resolveWithinRoot(abs, workspaceRoot, { label: "report path" });
     writeJsonFile(abs, { resource, task, downloaded_at: new Date().toISOString() }, { overwrite: false, mode: 0o644 });
-    return { savedFiles: [], metadataPath: abs, materialLinks: null, files: [] };
+    return { savedFiles: [], metadataPath: abs, materialLinks: null, files: [], skipped: [] };
   }
   const metadataPath = join(abs, "meta.json");
   if (existsSync(metadataPath)) {
@@ -995,8 +1091,8 @@ function saveReportOnly(task: Task, outputPath: string, resource: string, worksp
     resolveWithinRoot(metadataPath, workspaceRoot, { label: "planned download path" });
   }
   mkdirSync(abs, { recursive: true });
-  writeMeta(task, resource, metadataPath, [], workspaceRoot ?? freezeRoot(abs, { label: "output directory" }));
-  return { savedFiles: [], metadataPath, materialLinks: null, files: [] };
+  writeMeta(task, resource, metadataPath, [], [], workspaceRoot ?? freezeRoot(abs, { label: "output directory" }));
+  return { savedFiles: [], metadataPath, materialLinks: null, files: [], skipped: [] };
 }
 
 /**
@@ -1005,11 +1101,13 @@ function saveReportOnly(task: Task, outputPath: string, resource: string, worksp
  * publication time (a symlink or file that appeared since the preflight is
  * refused, never followed or truncated) and the write is exclusive and atomic.
  */
-function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], root: AuthorisedRoot): void {
+function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], skipped: SkippedArtifact[], root: AuthorisedRoot): void {
   const meta = {
     resource,
     task,
     saved_files: savedFiles,
+    // Left on the server by the default -o selection; the URLs are in `task`.
+    skipped,
     downloaded_at: new Date().toISOString(),
   };
   const resolved = resolveWithinRoot(path, root, { label: "sidecar path" }).path;

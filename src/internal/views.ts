@@ -96,6 +96,7 @@ function taskResultView(body: unknown, paint: Painter, prefix: string): string |
   if (task.status === "SUCCEEDED" && saved.length === 0) {
     lines.push("", ...downloadTip(resource, task.task_id, `${safeSegment(resource)}-${task.task_id.slice(0, 8)}`, "the command", paint));
   }
+  lines.push(...skippedNote(body, paint));
   return lines.join("\n");
 }
 
@@ -163,6 +164,32 @@ function assetSummary(task: TaskView): string {
   if (resultFiles) parts.push(plural(resultFiles, "result file"));
   if (task.thumbnail_url) parts.push("thumbnail");
   return parts.join(" · ");
+}
+
+/** `downloads.skipped[].reason` → [singular, plural]. */
+const SKIPPED_NOUN: Record<string, [string, string]> = {
+  embedded_textures: ["texture map", "texture maps"],
+  bundled_animation: ["bundled animation clip", "bundled animation clips"],
+  alternate_format: ["alternate-format copy", "alternate-format copies"],
+  pre_remesh_variant: ["pre-remesh model", "pre-remesh models"],
+  not_selected: ["other file", "other files"],
+};
+
+/** One dim line naming what `-o` left on the server (`result.downloads.skipped`); nothing when it saved everything. */
+function skippedNote(body: Obj, paint: Painter): string[] {
+  const downloads = isObj(body["downloads"]) ? body["downloads"] : null;
+  const skipped = downloads && Array.isArray(downloads["skipped"]) ? (downloads["skipped"] as unknown[]).filter(isObj) : [];
+  if (skipped.length === 0) return [];
+  const counts = new Map<string, number>();
+  for (const s of skipped) {
+    const reason = String(s["reason"]);
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  const parts = [...counts].map(([reason, n]) => {
+    const [one, many] = SKIPPED_NOUN[reason] ?? ["file", "files"];
+    return `${n} ${n === 1 ? one : many}`;
+  });
+  return [paint(`not saved: ${parts.join(", ")} (-o <dir> --all-assets saves everything)`, "dim")];
 }
 
 function downloadTip(resource: string, taskId: string, dir: string, where: string, paint: Painter): string[] {
@@ -239,6 +266,7 @@ function makeView(body: unknown, paint: Painter, facts: ViewFacts): string | nul
     const resource = task.resource ?? str(body["resource"]) ?? "text-to-3d";
     lines.push("", ...downloadTip(resource, task.task_id, dirName(facts.name, task.task_id), "make", paint));
   }
+  lines.push(...skippedNote(body, paint));
   return lines.join("\n");
 }
 
