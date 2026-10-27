@@ -14,7 +14,7 @@
  * to people on stderr (update-notifier.ts), never inside the envelope.
  */
 
-import { getUpdateNotice, printHumanUpdateHint } from "./update-notifier.js";
+import { printHumanUpdateHint, updateMessage } from "./update-notifier.js";
 import { painterFor, plain, type Painter } from "./color.js";
 import { currentCommand } from "./context.js";
 import { renderView } from "./views.js";
@@ -43,7 +43,7 @@ export async function emitEnvelope(envelope: V1Envelope, format: OutputFormat): 
   await writeStdout(`${text}\n`);
   // A person reads warnings as prose; the envelope keeps them for machines.
   if (format === "pretty") printWarnings(envelope.warnings);
-  printHumanUpdateHint(getUpdateNotice(), process);
+  printHumanUpdateHint(updateMessage());
 }
 
 /** `warning: …` lines on stderr, painted for stderr. */

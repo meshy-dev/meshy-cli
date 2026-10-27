@@ -1,835 +1,168 @@
 /**
- * Tests for the update notifier module.
- *
- * Covers: compareVersions, shouldSkip, buildNotice, checkCached,
- * isCacheStale, writeState, fetchLatestVersion, runRefreshCommand,
- * printHumanUpdateHint, refreshCache, and the rule that the v1 envelope is
- * never decorated with a notice.
+ * Update notifier: the version comparison, the cache-only message, the
+ * terminal-only stderr line, the once-a-day detached refresh and the child
+ * that writes the cache. The envelope is never decorated.
  */
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { spawnSync, type spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  compareVersions,
-  shouldSkip,
-  buildNotice,
-  checkCached,
-  isCacheStale,
-  writeState,
-  fetchLatestVersion,
-  runRefreshCommand,
-  printHumanUpdateHint,
-  refreshCache,
-  CACHE_TTL_MS,
-  REFRESH_COMMAND,
-  UPDATE_COMMAND,
-} from "../src/internal/update-notifier.js";
-import { PACKAGE_NAME } from "../src/internal/version.js";
 import { emitEnvelope } from "../src/internal/output.js";
 import { okEnvelope } from "../src/internal/result.js";
+import {
+  CACHE_TTL_MS,
+  isNewer,
+  printHumanUpdateHint,
+  REFRESH_COMMAND,
+  refreshCache,
+  runRefreshCommand,
+  shouldRunUpdateCheck,
+  shouldSkip,
+  updateMessage,
+} from "../src/internal/update-notifier.js";
+import { PACKAGE_NAME } from "../src/internal/version.js";
+import { LOCAL_COMMANDS } from "../src/root.js";
+import { DIST_ENTRY } from "./helpers/cli.js";
 
-const stripAnsi = (s: string): string => s.replace(/\u001b\[[0-9;]*m/g, "");
+const stateFile = (state?: unknown): string => {
+  const file = join(mkdtempSync(join(tmpdir(), "meshy-update-")), "update-state.json");
+  if (state !== undefined) writeFileSync(file, typeof state === "string" ? state : JSON.stringify(state));
+  return file;
+};
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeTmpDir(): string {
-  return mkdtempSync(join(tmpdir(), "meshy-update-test-"));
-}
-
-function saveEnv(keys: string[]): Record<string, string | undefined> {
-  const saved: Record<string, string | undefined> = {};
-  for (const k of keys) saved[k] = process.env[k];
-  return saved;
-}
-
-function restoreEnv(saved: Record<string, string | undefined>): void {
-  for (const [k, v] of Object.entries(saved)) {
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  }
-}
-
-const NOTIFIER_ENV_KEYS = [
-  "MESHY_CLI_NO_UPDATE_NOTIFIER",
-  "CI",
-  "GITHUB_ACTIONS",
-  "BUILD_NUMBER",
-  "RUN_ID",
-];
-
-function clearNotifierEnv(): void {
-  for (const k of NOTIFIER_ENV_KEYS) delete process.env[k];
-}
-
-interface Call {
-  url: string;
-  method: string;
-  body?: string;
-  headers: Headers;
-}
-
-function installFetch(
-  handler: (req: Call) => Response | Promise<Response>,
-): { calls: Call[]; restore: () => void } {
-  const calls: Call[] = [];
-  const original = globalThis.fetch;
-  type FetchInput = Parameters<typeof globalThis.fetch>[0];
-  globalThis.fetch = (async (input: FetchInput, init: RequestInit = {}) => {
-    const url = input instanceof Request ? input.url : String(input);
-    const method = init.method ?? "GET";
-    const body = typeof init.body === "string" ? init.body : undefined;
-    const headers = new Headers(init.headers ?? {});
-    const call: Call = { url, method, headers };
-    if (body !== undefined) call.body = body;
-    calls.push(call);
-    return handler(call);
-  }) as typeof globalThis.fetch;
-  return { calls, restore: () => { globalThis.fetch = original; } };
-}
-
-// ---------------------------------------------------------------------------
-// 1. compareVersions matrix
-// ---------------------------------------------------------------------------
-
-test("compareVersions — 0.1.0 vs 0.2.0 → -1", () => {
-  assert.equal(compareVersions("0.1.0", "0.2.0"), -1);
+test("isNewer compares x.y.z releases numerically; prereleases and garbage are never newer", () => {
+  assert.equal(isNewer("0.6.1", "0.6.0"), true);
+  assert.equal(isNewer("0.10.0", "0.9.9"), true);
+  assert.equal(isNewer("1.0.0", "0.99.99"), true);
+  assert.equal(isNewer("v0.7.0", "0.6.0"), true);
+  assert.equal(isNewer("0.6.0", "0.6.0"), false);
+  assert.equal(isNewer("0.5.9", "0.6.0"), false);
+  assert.equal(isNewer("0.7.0-beta.1", "0.6.0"), false);
+  assert.equal(isNewer("latest", "0.6.0"), false);
 });
 
-test("compareVersions — 1.0.0 vs 0.9.9 → 1", () => {
-  assert.equal(compareVersions("1.0.0", "0.9.9"), 1);
+test("shouldSkip: the opt-out variable or any CI variable", () => {
+  assert.equal(shouldSkip({}), false);
+  assert.equal(shouldSkip({ MESHY_CLI_NO_UPDATE_NOTIFIER: "1" }), true);
+  for (const v of ["CI", "GITHUB_ACTIONS", "BUILD_NUMBER", "RUN_ID"]) assert.equal(shouldSkip({ [v]: "1" }), true, v);
+  assert.equal(shouldSkip({ CI: "" }), false, "an empty value is unset");
 });
 
-test("compareVersions — equal → 0", () => {
-  assert.equal(compareVersions("1.2.3", "1.2.3"), 0);
-});
-
-test("compareVersions — 0.2.0 vs 0.2.0-beta → 1 (release > prerelease)", () => {
-  assert.equal(compareVersions("0.2.0", "0.2.0-beta"), 1);
-});
-
-test("compareVersions — v0.2.0 vs 0.2.0 → 0 (leading v stripped)", () => {
-  assert.equal(compareVersions("v0.2.0", "0.2.0"), 0);
-});
-
-test("compareVersions — 0.2 vs 0.2.0 → 0 (missing patch padded)", () => {
-  assert.equal(compareVersions("0.2", "0.2.0"), 0);
-});
-
-test("compareVersions — 1.0.0-beta.10 > 1.0.0-beta.2 (numeric prerelease identifier)", () => {
-  assert.equal(compareVersions("1.0.0-beta.10", "1.0.0-beta.2"), 1);
-});
-
-test("compareVersions — 1.0.0-alpha.1 < 1.0.0-beta.1 (lexical alphanumeric identifier)", () => {
-  assert.equal(compareVersions("1.0.0-alpha.1", "1.0.0-beta.1"), -1);
-});
-
-test("compareVersions — 1.0.0-alpha < 1.0.0-alpha.1 (shorter set has lower precedence)", () => {
-  assert.equal(compareVersions("1.0.0-alpha", "1.0.0-alpha.1"), -1);
-});
-
-test("compareVersions — 1.0.0+build.5 == 1.0.0 (build metadata ignored)", () => {
-  assert.equal(compareVersions("1.0.0+build.5", "1.0.0"), 0);
-});
-
-// ---------------------------------------------------------------------------
-// 2. shouldSkip
-// ---------------------------------------------------------------------------
-
-test("shouldSkip — opt-out var set → true", () => {
-  const saved = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    process.env["MESHY_CLI_NO_UPDATE_NOTIFIER"] = "1";
-    assert.equal(shouldSkip(process.env, "0.1.0"), true);
-  } finally {
-    restoreEnv(saved);
-  }
-});
-
-test("shouldSkip — CI=true → true", () => {
-  const saved = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    process.env["CI"] = "true";
-    assert.equal(shouldSkip(process.env, "0.1.0"), true);
-  } finally {
-    restoreEnv(saved);
-  }
-});
-
-test("shouldSkip — GITHUB_ACTIONS=true → true", () => {
-  const saved = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    process.env["GITHUB_ACTIONS"] = "true";
-    assert.equal(shouldSkip(process.env, "0.1.0"), true);
-  } finally {
-    restoreEnv(saved);
-  }
-});
-
-test("shouldSkip — BUILD_NUMBER=42 → true", () => {
-  const saved = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    process.env["BUILD_NUMBER"] = "42";
-    assert.equal(shouldSkip(process.env, "0.1.0"), true);
-  } finally {
-    restoreEnv(saved);
-  }
-});
-
-test("shouldSkip — RUN_ID=123 → true", () => {
-  const saved = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    process.env["RUN_ID"] = "123";
-    assert.equal(shouldSkip(process.env, "0.1.0"), true);
-  } finally {
-    restoreEnv(saved);
-  }
-});
-
-test("shouldSkip — empty-string values → false", () => {
-  const saved = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    process.env["MESHY_CLI_NO_UPDATE_NOTIFIER"] = "";
-    process.env["CI"] = "";
-    process.env["GITHUB_ACTIONS"] = "";
-    process.env["BUILD_NUMBER"] = "";
-    process.env["RUN_ID"] = "";
-    assert.equal(shouldSkip(process.env, "0.1.0"), false);
-  } finally {
-    restoreEnv(saved);
-  }
-});
-
-test("shouldSkip — version 0.2.0-dev → true", () => {
-  const saved = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    assert.equal(shouldSkip(process.env, "0.2.0-dev"), true);
-  } finally {
-    restoreEnv(saved);
-  }
-});
-
-test("shouldSkip — version 0.1.0-5-gdeadbee → true (git-describe suffix)", () => {
-  const saved = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    assert.equal(shouldSkip(process.env, "0.1.0-5-gdeadbee"), true);
-  } finally {
-    restoreEnv(saved);
-  }
-});
-
-test("shouldSkip — clean env + 0.1.0 → false", () => {
-  const saved = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    assert.equal(shouldSkip(process.env, "0.1.0"), false);
-  } finally {
-    restoreEnv(saved);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// 3. buildNotice
-// ---------------------------------------------------------------------------
-
-test("buildNotice — 0.2.0 > 0.1.0 → notice with exact message", () => {
-  const notice = buildNotice("0.2.0", "0.1.0");
-  assert.ok(notice !== null);
-  assert.equal(notice.latest, "0.2.0");
-  assert.equal(notice.current, "0.1.0");
+test("updateMessage reads the cache only: a newer release names the install command; anything else is null", () => {
   assert.equal(
-    notice.message,
-    `${PACKAGE_NAME} 0.2.0 available (current 0.1.0), run: ${UPDATE_COMMAND}`,
+    updateMessage({}, stateFile({ latest_version: "9.9.9", checked_at: 0 }), "0.6.0"),
+    `${PACKAGE_NAME} 9.9.9 available (current 0.6.0), run: npm i -g ${PACKAGE_NAME}@latest`,
   );
-  assert.equal(notice.command, UPDATE_COMMAND);
+  assert.equal(updateMessage({}, stateFile({ latest_version: "0.6.0" }), "0.6.0"), null);
+  assert.equal(updateMessage({}, stateFile(), "0.6.0"), null, "no cache");
+  assert.equal(updateMessage({}, stateFile("{not json"), "0.6.0"), null, "corrupt cache");
+  assert.equal(updateMessage({ CI: "1" }, stateFile({ latest_version: "9.9.9" }), "0.6.0"), null, "CI");
 });
 
-test("buildNotice — 0.1.0 < 0.2.0 → null", () => {
-  assert.equal(buildNotice("0.1.0", "0.2.0"), null);
-});
-
-test("buildNotice — equal → null", () => {
-  assert.equal(buildNotice("0.1.0", "0.1.0"), null);
-});
-
-// ---------------------------------------------------------------------------
-// 4. checkCached
-// ---------------------------------------------------------------------------
-
-test("checkCached — file with newer version → notice", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "update-state.json");
-  writeFileSync(file, JSON.stringify({ latest_version: "9.9.9", checked_at: Date.now() }));
-  const notice = checkCached(file, "0.1.0");
-  assert.ok(notice !== null);
-  assert.equal(notice.latest, "9.9.9");
-});
-
-test("checkCached — older/equal latest → null", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "update-state.json");
-  writeFileSync(file, JSON.stringify({ latest_version: "0.0.1", checked_at: Date.now() }));
-  assert.equal(checkCached(file, "0.1.0"), null);
-});
-
-test("checkCached — missing file → null", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "nonexistent.json");
-  assert.equal(checkCached(file, "0.1.0"), null);
-});
-
-test("checkCached — corrupt JSON → null", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "update-state.json");
-  writeFileSync(file, "not json {{{");
-  assert.equal(checkCached(file, "0.1.0"), null);
-});
-
-test("checkCached — missing latest_version → null", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "update-state.json");
-  writeFileSync(file, JSON.stringify({ checked_at: Date.now() }));
-  assert.equal(checkCached(file, "0.1.0"), null);
-});
-
-// ---------------------------------------------------------------------------
-// 5. isCacheStale
-// ---------------------------------------------------------------------------
-
-test("isCacheStale — missing file → true", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "nonexistent.json");
-  assert.equal(isCacheStale(file), true);
-});
-
-test("isCacheStale — corrupt JSON → true", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "update-state.json");
-  writeFileSync(file, "not json");
-  assert.equal(isCacheStale(file), true);
-});
-
-test("isCacheStale — fresh cache → false", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "update-state.json");
-  writeFileSync(file, JSON.stringify({ latest_version: "0.2.0", checked_at: Date.now() }));
-  assert.equal(isCacheStale(file), false);
-});
-
-test("isCacheStale — 25h old → true", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "update-state.json");
-  const old = Date.now() - CACHE_TTL_MS - 60_000; // 25h ago
-  writeFileSync(file, JSON.stringify({ latest_version: "0.2.0", checked_at: old }));
-  assert.equal(isCacheStale(file), true);
-});
-
-test("isCacheStale — checked_at 1h in the future → stale (clock-skewed)", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "update-state.json");
-  const future = Date.now() + 60 * 60 * 1000; // 1h in the future
-  writeFileSync(file, JSON.stringify({ latest_version: "0.2.0", checked_at: future }));
-  assert.equal(isCacheStale(file), true);
-});
-
-// ---------------------------------------------------------------------------
-// 6. writeState → checkCached round-trip
-// ---------------------------------------------------------------------------
-
-test("writeState → checkCached round-trip in tmp dir", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "state.json");
-  writeState({ latest_version: "1.2.3", checked_at: Date.now() }, file);
-  const notice = checkCached(file, "0.1.0");
-  assert.ok(notice !== null);
-  assert.equal(notice.latest, "1.2.3");
-});
-
-test("writeState — file parses as JSON with checked_at number", () => {
-  const dir = makeTmpDir();
-  const file = join(dir, "state.json");
-  const now = Date.now();
-  writeState({ latest_version: "1.0.0", checked_at: now }, file);
-  const parsed = JSON.parse(readFileSync(file, "utf8")) as { latest_version: string; checked_at: number };
-  assert.equal(parsed.latest_version, "1.0.0");
-  assert.equal(typeof parsed.checked_at, "number");
-});
-
-// ---------------------------------------------------------------------------
-// 7. fetchLatestVersion with mocked fetch
-// ---------------------------------------------------------------------------
-
-test("fetchLatestVersion — 200 {version:'0.2.0'} → resolves '0.2.0'", async () => {
-  const { restore } = installFetch(() =>
-    new Response(JSON.stringify({ version: "0.2.0" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
-  );
-  try {
-    const v = await fetchLatestVersion("https://example.com/fake");
-    assert.equal(v, "0.2.0");
-  } finally {
-    restore();
-  }
-});
-
-test("fetchLatestVersion — 500 → rejects", async () => {
-  const { restore } = installFetch(() => new Response("error", { status: 500 }));
-  try {
-    await assert.rejects(() => fetchLatestVersion("https://example.com/fake"), /registry responded 500/);
-  } finally {
-    restore();
-  }
-});
-
-test("fetchLatestVersion — body > 256KB → rejects", async () => {
-  const bigBody = "x".repeat(256 * 1024 + 1);
-  const { restore } = installFetch(() =>
-    new Response(bigBody, { status: 200, headers: { "Content-Type": "application/json" } }),
-  );
-  try {
-    await assert.rejects(() => fetchLatestVersion("https://example.com/fake"), /too large/);
-  } finally {
-    restore();
-  }
-});
-
-test("fetchLatestVersion — {} (no version field) → rejects", async () => {
-  const { restore } = installFetch(() =>
-    new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
-  );
-  try {
-    await assert.rejects(() => fetchLatestVersion("https://example.com/fake"));
-  } finally {
-    restore();
-  }
-});
-
-test("fetchLatestVersion — timeout → rejects (AbortError)", { timeout: 10000 }, async () => {
-  // Use a fetch mock that respects the abort signal
-  const original = globalThis.fetch;
-  globalThis.fetch = (async (_input: unknown, init: RequestInit = {}) => {
-    // Wait until the signal fires, then throw AbortError
-    return new Promise<Response>((_resolve, reject) => {
-      const signal = init.signal as AbortSignal | undefined;
-      if (signal) {
-        if (signal.aborted) {
-          reject(new DOMException("The operation was aborted", "AbortError"));
-          return;
-        }
-        // AbortSignal.timeout()'s internal timer is unref'd, so it cannot hold
-        // the event loop open by itself. Without a ref'd handle of our own the
-        // loop drains while this promise is still pending, and the runner
-        // cancels this test along with every subtest after it.
-        const keepAlive = setTimeout(() => {}, 5_000);
-        signal.addEventListener("abort", () => {
-          clearTimeout(keepAlive);
-          reject(new DOMException("The operation was aborted", "AbortError"));
-        });
-      }
-    });
-  }) as typeof globalThis.fetch;
-  try {
-    // Use a very short timeout (100ms) to trigger abort quickly
-    await assert.rejects(
-      () => fetchLatestVersion("https://example.com/fake", 100),
-      (err: unknown) => {
-        assert.ok(
-          err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError"),
-          `expected AbortError/TimeoutError, got ${err instanceof Error ? err.name : String(err)}`,
-        );
-        return true;
-      },
-    );
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-// ---------------------------------------------------------------------------
-// 8. runRefreshCommand
-// ---------------------------------------------------------------------------
-
-test("runRefreshCommand — network down → resolves without throwing, no state file", async () => {
-  const dir = makeTmpDir();
-  const savedHome = process.env["HOME"];
-  const savedRegistry = process.env["MESHY_CLI_UPDATE_REGISTRY_URL"];
-  const savedEnv = saveEnv(NOTIFIER_ENV_KEYS);
-  // Mock fetch to reject immediately (simulates network failure)
-  const { restore } = installFetch(() => Promise.reject(new Error("ECONNREFUSED")));
-  try {
-    clearNotifierEnv();
-    process.env["HOME"] = dir;
-    process.env["MESHY_CLI_UPDATE_REGISTRY_URL"] = "https://example.com/fake";
-    await assert.doesNotReject(() => runRefreshCommand());
-    // No state file should be written on failure
-    const stateFile = join(dir, ".config", "meshy", "update-state.json");
-    assert.equal(existsSync(stateFile), false);
-  } finally {
-    restore();
-    if (savedHome === undefined) delete process.env["HOME"];
-    else process.env["HOME"] = savedHome;
-    if (savedRegistry === undefined) delete process.env["MESHY_CLI_UPDATE_REGISTRY_URL"];
-    else process.env["MESHY_CLI_UPDATE_REGISTRY_URL"] = savedRegistry;
-    restoreEnv(savedEnv);
-  }
-});
-
-test("runRefreshCommand — fetch 200 → state file created with latest_version + checked_at", async () => {
-  const dir = makeTmpDir();
-  const savedHome = process.env["HOME"];
-  const savedRegistry = process.env["MESHY_CLI_UPDATE_REGISTRY_URL"];
-  const savedEnv = saveEnv(NOTIFIER_ENV_KEYS);
-  const { restore } = installFetch(() =>
-    new Response(JSON.stringify({ version: "9.9.9" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
-  );
-  try {
-    clearNotifierEnv();
-    process.env["HOME"] = dir;
-    process.env["MESHY_CLI_UPDATE_REGISTRY_URL"] = "https://example.com/fake";
-    await runRefreshCommand();
-    const stateFile = join(dir, ".config", "meshy", "update-state.json");
-    assert.ok(existsSync(stateFile), "state file should be created");
-    const parsed = JSON.parse(readFileSync(stateFile, "utf8")) as { latest_version: string; checked_at: number };
-    assert.equal(parsed.latest_version, "9.9.9");
-    assert.equal(typeof parsed.checked_at, "number");
-  } finally {
-    restore();
-    if (savedHome === undefined) delete process.env["HOME"];
-    else process.env["HOME"] = savedHome;
-    if (savedRegistry === undefined) delete process.env["MESHY_CLI_UPDATE_REGISTRY_URL"];
-    else process.env["MESHY_CLI_UPDATE_REGISTRY_URL"] = savedRegistry;
-    restoreEnv(savedEnv);
-  }
-});
-
-test("runRefreshCommand — MESHY_CLI_NO_UPDATE_NOTIFIER=1 → no state file", async () => {
-  const dir = makeTmpDir();
-  const savedHome = process.env["HOME"];
-  const savedRegistry = process.env["MESHY_CLI_UPDATE_REGISTRY_URL"];
-  const savedEnv = saveEnv(NOTIFIER_ENV_KEYS);
-  const { restore } = installFetch(() =>
-    new Response(JSON.stringify({ version: "9.9.9" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
-  );
-  try {
-    clearNotifierEnv();
-    process.env["MESHY_CLI_NO_UPDATE_NOTIFIER"] = "1";
-    process.env["HOME"] = dir;
-    process.env["MESHY_CLI_UPDATE_REGISTRY_URL"] = "https://example.com/fake";
-    await runRefreshCommand();
-    const stateFile = join(dir, ".config", "meshy", "update-state.json");
-    assert.equal(existsSync(stateFile), false, "state file should NOT be created when opted out");
-  } finally {
-    restore();
-    if (savedHome === undefined) delete process.env["HOME"];
-    else process.env["HOME"] = savedHome;
-    if (savedRegistry === undefined) delete process.env["MESHY_CLI_UPDATE_REGISTRY_URL"];
-    else process.env["MESHY_CLI_UPDATE_REGISTRY_URL"] = savedRegistry;
-    restoreEnv(savedEnv);
-  }
-});
-
-const fakeNotice = buildNotice("9.9.9", "0.1.0")!;
-
-// ---------------------------------------------------------------------------
-// 10. printHumanUpdateHint
-// ---------------------------------------------------------------------------
-
-test("printHumanUpdateHint — all three isTTY true → writes message + newline, returns true", () => {
-  const written: string[] = [];
-  const io = {
-    stdout: { isTTY: true as boolean | undefined },
-    stderr: { isTTY: true as boolean | undefined, write: (s: string) => { written.push(s); return true; } },
-    stdin: { isTTY: true as boolean | undefined },
+test("printHumanUpdateHint writes one stderr line only when stdin, stdout and stderr are all terminals", () => {
+  const io = (tty: [boolean, boolean, boolean]) => {
+    const written: string[] = [];
+    return { io: { stdout: { isTTY: tty[0] }, stderr: { isTTY: tty[1], write: (s: string) => written.push(s) }, stdin: { isTTY: tty[2] } }, written };
   };
-  const result = printHumanUpdateHint(fakeNotice, io);
-  assert.equal(result, true);
-  assert.equal(written.length, 1);
-  // The hint is dimmed because this fake stderr claims to be a TTY; the text
-  // itself is what the contract is about.
-  assert.equal(stripAnsi(written[0] ?? ""), `${fakeNotice.message}\n`);
-  assert.match(written[0] ?? "", /\u001b\[2m/, "a TTY hint is dimmed");
+  const all = io([true, true, true]);
+  assert.equal(printHumanUpdateHint("newer", all.io), true);
+  assert.equal(all.written.length, 1);
+  assert.match(all.written[0]!, /newer/);
+  for (const tty of [[false, true, true], [true, false, true], [true, true, false]] as Array<[boolean, boolean, boolean]>) {
+    const some = io(tty);
+    assert.equal(printHumanUpdateHint("newer", some.io), false, JSON.stringify(tty));
+    assert.deepEqual(some.written, []);
+  }
+  assert.equal(printHumanUpdateHint(null, all.io), false);
 });
 
-test("printHumanUpdateHint — a non-TTY stderr is never painted", () => {
-  const written: string[] = [];
-  const io = {
-    stdout: { isTTY: true as boolean | undefined },
-    stderr: { isTTY: undefined as boolean | undefined, write: (s: string) => { written.push(s); return true; } },
-    stdin: { isTTY: true as boolean | undefined },
-  };
-  // stderr is not a TTY, so the hint is suppressed entirely — and if that rule
-  // ever loosens, whatever comes out must still be escape-free.
-  assert.equal(printHumanUpdateHint(fakeNotice, io), false);
-  for (const line of written) assert.doesNotMatch(line, /\u001b\[/);
+test("refreshCache spawns one detached, unref'd child when the cache is missing, old or dated in the future — and never throws", () => {
+  const now = 1_800_000_000_000;
+  const spawned: Array<{ args: string[]; detached: boolean; unref: boolean }> = [];
+  const fake = ((_cmd: string, args: string[], opts: { detached: boolean }) => {
+    const entry = { args, detached: opts.detached, unref: false };
+    spawned.push(entry);
+    return { on: () => undefined, unref: () => { entry.unref = true; } };
+  }) as unknown as typeof spawn;
+  refreshCache(stateFile({ checked_at: now - 60_000 }), now, fake);
+  assert.equal(spawned.length, 0, "fresh cache");
+  for (const file of [stateFile(), stateFile({ checked_at: now - CACHE_TTL_MS - 1 }), stateFile({ checked_at: now + 3_600_000 })]) refreshCache(file, now, fake);
+  assert.equal(spawned.length, 3);
+  for (const s of spawned) {
+    assert.equal(s.args.at(-1), REFRESH_COMMAND);
+    assert.ok(s.detached && s.unref);
+  }
+  assert.doesNotThrow(() => refreshCache(stateFile(), now, (() => { throw new Error("spawn failed"); }) as unknown as typeof spawn));
 });
 
-test("printHumanUpdateHint — stdout not TTY → no write, false", () => {
-  const written: string[] = [];
-  const io = {
-    stdout: { isTTY: false as boolean | undefined },
-    stderr: { isTTY: true as boolean | undefined, write: (s: string) => { written.push(s); return true; } },
-    stdin: { isTTY: true as boolean | undefined },
-  };
-  const result = printHumanUpdateHint(fakeNotice, io);
-  assert.equal(result, false);
-  assert.equal(written.length, 0);
-});
-
-test("printHumanUpdateHint — stderr not TTY → no write, false", () => {
-  const written: string[] = [];
-  const io = {
-    stdout: { isTTY: true as boolean | undefined },
-    stderr: { isTTY: false as boolean | undefined, write: (s: string) => { written.push(s); return true; } },
-    stdin: { isTTY: true as boolean | undefined },
-  };
-  const result = printHumanUpdateHint(fakeNotice, io);
-  assert.equal(result, false);
-  assert.equal(written.length, 0);
-});
-
-test("printHumanUpdateHint — stdin not TTY → no write, false", () => {
-  const written: string[] = [];
-  const io = {
-    stdout: { isTTY: true as boolean | undefined },
-    stderr: { isTTY: true as boolean | undefined, write: (s: string) => { written.push(s); return true; } },
-    stdin: { isTTY: false as boolean | undefined },
-  };
-  const result = printHumanUpdateHint(fakeNotice, io);
-  assert.equal(result, false);
-  assert.equal(written.length, 0);
-});
-
-test("printHumanUpdateHint — null notice → false", () => {
-  const written: string[] = [];
-  const io = {
-    stdout: { isTTY: true as boolean | undefined },
-    stderr: { isTTY: true as boolean | undefined, write: (s: string) => { written.push(s); return true; } },
-    stdin: { isTTY: true as boolean | undefined },
-  };
-  const result = printHumanUpdateHint(null, io);
-  assert.equal(result, false);
-  assert.equal(written.length, 0);
-});
-
-// ---------------------------------------------------------------------------
-// 11. refreshCache with injectable fakes
-// ---------------------------------------------------------------------------
-
-test("refreshCache — env opt-out → spawn not called", () => {
-  let spawnCalled = false;
-  const fakeSpawn = () => {
-    spawnCalled = true;
-    return { on: () => {}, unref: () => {} } as unknown as ReturnType<typeof import("node:child_process").spawn>;
-  };
-  const dir = makeTmpDir();
-  refreshCache({
-    env: { MESHY_CLI_NO_UPDATE_NOTIFIER: "1" },
-    argv: ["node", "script.js"],
-    scriptPath: "script.js",
-    stateFile: join(dir, "state.json"),
-    spawnImpl: fakeSpawn as typeof import("node:child_process").spawn,
+test("runRefreshCommand caches the registry's version; a failing or malformed registry leaves the cache untouched", async () => {
+  let reply = { status: 200, body: JSON.stringify({ version: "9.9.9" }) };
+  const server = createServer((_req, res) => {
+    res.writeHead(reply.status, { "content-type": "application/json" });
+    res.end(reply.body);
   });
-  assert.equal(spawnCalled, false);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/latest`;
+  try {
+    const file = stateFile();
+    await runRefreshCommand(url, file);
+    const state = JSON.parse(readFileSync(file, "utf8")) as { latest_version: string; checked_at: number };
+    assert.equal(state.latest_version, "9.9.9");
+    assert.equal(typeof state.checked_at, "number");
+    for (const bad of [{ status: 500, body: "{}" }, { status: 200, body: "not json" }, { status: 200, body: "{}" }]) {
+      reply = bad;
+      const untouched = stateFile();
+      await runRefreshCommand(url, untouched);
+      assert.equal(existsSync(untouched), false, JSON.stringify(bad));
+    }
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
 });
 
-test("refreshCache — argv contains REFRESH_COMMAND → spawn not called", () => {
-  let spawnCalled = false;
-  const fakeSpawn = () => {
-    spawnCalled = true;
-    return { on: () => {}, unref: () => {} } as unknown as ReturnType<typeof import("node:child_process").spawn>;
-  };
-  const dir = makeTmpDir();
-  refreshCache({
-    env: {},
-    argv: ["node", "script.js", REFRESH_COMMAND],
-    scriptPath: "script.js",
-    stateFile: join(dir, "state.json"),
-    spawnImpl: fakeSpawn as typeof import("node:child_process").spawn,
+test("shouldRunUpdateCheck: only API commands start a check — never local ones, help, --version, --no-update-check or CI", () => {
+  const argv = (...rest: string[]) => ["node", "meshy", ...rest];
+  assert.equal(shouldRunUpdateCheck(argv("balance"), LOCAL_COMMANDS, {}), true);
+  assert.equal(shouldRunUpdateCheck(argv("image-to-3d", "get", "t"), LOCAL_COMMANDS, {}), true);
+  for (const local of [argv(), argv("doctor"), argv("download", "--url", "x"), argv(REFRESH_COMMAND), argv("balance", "--help"), argv("--version"), argv("make", "x", "--dry-run"), argv("balance", "--no-update-check")]) {
+    assert.equal(shouldRunUpdateCheck(local, LOCAL_COMMANDS, {}), false, local.slice(2).join(" "));
+  }
+  assert.equal(shouldRunUpdateCheck(argv("balance"), LOCAL_COMMANDS, { CI: "true" }), false);
+});
+
+test("the refresh child exits 0 with an unreachable registry and writes nothing", { timeout: 35_000 }, () => {
+  const home = mkdtempSync(join(tmpdir(), "meshy-update-home-"));
+  const result = spawnSync(process.execPath, [DIST_ENTRY, REFRESH_COMMAND], {
+    env: { PATH: process.env["PATH"], HOME: home, MESHY_CONFIG_DIR: join(home, "cfg"), MESHY_CLI_UPDATE_REGISTRY_URL: "http://127.0.0.1:1/unreachable" },
+    timeout: 30_000,
   });
-  assert.equal(spawnCalled, false);
+  assert.equal(result.status, 0, result.stderr?.toString());
+  assert.equal(existsSync(join(home, "cfg", "update-state.json")), false);
 });
 
-test("refreshCache — fresh cache → spawn not called", () => {
-  let spawnCalled = false;
-  const fakeSpawn = () => {
-    spawnCalled = true;
-    return { on: () => {}, unref: () => {} } as unknown as ReturnType<typeof import("node:child_process").spawn>;
-  };
-  const dir = makeTmpDir();
-  const stateFile = join(dir, "state.json");
-  writeFileSync(stateFile, JSON.stringify({ latest_version: "0.2.0", checked_at: Date.now() }));
-  refreshCache({
-    env: {},
-    argv: ["node", "script.js"],
-    scriptPath: "script.js",
-    stateFile,
-    spawnImpl: fakeSpawn as typeof import("node:child_process").spawn,
-  });
-  assert.equal(spawnCalled, false);
-});
-
-test("refreshCache — missing cache → spawn called once with correct args and .unref() called", () => {
-  let spawnCalled = false;
-  let unrefCalled = false;
-  let spawnArgs: unknown[] = [];
-  const fakeSpawn = (...args: unknown[]) => {
-    spawnCalled = true;
-    spawnArgs = args;
-    return {
-      on: () => {},
-      unref: () => { unrefCalled = true; },
-    } as unknown as ReturnType<typeof import("node:child_process").spawn>;
-  };
-  const dir = makeTmpDir();
-  const stateFile = join(dir, "state.json");
-  // No state file → stale
-  refreshCache({
-    env: {},
-    argv: ["node", "script.js"],
-    scriptPath: "/path/to/script.js",
-    stateFile,
-    spawnImpl: fakeSpawn as typeof import("node:child_process").spawn,
-  });
-  assert.equal(spawnCalled, true);
-  assert.equal(unrefCalled, true);
-  assert.equal(spawnArgs[0], process.execPath);
-  assert.deepEqual(spawnArgs[1], ["/path/to/script.js", REFRESH_COMMAND]);
-  assert.deepEqual((spawnArgs[2] as Record<string, unknown>)["detached"], true);
-  assert.deepEqual((spawnArgs[2] as Record<string, unknown>)["stdio"], "ignore");
-});
-
-test("refreshCache — spawnImpl throws → does not propagate", () => {
-  const fakeSpawn = () => {
-    throw new Error("spawn failed");
-  };
-  const dir = makeTmpDir();
-  const stateFile = join(dir, "state.json");
-  assert.doesNotThrow(() => {
-    refreshCache({
-      env: {},
-      argv: ["node", "script.js"],
-      scriptPath: "/path/to/script.js",
-      stateFile,
-      spawnImpl: fakeSpawn as typeof import("node:child_process").spawn,
-    });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 12. E2E subprocess tests
-// ---------------------------------------------------------------------------
-
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname as pathDirname } from "node:path";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = pathDirname(__filename);
-const repoRoot = join(__dirname, "..");
-
-test("E2E — MESHY_CLI_NO_UPDATE_NOTIFIER=1 + REFRESH_COMMAND → exit 0", { timeout: 35_000 }, () => {
-  const dir = makeTmpDir();
-  const result = spawnSync(
-    process.execPath,
-    ["dist/index.js", REFRESH_COMMAND],
-    {
-      env: {
-        ...process.env,
-        HOME: dir,
-        MESHY_CLI_NO_UPDATE_NOTIFIER: "1",
-      },
-      cwd: repoRoot,
-      timeout: 30_000,
-    },
-  );
-  assert.equal(result.status, 0, `exit code should be 0, stderr: ${result.stderr?.toString()}`);
-});
-
-test("E2E — unreachable registry URL → exit 0 and no state file written", { timeout: 35_000 }, () => {
-  const dir = makeTmpDir();
-  const result = spawnSync(
-    process.execPath,
-    ["dist/index.js", REFRESH_COMMAND],
-    {
-      env: {
-        ...process.env,
-        HOME: dir,
-        MESHY_CLI_UPDATE_REGISTRY_URL: "http://127.0.0.1:1/unreachable",
-        // Clear CI/opt-out so the command actually runs
-        MESHY_CLI_NO_UPDATE_NOTIFIER: "",
-        CI: "",
-        GITHUB_ACTIONS: "",
-        BUILD_NUMBER: "",
-        RUN_ID: "",
-      },
-      cwd: repoRoot,
-      timeout: 30_000,
-    },
-  );
-  assert.equal(result.status, 0, `exit code should be 0, stderr: ${result.stderr?.toString()}`);
-  const stateFile = join(dir, ".config", "meshy", "update-state.json");
-  assert.equal(existsSync(stateFile), false, "no state file should be written on network failure");
-});
-
-// ---------------------------------------------------------------------------
-// 13. the envelope is never decorated
-// ---------------------------------------------------------------------------
-
-/** Capture stdout across an async body; the fake write honours the completion callback writeStdout waits on. */
-async function captureStdoutAsync(fn: () => Promise<void>): Promise<string> {
+test("a newer version in the cache never adds a key to the envelope", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "meshy-update-env-"));
+  const saved = process.env["MESHY_CONFIG_DIR"];
+  process.env["MESHY_CONFIG_DIR"] = dir;
+  writeFileSync(join(dir, "update-state.json"), JSON.stringify({ latest_version: "9.9.9", checked_at: Date.now() }));
   const chunks: string[] = [];
   const original = process.stdout.write.bind(process.stdout);
   process.stdout.write = ((chunk: string | Uint8Array, ...rest: unknown[]): boolean => {
     chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
-    const cb = rest.find((r) => typeof r === "function") as ((err?: Error) => void) | undefined;
-    if (cb) cb();
+    (rest.find((r) => typeof r === "function") as (() => void) | undefined)?.();
     return true;
   }) as typeof process.stdout.write;
   try {
-    await fn();
-    return chunks.join("");
+    await emitEnvelope(okEnvelope("balance", { balance: 1 }), "json");
   } finally {
     process.stdout.write = original;
+    if (saved === undefined) delete process.env["MESHY_CONFIG_DIR"];
+    else process.env["MESHY_CONFIG_DIR"] = saved;
   }
-}
-
-test("emitEnvelope — a newer version in the cache never adds a key to the envelope", async () => {
-  const dir = makeTmpDir();
-  const savedHome = process.env["HOME"];
-  const savedEnv = saveEnv(NOTIFIER_ENV_KEYS);
-  try {
-    clearNotifierEnv();
-    process.env["HOME"] = dir;
-    const stateDir = join(dir, ".config", "meshy");
-    mkdirSync(stateDir, { recursive: true });
-    writeFileSync(join(stateDir, "update-state.json"), JSON.stringify({ latest_version: "9.9.9", checked_at: Date.now() }));
-    const out = await captureStdoutAsync(() => emitEnvelope(okEnvelope("balance", { balance: 1 }), "json"));
-    const parsed = JSON.parse(out) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(parsed), ["schema_version", "command", "ok", "result", "error", "warnings"]);
-    assert.ok(!("_notice" in parsed));
-  } finally {
-    if (savedHome === undefined) delete process.env["HOME"];
-    else process.env["HOME"] = savedHome;
-    restoreEnv(savedEnv);
-  }
+  assert.deepEqual(Object.keys(JSON.parse(chunks.join("")) as object), ["schema_version", "command", "ok", "result", "error", "warnings"]);
 });
