@@ -15,8 +15,6 @@
 import { UsageError } from "../internal/errors.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
 
-export const UV_UNWRAP_FACE_CEILING = 40_000;
-
 const spec: ResourceCommandSpec = {
   name: "uv-unwrap",
   description:

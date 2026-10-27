@@ -28,8 +28,7 @@ to every command you parse: untyped, `--format` is `pretty` at a terminal and
 `pretty` is a human view that drops fields, so never parse it; `json` and
 `ndjson` carry no colour codes. stdout is then exactly one JSON object with six
 keys — `schema_version, command, ok, result, error, warnings` — and nothing
-else. (`--output-schema v1` from older examples is accepted as a no-op; there
-is no other schema.) Progress goes to stderr as plain lines
+else. Progress goes to stderr as plain lines
 (none under `ndjson`); it is for people, so read ids from stdout, not from it. `ok` is whether the
 CLI operation completed; `result.task.status` is the server's task state (a `get`
 of a FAILED task is `ok:true`). Fields the server did not send are `null` —
@@ -174,8 +173,7 @@ These are API rules, not preferences — ignoring them produces failed tasks:
   (what `make` uses) produces a textured model in one task.
 - **The default model is `latest` = Meshy 7.1** on all three generators.
   `--geometry-resolution 2k|4k` runs the Ultra geometry pass (+5 credits;
-  text-to-3d: preview only; multi-image: `2k` only; not with smart-topology);
-  `--ultra-mode` on image-to-3d is its deprecated spelling of `2k`.
+  text-to-3d: preview only; multi-image: `2k` only; not with smart-topology).
   `--model-type smart-topology` (text-to-3d and image-to-3d) has a native
   `--target-polycount`: meshy-t2.5 is the CLI default, 100-30000 (default
   15000); `--ai-model meshy-t2` selects T2, 100-15000 (default 10000). `retexture`'s

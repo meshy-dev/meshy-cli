@@ -1,14 +1,15 @@
 /** GET /openapi/v1/balance */
 
-import { mapHttpError, MeshyApiError } from "../errors.js";
+import { MeshyApiError } from "../errors.js";
+import type { Transport } from "../transport.js";
 import { BalanceSchema, type Balance } from "../types.js";
-import type { HttpFetch } from "./base.js";
 
 export class BalanceEndpoint {
-  private readonly http: HttpFetch;
+  static readonly PATH = "/balance";
+  private readonly transport: Transport;
 
-  constructor(http: HttpFetch) {
-    this.http = http;
+  constructor(transport: Transport) {
+    this.transport = transport;
   }
 
   async get(): Promise<Balance> {
@@ -17,19 +18,17 @@ export class BalanceEndpoint {
 
   /** The parsed balance plus the untouched response body (for --save-json). */
   async getWithRaw(): Promise<{ balance: Balance; raw: unknown }> {
-    const resp = await this.http("/balance", { method: "GET" });
-    if (!resp.ok) throw await mapHttpError(resp, "/balance");
-    const raw: unknown = await resp.json();
-    const parsed = BalanceSchema.safeParse(raw);
+    const resp = await this.transport.requestJson("GET", BalanceEndpoint.PATH);
+    const parsed = BalanceSchema.safeParse(resp.json);
     if (!parsed.success) {
       throw new MeshyApiError({
         message: `unexpected balance shape: ${parsed.error.message}`,
         status: resp.status,
         code: "server",
-        path: "/balance",
-        body: raw,
+        path: BalanceEndpoint.PATH,
+        body: resp.json,
       });
     }
-    return { balance: parsed.data, raw };
+    return { balance: parsed.data, raw: resp.json };
   }
 }

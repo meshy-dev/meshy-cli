@@ -8,9 +8,9 @@
  *     --ai-model — component-aware low-poly with a native
  *     --target-polycount; the budget pick for game-ready geometry.
  *
- * The Ultra geometry pass (--geometry-resolution 2k|4k, or the deprecated
- * --ultra-mode) rides on standard only: it needs meshy-7.1, so pairing it with
- * smart-topology is rejected here rather than on the wire.
+ * The Ultra geometry pass (--geometry-resolution 2k|4k) rides on standard
+ * only: it needs meshy-7.1, so pairing it with smart-topology is rejected here
+ * rather than on the wire.
  */
 
 import { Option } from "commander";
@@ -60,11 +60,6 @@ const spec: ResourceCommandSpec = {
           ).choices(["standard", "2k", "4k"]),
         )
         .option(
-          "--ultra-mode <bool>",
-          "deprecated: use --geometry-resolution 2k (true is the same pass)",
-          parseBool,
-        )
-        .option(
           "--should-texture <bool>",
           "generate textures (default: false — draft white mesh, the preview stage; texture later with retexture)",
           parseBool,
@@ -109,17 +104,8 @@ const spec: ResourceCommandSpec = {
           "--target-polycount applies to --model-type smart-topology only; for standard outputs chain `remesh` afterwards",
         );
       }
-      // The Ultra pass needs meshy-7.1, which only standard mode resolves to.
-      if (opts.ultraMode === true && smart) {
-        throw new UsageError(
-          "--ultra-mode applies to --model-type standard only (it needs meshy-7.1)",
-        );
-      }
       if (smart && opts.geometryResolution !== undefined && opts.geometryResolution !== "standard") {
         throw new UsageError("--geometry-resolution 2k/4k applies to --model-type standard only (it needs meshy-7.1)");
-      }
-      if (opts.ultraMode !== undefined && opts.geometryResolution !== undefined) {
-        throw new UsageError("--ultra-mode is the deprecated spelling of --geometry-resolution 2k; pass only --geometry-resolution");
       }
       // The API rejects texture knobs on untextured runs; catch it before the wire.
       if (opts.shouldTexture !== true && !opts.data) {
@@ -141,7 +127,6 @@ const spec: ResourceCommandSpec = {
         model_type: opts.modelType,
         ai_model: opts.aiModel,
         target_polycount: opts.targetPolycount,
-        ultra_mode: opts.ultraMode,
         geometry_resolution: opts.geometryResolution,
         should_texture: opts.shouldTexture,
         enable_pbr: opts.enablePbr,

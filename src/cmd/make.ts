@@ -30,14 +30,14 @@
 import { Command, Option } from "commander";
 import { basename } from "node:path";
 import { abortSignal, noteForView, wasInterrupted } from "../internal/context.js";
-import { CliError, HintedError, UsageError } from "../internal/errors.js";
+import { CliError, UsageError } from "../internal/errors.js";
 import { parseInt10 } from "../internal/flags.js";
 import { normalizeMediaPayload } from "../internal/file-input.js";
 import { logger } from "../internal/logger.js";
 import { planMake, type MakePlan, type MakeStep } from "../internal/make-plan.js";
 import { emitEnvelope } from "../internal/output.js";
 import { emitResult, openCommand, type OpenedCommand } from "../internal/command-helpers.js";
-import { downloadArtifacts } from "../internal/download.js";
+import { downloadTaskAssets } from "../internal/download.js";
 import { allAssetsOption, outputOption } from "../internal/global-options.js";
 import { parseTimeoutSeconds, pollUntilTerminal, type PollResult } from "../internal/poll.js";
 import { createProgress, withSpinner, type Progress } from "../internal/progress.js";
@@ -310,10 +310,10 @@ async function finalOutcome(
   if (runtime.flags.output) {
     try {
       const output = runtime.flags.output;
-      const { files, metadataPath, materialLinks, skipped } = await withSpinner(opened.format, "Downloading assets", () =>
-        downloadArtifacts(task, output, step.resource, { root: runtime.flags.workspaceRoot, signal: abortSignal(), allAssets: runtime.flags.allAssets }),
+      const { files, metadataPath, materialLinks, skipped, warnings: transferWarnings } = await withSpinner(opened.format, "Downloading assets", () =>
+        downloadTaskAssets(task, output, descriptor, { root: runtime.flags.workspaceRoot, signal: abortSignal(), allAssets: runtime.flags.allAssets }),
       );
-      if (materialLinks) warnings.push(...materialLinks.warnings);
+      warnings.push(...transferWarnings.map((w) => warning(w.code, w.message)));
       downloads = { state: "completed", files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })), metadata_path: metadataPath, material_links: materialLinks, skipped };
     } catch (err) {
       // Whatever the downloader already committed stays in the manifest; the

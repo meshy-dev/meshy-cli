@@ -1,7 +1,7 @@
 /**
  * download — selective asset download for a task.
  *
- * Sources (exactly one): --task-json <file> (API task, legacy meta.json or a
+ * Sources (exactly one): --task-json <file> (API task, an `-o` meta.json or a
  * v1 envelope/result), --url <asset-url>, or --resource <id> --task-id <id>
  * (one GET, then the assets). Selection (at most one): --asset <key>…,
  * --model-format <fmt>, --kind <kind>, --all; with several assets and no
@@ -18,7 +18,7 @@ import { lstatSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve as resolvePath } from "node:path";
 import { findTaskResource, TASK_RESOURCES, type TaskResourceDescriptor } from "../client/resource-registry.js";
 import { enumerateAssets, selectAssets, SelectionError, type Asset, type AssetKind } from "../internal/artifacts.js";
-import { emitResult, openCommand, saveRawJson, type OpenedCommand } from "../internal/command-helpers.js";
+import { emitResult, openCommand, saveRawJson } from "../internal/command-helpers.js";
 import { abortSignal } from "../internal/context.js";
 import { downloadAssets, type DownloadedFile } from "../internal/download.js";
 import { withSpinner } from "../internal/progress.js";
@@ -283,7 +283,7 @@ export const downloadCommand = new Command("download")
         stage: opts.stage ?? stageFromTaskType(task["type"], descriptor?.id ?? "download"),
         resource: descriptor?.id ?? null,
         taskType: typeof task["type"] === "string" ? (task["type"] as string) : null,
-        endpoint: descriptor?.legacyEndpoint ?? null,
+        endpoint: descriptor?.endpoint ?? null,
         status: typeof task["status"] === "string" ? (task["status"] as string) : null,
         files: [],
       };

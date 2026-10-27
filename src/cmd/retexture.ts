@@ -9,8 +9,8 @@
  * literal: `multiview_image_urls requires ai_model meshy-7` is returned even
  * for ai_model "latest" and for an omitted ai_model, so leaving the model to
  * the server — what every other 3D command here does — is a guaranteed 400.
- * (image-to-3d's comparable ultra_mode gate accepts both, which is why only
- * this command pins a version.) It is pinned in the defaults layer, so
+ * (image-to-3d's comparable geometry_resolution gate accepts both, which is
+ * why only this command pins a version.) It is pinned in the defaults layer, so
  * `--data '{"ai_model":"..."}'` still wins if the gate ever loosens.
  */
 

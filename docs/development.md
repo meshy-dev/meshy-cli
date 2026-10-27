@@ -41,7 +41,7 @@ meshy-cli/
 │       └── atomic-file.ts / paths.ts / lock.ts
 ├── tests/                   # node:test unit, contract and black-box tests
 ├── skills/                  # agent-facing skill (published)
-├── docs/skill-parity/       # baseline, contracts, matrix, decisions, verification
+├── docs/                    # usage, scripting, development, decisions
 ├── package.json
 └── README.md
 ```
@@ -67,12 +67,8 @@ meshy-cli/
 - **Stdout is reserved for command output.** Logs, progress and errors' prose go
   to stderr so pipes (`| jq`, `-o file`) stay clean.
 
-## Skill-parity documentation
+## Design decisions
 
-`docs/skill-parity/` records how this release covers the execution capabilities
-of the Meshy Skills without Python: the frozen baseline, the endpoint contracts,
-the capability matrix, design decisions, migration notes with every intentional
-difference, and the verification record.
-
-Design decisions, one `D-NNN` entry each, live in
-[`skill-parity/decisions.md`](skill-parity/decisions.md).
+Choices the code alone does not explain, one `D-NNN` entry each, live in
+[`decisions.md`](decisions.md). Append a new entry; mark the ones it replaces
+as superseded instead of rewriting them.

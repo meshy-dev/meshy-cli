@@ -1,6 +1,6 @@
 /**
- * Tests for the file-input resolver (local path → data URI, URL preflight)
- * covering both image and 3D-model inputs.
+ * Tests for media-input normalisation (local path → data URI, URL preflight,
+ * data: URI validation) covering both image and 3D-model fields.
  */
 
 import test from "node:test";
@@ -9,7 +9,16 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
-import { resolveImageFields, resolveModelFields } from "../src/internal/file-input.js";
+import type { MediaField } from "../src/client/resource-registry.js";
+import { normalizeMediaPayload } from "../src/internal/file-input.js";
+
+const IMAGE: MediaField = { path: "image_url", kind: "image", many: false };
+const MODEL: MediaField = { path: "model_url", kind: "model", many: false };
+
+/** The normalised value of one declared field. */
+async function normalized(field: MediaField, value: unknown): Promise<unknown> {
+  return (await normalizeMediaPayload({ [field.path]: value }, [field])).payload[field.path];
+}
 
 function installFetch(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
   const original = globalThis.fetch;
@@ -28,17 +37,15 @@ async function tinyPng(): Promise<Buffer> {
     .toBuffer();
 }
 
-test("resolveImageFields — local PNG becomes a data:image/png URI", async () => {
+test("image field — local PNG becomes a data:image/png URI", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-img-"));
   const path = join(dir, "ref.png");
   writeFileSync(path, await tinyPng());
 
-  const opts: Record<string, unknown> = { imageUrl: path };
-  await resolveImageFields(opts);
-  assert.match(opts.imageUrl as string, /^data:image\/png;base64,/);
+  assert.match((await normalized(IMAGE, path)) as string, /^data:image\/png;base64,/);
 });
 
-test("resolveImageFields — relative path resolves against cwd", async () => {
+test("image field — relative path resolves against cwd", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-img-"));
   const path = join(dir, "img.png");
   writeFileSync(path, await tinyPng());
@@ -46,15 +53,13 @@ test("resolveImageFields — relative path resolves against cwd", async () => {
   const saved = process.cwd();
   process.chdir(dir);
   try {
-    const opts: Record<string, unknown> = { imageUrl: "img.png" };
-    await resolveImageFields(opts);
-    assert.match(opts.imageUrl as string, /^data:image\/png;base64,/);
+    assert.match((await normalized(IMAGE, "img.png")) as string, /^data:image\/png;base64,/);
   } finally {
     process.chdir(saved);
   }
 });
 
-test("resolveImageFields — JPEG file is detected via magic bytes", async () => {
+test("image field — JPEG file is detected via magic bytes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-img-"));
   const path = join(dir, "photo.jpg");
   const jpeg = await sharp({
@@ -62,38 +67,32 @@ test("resolveImageFields — JPEG file is detected via magic bytes", async () =>
   }).jpeg().toBuffer();
   writeFileSync(path, jpeg);
 
-  const opts: Record<string, unknown> = { imageUrl: path };
-  await resolveImageFields(opts);
-  assert.match(opts.imageUrl as string, /^data:image\/jpeg;base64,/);
+  assert.match((await normalized(IMAGE, path)) as string, /^data:image\/jpeg;base64,/);
 });
 
-test("resolveImageFields — missing file fails fast with flag name in error", async () => {
-  const opts = { imageUrl: "/nonexistent/path/to/image.png" };
+test("image field — missing file fails fast with flag name in error", async () => {
   await assert.rejects(
-    () => resolveImageFields(opts),
+    () => normalized(IMAGE, "/nonexistent/path/to/image.png"),
     /--image-url: file not found/,
   );
 });
 
-test("resolveImageFields — directory path rejected as non-regular file", async () => {
+test("image field — directory path rejected as non-regular file", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-img-"));
-  const opts = { imageUrl: dir };
   await assert.rejects(
-    () => resolveImageFields(opts),
+    () => normalized(IMAGE, dir),
     /not a regular file/,
   );
 });
 
-test("resolveImageFields — URL preflighted with HEAD, accepted on 2xx", async () => {
+test("image field — URL preflighted with HEAD, accepted on 2xx", async () => {
   const calls: { url: string; method: string }[] = [];
   const restore = installFetch((url, init) => {
     calls.push({ url, method: init.method ?? "GET" });
     return new Response(null, { status: 200 });
   });
   try {
-    const opts = { imageUrl: "https://example.com/ref.png" };
-    await resolveImageFields(opts);
-    assert.equal(opts.imageUrl, "https://example.com/ref.png");
+    assert.equal(await normalized(IMAGE, "https://example.com/ref.png"), "https://example.com/ref.png");
     assert.equal(calls.length, 1);
     assert.equal(calls[0]!.method, "HEAD");
   } finally {
@@ -101,11 +100,11 @@ test("resolveImageFields — URL preflighted with HEAD, accepted on 2xx", async 
   }
 });
 
-test("resolveImageFields — URL returning 404 fails fast", async () => {
+test("image field — URL returning 404 fails fast", async () => {
   const restore = installFetch(() => new Response(null, { status: 404, statusText: "Not Found" }));
   try {
     await assert.rejects(
-      () => resolveImageFields({ imageUrl: "https://example.com/missing.png" }),
+      () => normalized(IMAGE, "https://example.com/missing.png"),
       /--image-url: https:\/\/example\.com\/missing\.png returned 404/,
     );
   } finally {
@@ -113,11 +112,11 @@ test("resolveImageFields — URL returning 404 fails fast", async () => {
   }
 });
 
-test("resolveImageFields — network error surfaced with flag context", async () => {
+test("image field — network error surfaced with flag context", async () => {
   const restore = installFetch(() => { throw new Error("ENOTFOUND"); });
   try {
     await assert.rejects(
-      () => resolveImageFields({ imageUrl: "https://nope.invalid/x.png" }),
+      () => normalized(IMAGE, "https://nope.invalid/x.png"),
       /--image-url: cannot reach.*ENOTFOUND/,
     );
   } finally {
@@ -125,18 +124,14 @@ test("resolveImageFields — network error surfaced with flag context", async ()
   }
 });
 
-test("resolveImageFields — list flag expands each entry (mix of local + URL)", async () => {
+test("image field — list flag expands each entry (mix of local + URL)", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-img-"));
   const localPath = join(dir, "a.png");
   writeFileSync(localPath, await tinyPng());
 
   const restore = installFetch(() => new Response(null, { status: 200 }));
   try {
-    const opts = {
-      referenceImageUrls: [localPath, "https://example.com/b.png"],
-    };
-    await resolveImageFields(opts);
-    const urls = opts.referenceImageUrls as string[];
+    const urls = (await normalized({ path: "reference_image_urls", kind: "image", many: true }, [localPath, "https://example.com/b.png"])) as string[];
     assert.equal(urls.length, 2);
     assert.match(urls[0]!, /^data:image\/png;base64,/);
     assert.equal(urls[1], "https://example.com/b.png");
@@ -145,16 +140,14 @@ test("resolveImageFields — list flag expands each entry (mix of local + URL)",
   }
 });
 
-test("resolveImageFields — retexture's multi-view list resolves local paths too", async () => {
+test("image field — retexture's multi-view list resolves local paths too", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-img-"));
   const front = join(dir, "front.png");
   writeFileSync(front, await tinyPng());
 
   const restore = installFetch(() => new Response(null, { status: 200 }));
   try {
-    const opts = { multiviewImageUrls: [front, "https://example.com/back.png"] };
-    await resolveImageFields(opts);
-    const urls = opts.multiviewImageUrls as string[];
+    const urls = (await normalized({ path: "multiview_image_urls", kind: "image", many: true }, [front, "https://example.com/back.png"])) as string[];
     assert.match(urls[0]!, /^data:image\/png;base64,/);
     assert.equal(urls[1], "https://example.com/back.png");
   } finally {
@@ -162,20 +155,11 @@ test("resolveImageFields — retexture's multi-view list resolves local paths to
   }
 });
 
-test("resolveImageFields — well-formed data: URIs pass through; malformed ones are refused", async () => {
-  const opts = { imageUrl: "data:image/png;base64,iVBORw0KGgo=" };
-  await resolveImageFields(opts);
-  assert.equal(opts.imageUrl, "data:image/png;base64,iVBORw0KGgo=");
-  await assert.rejects(() => resolveImageFields({ imageUrl: "data:image/png,notbase64" }), /must be base64/);
-  await assert.rejects(() => resolveImageFields({ imageUrl: "data:model/gltf-binary;base64,Z2xURg==" }), /expected an image/);
-  await assert.rejects(() => resolveImageFields({ imageUrl: "data:garbage" }), /malformed data: URI/);
-});
-
-test("resolveImageFields — fields that aren't image inputs are ignored", async () => {
-  const opts = { prompt: "hello", aiModel: "nano-banana", imageUrl: undefined };
-  await resolveImageFields(opts);
-  assert.equal(opts.prompt, "hello");
-  assert.equal(opts.aiModel, "nano-banana");
+test("image field — well-formed data: URIs pass through; malformed ones are refused", async () => {
+  assert.equal(await normalized(IMAGE, "data:image/png;base64,iVBORw0KGgo="), "data:image/png;base64,iVBORw0KGgo=");
+  await assert.rejects(() => normalized(IMAGE, "data:image/png,notbase64"), /must be base64/);
+  await assert.rejects(() => normalized(IMAGE, "data:model/gltf-binary;base64,Z2xURg=="), /expected an image/);
+  await assert.rejects(() => normalized(IMAGE, "data:garbage"), /malformed data: URI/);
 });
 
 // ---------- 3D-model inputs ----------
@@ -195,55 +179,49 @@ function fakeFbxBinary(): Buffer {
   return buf;
 }
 
-test("resolveModelFields — local .glb detected via magic bytes → model/gltf-binary", async () => {
+test("model field — local .glb detected via magic bytes → model/gltf-binary", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-mdl-"));
   const path = join(dir, "weird-name.bin"); // extension is wrong — magic should win
   writeFileSync(path, fakeGlb());
 
-  const opts: Record<string, unknown> = { modelUrl: path };
-  await resolveModelFields(opts);
-  assert.match(opts.modelUrl as string, /^data:model\/gltf-binary;base64,/);
+  assert.match((await normalized(MODEL, path)) as string, /^data:model\/gltf-binary;base64,/);
 });
 
-test("resolveModelFields — local binary FBX detected by signature", async () => {
+test("model field — local binary FBX detected by signature", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-mdl-"));
   const path = join(dir, "char.fbx");
   writeFileSync(path, fakeFbxBinary());
 
-  const opts: Record<string, unknown> = { modelUrl: path };
-  await resolveModelFields(opts);
-  assert.match(opts.modelUrl as string, /^data:application\/octet-stream;base64,/);
+  assert.match((await normalized(MODEL, path)) as string, /^data:application\/octet-stream;base64,/);
 });
 
-test("resolveModelFields — falls back to extension for text formats", async () => {
+test("model field — falls back to extension for text formats", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-mdl-"));
   const path = join(dir, "scene.obj");
   writeFileSync(path, "# OBJ file\nv 0 0 0\n", "utf8");
 
-  const opts: Record<string, unknown> = { modelUrl: path };
-  await resolveModelFields(opts);
-  assert.match(opts.modelUrl as string, /^data:model\/obj;base64,/);
+  assert.match((await normalized(MODEL, path)) as string, /^data:model\/obj;base64,/);
 });
 
-test("resolveModelFields — unknown extension rejected with clear error", async () => {
+test("model field — unknown extension rejected with clear error", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meshy-mdl-"));
   const path = join(dir, "mystery.xyz");
   writeFileSync(path, "random bytes", "utf8");
 
   await assert.rejects(
-    () => resolveModelFields({ modelUrl: path }),
+    () => normalized(MODEL, path),
     /could not detect 3d model MIME type/,
   );
 });
 
-test("resolveModelFields — missing file fails fast", async () => {
+test("model field — missing file fails fast", async () => {
   await assert.rejects(
-    () => resolveModelFields({ modelUrl: "/nonexistent/model.glb" }),
+    () => normalized(MODEL, "/nonexistent/model.glb"),
     /--model-url: file not found/,
   );
 });
 
-test("resolveModelFields — URL preflighted, passed through on 2xx", async () => {
+test("model field — URL preflighted, passed through on 2xx", async () => {
   const original = globalThis.fetch;
   const calls: string[] = [];
   globalThis.fetch = (async (input: Parameters<typeof globalThis.fetch>[0], init: RequestInit = {}) => {
@@ -251,9 +229,7 @@ test("resolveModelFields — URL preflighted, passed through on 2xx", async () =
     return new Response(null, { status: 200 });
   }) as typeof globalThis.fetch;
   try {
-    const opts = { modelUrl: "https://example.com/model.glb" };
-    await resolveModelFields(opts);
-    assert.equal(opts.modelUrl, "https://example.com/model.glb");
+    assert.equal(await normalized(MODEL, "https://example.com/model.glb"), "https://example.com/model.glb");
     assert.equal(calls.length, 1);
     assert.match(calls[0]!, /^HEAD https:\/\/example\.com\/model\.glb$/);
   } finally {
@@ -261,15 +237,12 @@ test("resolveModelFields — URL preflighted, passed through on 2xx", async () =
   }
 });
 
-test("resolveModelFields — model data: URIs pass through; image data: URIs are refused", async () => {
-  const opts = { modelUrl: "data:model/gltf-binary;base64,Z2xURg==" };
-  await resolveModelFields(opts);
-  assert.equal(opts.modelUrl, "data:model/gltf-binary;base64,Z2xURg==");
-  await assert.rejects(() => resolveModelFields({ modelUrl: "data:image/png;base64,iVBORw0KGgo=" }), /expected a 3D-model/);
+test("model field — model data: URIs pass through; image data: URIs are refused", async () => {
+  assert.equal(await normalized(MODEL, "data:model/gltf-binary;base64,Z2xURg=="), "data:model/gltf-binary;base64,Z2xURg==");
+  await assert.rejects(() => normalized(MODEL, "data:image/png;base64,iVBORw0KGgo="), /expected a 3D-model/);
 });
 
 test("normalizeMediaPayload — only declared fields are touched; size cap and format lists are enforced (T-029, T-030)", async () => {
-  const { normalizeMediaPayload } = await import("../src/internal/file-input.js");
   const dir = mkdtempSync(join(tmpdir(), "meshy-media-"));
   const png = join(dir, "a.png");
   writeFileSync(png, await tinyPng());

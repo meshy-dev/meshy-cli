@@ -31,8 +31,6 @@ export interface GlobalFlags {
   /** true when --format/--json was actually typed; false when format came from the TTY default. */
   formatExplicit: boolean;
   json?: boolean;
-  /** Set when the caller typed `--output-schema v1` (a compatibility no-op): D-065 keeps "a typed schema means JSON". */
-  outputSchema?: "v1";
   output?: string;
   /** --all-assets: `-o <dir>` saves every artifact of the task, not just the primary set. */
   allAssets: boolean;
@@ -214,7 +212,6 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
     baseUrlCreativeLab?: string;
     format?: string;
     json?: boolean;
-    outputSchema?: string;
     output?: string;
     allAssets?: boolean;
     apiKeyFile?: string;
@@ -251,7 +248,6 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
     format,
     formatExplicit,
     json: opts.json,
-    outputSchema: normalizeSchema(opts.outputSchema),
     output: opts.output,
     allAssets: opts.allAssets === true,
     envFile: opts.apiKeyFile,
@@ -263,39 +259,14 @@ export function readGlobalFlags(cmd: Command): GlobalFlags {
   };
 }
 
-/**
- * `--json` wins; a typed `--format` is honoured; untyped follows the TTY.
- *
- * D-065: an untyped format with a typed `--output-schema v1` is JSON even on a
- * TTY. No person types a schema version — that is a machine asking for the
- * envelope (an agent in a pseudo-terminal, or copying a skill example). It
- * leaves formatExplicit false, so `-o` keeps its own rule.
- */
+/** `--json` wins; a typed `--format` is honoured; untyped follows the TTY. */
 export function resolveFormat(
-  opts: { format?: string; json?: boolean; outputSchema?: string },
+  opts: { format?: string; json?: boolean },
   isTTY: boolean = Boolean(process.stdout.isTTY),
 ): OutputFormat {
   if (opts.json) return "json";
-  if (opts.format === undefined) return opts.outputSchema?.toLowerCase() === "v1" ? "json" : defaultOutputFormat(isTTY);
+  if (opts.format === undefined) return defaultOutputFormat(isTTY);
   return parseOutputFormat(opts.format);
-}
-
-/**
- * `--output-schema` survives only as a compatibility no-op: since 0.5.0 every
- * command prints the meshy.cli/v1 envelope. `legacy` names the removed data
- * model, so it is refused with the migration in the message rather than
- * silently honoured as v1.
- */
-function normalizeSchema(raw: string | undefined): "v1" | undefined {
-  if (raw === undefined) return undefined;
-  const v = raw.toLowerCase();
-  if (v === "v1") return v;
-  if (v === "legacy") {
-    throw new UsageError(
-      "--output-schema legacy was removed in 0.5.0: every command prints the meshy.cli/v1 envelope (schema_version, command, ok, result, error, warnings). Drop the flag and read `result`",
-    );
-  }
-  throw new UsageError(`invalid --output-schema '${raw}'. Only v1 is accepted (the default; the flag is a no-op)`);
 }
 
 function normalizeLogLevel(raw: string | undefined): LogLevel | undefined {

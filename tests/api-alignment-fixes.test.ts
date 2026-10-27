@@ -45,7 +45,7 @@ test("analyze/repair: a local .stl/.obj/.fbx is refused before the wire with a w
     writeFileSync(join(cwd, "part.glb"), GLB);
     for (const cmd of ["analyze-printability", "repair-printability"]) {
       for (const file of ["part.stl", "part.obj"]) {
-        const r = await runCli([cmd, "create", "--model-url", file, "--async", "--output-schema", "v1"], { env: api.env(), cwd });
+        const r = await runCli([cmd, "create", "--model-url", file, "--async"], { env: api.env(), cwd });
         assert.equal(r.code, 2, `${cmd} ${file}: ${r.stdout}${r.stderr}`);
         const out = parseSingleJson(r.stdout) as { error: { code: string; message: string } };
         assert.equal(out.error.code, "usage");
@@ -53,12 +53,12 @@ test("analyze/repair: a local .stl/.obj/.fbx is refused before the wire with a w
         assert.match(out.error.message, /http\(s\) URL, or --input-task-id/);
       }
       // A data: URI the server would refuse (FBX rides as octet-stream) is caught the same way.
-      const fbx = await runCli([cmd, "create", "--data", '{"model_url":"data:application/octet-stream;base64,AAAA"}', "--async", "--output-schema", "v1"], { env: api.env(), cwd });
+      const fbx = await runCli([cmd, "create", "--data", '{"model_url":"data:application/octet-stream;base64,AAAA"}', "--async"], { env: api.env(), cwd });
       assert.equal(fbx.code, 2, fbx.stdout);
     }
     assert.equal(api.requests.length, 0, "nothing the server would refuse reaches it");
 
-    const ok = await runCli(["analyze-printability", "create", "--model-url", "part.glb", "--async", "--output-schema", "v1"], { env: api.env(), cwd });
+    const ok = await runCli(["analyze-printability", "create", "--model-url", "part.glb", "--async"], { env: api.env(), cwd });
     assert.equal(ok.code, 0, ok.stderr);
     assert.match(String((api.requests[0]!.json as Record<string, unknown>)["model_url"]), /^data:model\/gltf-binary;base64,/);
   });
@@ -83,7 +83,7 @@ test("every other model input refuses a local non-glTF file the same way; .glb (
     let posts = 0;
     for (const [cmd, extra, accepted] of commands) {
       for (const ext of ["stl", "obj", "fbx", "glb", "gltf"]) {
-        const r = await runCli([cmd, "create", "--model-url", `part.${ext}`, ...extra, "--async", "--output-schema", "v1"], { env: api.env(), cwd });
+        const r = await runCli([cmd, "create", "--model-url", `part.${ext}`, ...extra, "--async"], { env: api.env(), cwd });
         if (accepted.includes(ext)) {
           assert.equal(r.code, 0, `${cmd} .${ext}: ${r.stdout}${r.stderr}`);
           posts += 1;
@@ -99,10 +99,10 @@ test("every other model input refuses a local non-glTF file the same way; .glb (
     assert.equal(api.requests.length, posts, "a refused input costs no request");
     // A data: URI labelled application/octet-stream (the docs' spelling) is fine when it is a GLB, refused otherwise.
     const glbData = `data:application/octet-stream;base64,${GLB.toString("base64")}`;
-    const ok = await runCli(["remesh", "create", "--data", JSON.stringify({ model_url: glbData }), "--async", "--output-schema", "v1"], { env: api.env(), cwd });
+    const ok = await runCli(["remesh", "create", "--data", JSON.stringify({ model_url: glbData }), "--async"], { env: api.env(), cwd });
     assert.equal(ok.code, 0, ok.stdout);
     const fbxData = `data:application/octet-stream;base64,${FBX.toString("base64")}`;
-    const bad = await runCli(["remesh", "create", "--data", JSON.stringify({ model_url: fbxData }), "--async", "--output-schema", "v1"], { env: api.env(), cwd });
+    const bad = await runCli(["remesh", "create", "--data", JSON.stringify({ model_url: fbxData }), "--async"], { env: api.env(), cwd });
     assert.equal(bad.code, 2, bad.stdout);
     assert.equal(api.requests.length, posts + 1);
   });
@@ -113,7 +113,7 @@ test("analyze/repair: an http(s) .stl URL is still passed through (the server fe
     if (req.method === "HEAD" && req.path === "/files/part.stl") return void res.writeHead(200).end();
     return accept()(req, res, undefined as never);
   }, async (api) => {
-    const r = await runCli(["repair-printability", "create", "--model-url", `${api.origin}/files/part.stl`, "--async", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["repair-printability", "create", "--model-url", `${api.origin}/files/part.stl`, "--async"], { env: api.env() });
     assert.equal(r.code, 0, r.stderr);
     const post = api.requests.find((q) => q.method === "POST")!;
     assert.equal((post.json as Record<string, unknown>)["model_url"], `${api.origin}/files/part.stl`);
@@ -126,11 +126,11 @@ test("analyze/repair: an http(s) .stl URL is still passed through (the server fe
 
 test("text-to-3d refine: no remove_lighting or texture_resolution unless asked (a meshy-6-lite preview refuses both)", async () => {
   await withApi(accept(), async (api) => {
-    const r = await runCli(["text-to-3d", "create", "--mode", "refine", "--preview-task-id", "p1", "--async", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["text-to-3d", "create", "--mode", "refine", "--preview-task-id", "p1", "--async"], { env: api.env() });
     assert.equal(r.code, 0, r.stderr);
     assert.deepEqual(api.requests[0]!.json, { mode: "refine", preview_task_id: "p1", enable_pbr: true, target_formats: ["glb"] });
 
-    const asked = await runCli(["text-to-3d", "create", "--mode", "refine", "--preview-task-id", "p1", "--texture-resolution", "4k", "--remove-lighting", "true", "--async", "--output-schema", "v1"], { env: api.env() });
+    const asked = await runCli(["text-to-3d", "create", "--mode", "refine", "--preview-task-id", "p1", "--texture-resolution", "4k", "--remove-lighting", "true", "--async"], { env: api.env() });
     assert.equal(asked.code, 0, asked.stderr);
     const body = api.requests[1]!.json as Record<string, unknown>;
     assert.equal(body["texture_resolution"], "4k");
@@ -144,11 +144,11 @@ test("make still refines at 4k (it made the preview on latest), and its resume c
     if (req.method === "POST") return jsonReply(res, 200, { result: `t-${++posts}` });
     return jsonReply(res, 200, task(req.path.split("/").pop()!, "SUCCEEDED"));
   }, async (api) => {
-    const r = await runCli(["make", "a fixture cactus", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["make", "a fixture cactus"], { env: api.env() });
     assert.equal(r.code, 0, r.stderr);
     const refine = api.requests.filter((q) => q.method === "POST")[1]!.json as Record<string, unknown>;
     assert.equal(refine["texture_resolution"], "4k");
-    const pending = await runCli(["make", "a fixture cactus", "--async", "--output-schema", "v1"], { env: api.env() });
+    const pending = await runCli(["make", "a fixture cactus", "--async"], { env: api.env() });
     const out = parseSingleJson(pending.stdout) as { result: { pending_steps: Array<{ command: string }> } };
     assert.equal(out.result.pending_steps[0]!.command, "meshy text-to-3d create --mode refine --texture-resolution 4k --preview-task-id <preview-task-id>");
   });
@@ -160,7 +160,7 @@ test("make still refines at 4k (it made the preview on latest), and its resume c
 
 test("image-to-3d --model-type smart-topology refuses --remove-lighting / --image-enhancement (flag or --data) before the wire", async () => {
   await withApi(accept(), async (api) => {
-    const base = ["image-to-3d", "create", "--image-url", "https://example.invalid/a.png", "--model-type", "smart-topology", "--async", "--output-schema", "v1"];
+    const base = ["image-to-3d", "create", "--image-url", "https://example.invalid/a.png", "--model-type", "smart-topology", "--async"];
     for (const extra of [["--remove-lighting", "false"], ["--image-enhancement", "true"], ["--data", '{"remove_lighting":true}']]) {
       const r = await runCli([...base, ...extra], { env: api.env() });
       assert.equal(r.code, 2, `${extra.join(" ")}: ${r.stdout}`);
@@ -187,7 +187,7 @@ test("wait: a 503, a 429 and a 500 while polling are retried; the task's real ou
     if (gets === 3) return jsonReply(res, 500, { message: "boom" });
     return jsonReply(res, 200, task("t-1", "SUCCEEDED"));
   }, async (api) => {
-    const r = await runCli(["text-to-3d", "wait", "t-1", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["text-to-3d", "wait", "t-1"], { env: api.env() });
     assert.equal(r.code, 0, `${r.stdout}${r.stderr}`);
     const out = parseSingleJson(r.stdout) as { ok: boolean; result: { task: { status: string }; wait: { polls: number; failed_polls: number; last_poll_error: { http_status: number } } }; warnings: Array<{ code: string }> };
     assert.equal(out.ok, true);
@@ -201,7 +201,7 @@ test("wait: a 503, a 429 and a 500 while polling are retried; the task's real ou
 
 test("wait: an outage that outlasts the deadline is a timeout (exit 8) that keeps the task id and names the last failure; 401/404 still end it at once", async () => {
   await withApi((req, res) => jsonReply(res, req.path.endsWith("/gone") ? 404 : 503, { message: "outage" }), async (api) => {
-    const r = await runCli(["text-to-3d", "wait", "t-2", "--timeout", "1", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["text-to-3d", "wait", "t-2", "--timeout", "1"], { env: api.env() });
     assert.equal(r.code, 8, r.stdout);
     const out = parseSingleJson(r.stdout) as { error: { code: string; message: string }; result: { task_id: string; wait: { failed_polls: number } } };
     assert.equal(out.error.code, "timed_out");
@@ -210,7 +210,7 @@ test("wait: an outage that outlasts the deadline is a timeout (exit 8) that keep
     assert.ok(out.result.wait.failed_polls >= 2, "kept polling");
 
     const before = api.requests.length;
-    const gone = await runCli(["text-to-3d", "wait", "gone", "--timeout", "5", "--output-schema", "v1"], { env: api.env() });
+    const gone = await runCli(["text-to-3d", "wait", "gone", "--timeout", "5"], { env: api.env() });
     assert.equal(gone.code, 5, gone.stdout);
     assert.equal(api.requests.length - before, 1, "a 404 is not retried");
   });
@@ -253,7 +253,7 @@ test("Retry-After is parsed (seconds or HTTP date) and kept on the API error", a
 
 test("delete of an IN_PROGRESS task (409) is its own class: conflict, exit 14, with the wait command", async () => {
   await withApi((req, res) => jsonReply(res, 409, { message: "Task is IN_PROGRESS and cannot be deleted." }), async (api) => {
-    const r = await runCli(["image-to-3d", "delete", "t-run", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["image-to-3d", "delete", "t-run"], { env: api.env() });
     assert.equal(r.code, 14, r.stdout);
     const out = parseSingleJson(r.stdout) as { error: { code: string; http_status: number; hint: string; recovery: { command: string } } };
     assert.equal(out.error.code, "conflict");
@@ -264,7 +264,7 @@ test("delete of an IN_PROGRESS task (409) is its own class: conflict, exit 14, w
     assert.equal(top.code, 14, top.stdout);
     assert.equal((parseSingleJson(top.stdout) as { error: { code: string } }).error.code, "conflict");
     // Top-level delete does not know the resource: a recovery command must be runnable verbatim, so there is none.
-    const topV1 = await runCli(["delete", "t-run", "--output-schema", "v1"], { env: api.env() });
+    const topV1 = await runCli(["delete", "t-run"], { env: api.env() });
     assert.equal(topV1.code, 14, topV1.stdout);
     const topOut = parseSingleJson(topV1.stdout) as { error: { code: string; recovery: Record<string, unknown> } };
     assert.equal(topOut.error.code, "conflict");
@@ -289,7 +289,7 @@ test("Creative Lab delete cancels: the result says canceled, not deleted", async
 
 test("top-level delete: a 404 points at the Creative Lab delete (the shared route never reaches those tasks)", async () => {
   await withApi((req, res) => jsonReply(res, 404, { message: "Task not found" }), async (api) => {
-    const r = await runCli(["delete", "t-cl", "--output-schema", "v1"], { env: api.env() });
+    const r = await runCli(["delete", "t-cl"], { env: api.env() });
     assert.equal(r.code, 5, r.stdout);
     assert.match((parseSingleJson(r.stdout) as { error: { message: string } }).error.message, /meshy creative-lab <product> <stage> delete/);
     assert.equal(api.requests[0]!.path, "/openapi/v2/text-to-3d/t-cl");
@@ -304,7 +304,7 @@ test("an animation task (type animate) is matched to the animate resource by dow
   assert.deepEqual([...findTaskResource("animate")!.taskTypes], ["animate"]);
   const cwd = tmpDir("meshy-anim-");
   writeFileSync(join(cwd, "anim.json"), JSON.stringify({ id: "a-1", type: "animate", status: "SUCCEEDED", result: { animation_glb_url: "https://assets.example.invalid/a.glb" } }));
-  const r = await runCli(["download", "--task-json", "anim.json", "--list", "--output-schema", "v1"], { cwd });
+  const r = await runCli(["download", "--task-json", "anim.json", "--list"], { cwd });
   assert.equal(r.code, 0, r.stdout + r.stderr);
   const out = parseSingleJson(r.stdout) as { result: { source: { resource: string } } };
   assert.equal(out.result.source.resource, "animate");
@@ -313,7 +313,7 @@ test("an animation task (type animate) is matched to the animate resource by dow
 test("a keycap build's obj_zip is a ZIP bundle saved as model.obj.zip", async () => {
   const cwd = tmpDir("meshy-keycap-");
   writeFileSync(join(cwd, "keycap.json"), JSON.stringify({ id: "k-1", type: "creative-lab-keycap-build", status: "SUCCEEDED", model_urls: { glb: "https://assets.example.invalid/model.glb", obj_zip: "https://assets.example.invalid/model-obj.zip" } }));
-  const r = await runCli(["download", "--task-json", "keycap.json", "--list", "--output-schema", "v1"], { cwd });
+  const r = await runCli(["download", "--task-json", "keycap.json", "--list"], { cwd });
   assert.equal(r.code, 0, r.stdout + r.stderr);
   const out = parseSingleJson(r.stdout) as { result: { source: { resource: string }; assets: Array<{ key: string; filename: string; format: string }> } };
   assert.equal(out.result.source.resource, "creative-lab.keycap.build");

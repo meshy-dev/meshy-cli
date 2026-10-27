@@ -13,7 +13,6 @@ import { ShowcasesEndpoint } from "./endpoints/showcases.js";
 import {
   creativeLabResource,
   requireTaskResource,
-  TASK_RESOURCES,
   type ApiBase,
   type CreativeLabProduct,
   type CreativeLabStage,
@@ -23,7 +22,6 @@ import { createTransport, type Transport } from "./transport.js";
 import { assertCredentialAllowedForOrigin, type MeshyConfig } from "../internal/config.js";
 import { UsageError } from "../internal/errors.js";
 
-export type { HttpFetch } from "./endpoints/base.js";
 
 export class MeshyClient {
   readonly config: MeshyConfig;
@@ -40,7 +38,7 @@ export class MeshyClient {
     const common = { readTimeoutMs: config.readTimeoutMs, fetchImpl: opts.fetchImpl, credentialKind: config.credentialKind };
     this.v1 = createTransport({ ...common, baseUrl: config.baseUrlV1, apiKey: config.apiKey });
     this.v2 = createTransport({ ...common, baseUrl: config.baseUrlV2, apiKey: config.apiKey });
-    this.balance = new BalanceEndpoint((path, init) => this.v1.fetchRaw(path, init));
+    this.balance = new BalanceEndpoint(this.v1);
     this.showcases = new ShowcasesEndpoint(this.v1);
   }
 
@@ -119,29 +117,5 @@ export class MeshyClient {
     return this.transportFor(apiVersion).fetchRaw(path, { ...init, method });
   }
 }
-
-/** The 0.2.0 resource names, still valid ids in the registry. */
-export const RESOURCE_NAMES = [
-  "text-to-3d",
-  "image-to-3d",
-  "multi-image-to-3d",
-  "remesh",
-  "convert",
-  "resize",
-  "rigging",
-  "animate",
-  "retexture",
-  "text-to-image",
-  "text-to-motion",
-  "image-to-image",
-  "multi-color-print",
-  "analyze-printability",
-  "repair-printability",
-] as const;
-
-export type ResourceName = (typeof RESOURCE_NAMES)[number];
-
-/** Every registered task resource id (15 legacy + uv-unwrap + Creative Lab stages). */
-export const TASK_RESOURCE_IDS: readonly string[] = TASK_RESOURCES.map((d) => d.id);
 
 export { MeshyApiError } from "./errors.js";

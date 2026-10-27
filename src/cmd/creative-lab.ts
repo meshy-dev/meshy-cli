@@ -28,7 +28,7 @@
 
 import { Command, Option } from "commander";
 import { z } from "zod";
-import { CREATIVE_LAB_PRODUCTS, type CreativeLabProduct, type CreativeLabStage } from "../client/resource-registry.js";
+import { CREATIVE_LAB_PRODUCTS, type CreativeLabProduct } from "../client/resource-registry.js";
 import { UsageError } from "../internal/errors.js";
 import { parseJsonFlag } from "../internal/payload.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
@@ -167,9 +167,6 @@ const PRODUCTS: Record<CreativeLabProduct, ProductDescriptor> = {
       cmd.addOption(new Option("--image-subject <kind>", "what the photo shows (default: character)").choices(["character", "landscape"])),
     prototypeExtraPayload: (opts) => ({ image_subject: opts.imageSubject }),
     validatePrototype: (payload) => {
-      if ("text" in payload) {
-        throw new UsageError("lamp prototype: the `text` input is deprecated and not accepted by this CLI; provide --image-url (a photo) instead");
-      }
       if (payload.image_subject !== undefined && payload.image_subject !== "character" && payload.image_subject !== "landscape") {
         throw new UsageError("image_subject must be 'character' or 'landscape'");
       }
@@ -386,4 +383,3 @@ prototypes are rejected by the server (404). Build never re-runs a prototype.
 for (const product of CREATIVE_LAB_PRODUCTS) creativeLabCommand.addCommand(productCommand(product));
 creativeLabCommand.addCommand(buildResourceCommand(collapsibleFidgetSpec()));
 
-export const CREATIVE_LAB_STAGE_NAMES: readonly CreativeLabStage[] = ["prototype", "build"];

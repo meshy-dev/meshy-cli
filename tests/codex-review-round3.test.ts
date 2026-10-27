@@ -6,7 +6,7 @@
  * the sidecar is published like an asset (no overwrite, no new symlink, root
  * re-proven at publication), every failure after the transfers keeps the
  * per-file manifest with the bytes actually on disk, Ctrl-C during the material
- * rewrite is an interrupt, legacy-schema errors still name the accepted task,
+ * rewrite is an interrupt, errors after an accepted create still name the task,
  * texture identity follows the server-side name even when it collides with a
  * generated one, and an aliased project path still records its files.
  */
@@ -22,7 +22,6 @@ import { CliError } from "../src/internal/errors.js";
 import { relinkMaterials } from "../src/internal/material-links.js";
 import { jsonReply, parseSingleJson, runCli, startMockApi, tmpDir } from "./helpers/cli.js";
 
-const V1 = ["--output-schema", "v1"];
 
 function taskBody(fields: Record<string, unknown> = {}): Record<string, unknown> {
   return { id: "round3-task", status: "SUCCEEDED", type: "text-to-3d-preview", progress: 100, ...fields };
@@ -54,8 +53,8 @@ function journalOperationIds(configDir: string): string[] {
     .map((f) => (JSON.parse(readFileSync(join(ops, f), "utf8")) as { operation_id: string; state: string; task_id: string | null }).operation_id);
 }
 
-/** The error envelope a run without `--output-schema v1` prints (the same envelope). */
-interface BareErrorEnvelope {
+/** The error envelope of a failed run. */
+interface ErrorEnvelope {
   ok: boolean;
   error: { code: string; http_status: number | null; hint?: string; message: string };
   result: { task_id?: string; submission?: { state: string; operation_id: string | null; task_id?: string }; next?: { wait: string; get: string }; downloads?: { state: string; files: Array<{ key: string; status: string }>; failed_step?: string } } | null;
@@ -96,7 +95,7 @@ test("C01+C02/R3-F01,R3-F04 sidecar targets planted after the preflight (symlink
         mkdirSync(out, { recursive: true });
         planter(out);
       };
-      const r = await runCli(["text-to-3d", "get", "round3-task", ...V1, "--workspace", workspace, "-o", out], { env, cwd: dir });
+      const r = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", out], { env, cwd: dir });
       assert.equal(r.code, 11, `${label}: ${r.stderr}\n${r.stdout}`);
       const env1 = parseSingleJson(r.stdout) as { error: { code: string; message: string }; result: { task_id: string; downloads: { state: string; failed_step: string; files: Array<{ key: string; path: string; status: string; sha256: string }> } } };
       assert.equal(env1.error.code, "local_io");
@@ -104,7 +103,7 @@ test("C01+C02/R3-F01,R3-F04 sidecar targets planted after the preflight (symlink
       assert.equal(env1.result.task_id, "round3-task");
       assert.equal(env1.result.downloads.state, "partial");
       assert.equal(env1.result.downloads.failed_step, "sidecar");
-      assert.deepEqual(env1.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "written"]]);
+      assert.deepEqual(env1.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "written"]]);
       const model = env1.result.downloads.files[0]!;
       assert.ok(existsSync(model.path), `${label}: the committed model is not rolled back`);
       assert.equal(sha(model.path), model.sha256);
@@ -117,23 +116,23 @@ test("C01+C02/R3-F01,R3-F04 sidecar targets planted after the preflight (symlink
     // Single-file mode: the per-file sidecar (`<stem>_meta.json`) follows the same rule.
     const single = join(workspace, "single.glb");
     plant = () => symlinkSync(outside, join(workspace, "single_meta.json"));
-    const s = await runCli(["text-to-3d", "get", "round3-task", ...V1, "--workspace", workspace, "-o", single], { env, cwd: dir });
+    const s = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", single], { env, cwd: dir });
     assert.equal(s.code, 11, `${s.stderr}\n${s.stdout}`);
     assert.equal(readFileSync(outside, "utf8"), "original-user-data");
     assert.ok(existsSync(single), "the model itself was published");
-    // Without the flag: same refusal, same envelope, the task stays discoverable.
-    const bareOut = join(workspace, "race-bare");
+    // The refusal's envelope keeps the task discoverable and names the failed step.
+    const raceOut = join(workspace, "race-envelope");
     plant = () => {
-      mkdirSync(bareOut, { recursive: true });
-      symlinkSync(outside, join(bareOut, "meta.json"));
+      mkdirSync(raceOut, { recursive: true });
+      symlinkSync(outside, join(raceOut, "meta.json"));
     };
-    const bare = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", bareOut], { env, cwd: dir });
-    assert.equal(bare.code, 11, bare.stderr);
-    const lp = parseSingleJson(bare.stdout) as BareErrorEnvelope;
+    const raced = await runCli(["text-to-3d", "get", "round3-task", "--workspace", workspace, "-o", raceOut], { env, cwd: dir });
+    assert.equal(raced.code, 11, raced.stderr);
+    const lp = parseSingleJson(raced.stdout) as ErrorEnvelope;
     assert.equal(lp.error.code, "local_io");
     assert.equal(lp.result?.task_id, "round3-task");
     assert.equal(lp.result?.downloads?.failed_step, "sidecar");
-    assert.deepEqual(lp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model_glb", "written"]]);
+    assert.deepEqual(lp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model.glb", "written"]]);
     assert.equal(readFileSync(outside, "utf8"), "original-user-data");
   } finally {
     await api.close();
@@ -175,7 +174,7 @@ test("C03/R3-F05 SIGINT while the OBJ is being relinked exits 130, keeps the com
         child?.kill("SIGINT");
       }
     }, 1);
-    const r = await runCli(["text-to-3d", "get", "round3-task", ...V1, "-o", out], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c), timeoutMs: 60_000 });
+    const r = await runCli(["text-to-3d", "get", "round3-task", "-o", out], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c), timeoutMs: 60_000 });
     clearInterval(poll);
     assert.ok(signalSent, "the test caught the relink phase (temp file observed)");
     assert.equal(r.code, 130, `${r.stderr}\n${r.stdout}`);
@@ -185,7 +184,7 @@ test("C03/R3-F05 SIGINT while the OBJ is being relinked exits 130, keeps the com
     assert.equal(env.result.task_id, "round3-task");
     assert.equal(env.result.downloads.state, "partial");
     assert.equal(env.result.downloads.failed_step, "relink");
-    assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model_obj", "written"], ["model_mtl", "written"]]);
+    assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model.obj", "written"], ["model.mtl", "written"]]);
     for (const f of env.result.downloads.files) {
       assert.ok(existsSync(f.path), `${f.key} stays on disk`);
       assert.equal(sha(f.path), f.sha256, `${f.key}: manifest digest is the file actually on disk`);
@@ -361,12 +360,12 @@ test("R3-F03 without source evidence a saved-name match is still accepted (conse
 // R3-F02 / C06 — a run without the flag keeps the accepted task on every download failure
 // ---------------------------------------------------------------------------
 
-test("C06/R3-F02 bare (no --output-schema) sync create/wait/get: an asset 503, a sidecar failure and SIGINT still report task_id, the real operation_id, next and the manifest; exactly one POST (make: codex-review-round4 R4-T01 with distinct step ids)", async () => {
+test("C06/R3-F02 sync create/wait/get: an asset 503, a sidecar failure and SIGINT still report task_id, the real operation_id, next and the manifest; exactly one POST (make: codex-review-round4 R4-T01 with distinct step ids)", async () => {
   let assetMode: "503" | "ok" | "slow" = "503";
   let plant: (() => void) | null = null;
   let child: ChildProcess | null = null;
   const api = await startMockApi(async (req, res) => {
-    if (req.method === "POST") return jsonReply(res, 200, { result: "paid-legacy-created-id" });
+    if (req.method === "POST") return jsonReply(res, 200, { result: "paid-created-id" });
     if (req.method === "DELETE") return jsonReply(res, 500, { message: "never" });
     if (req.path === "/asset.glb") {
       plant?.();
@@ -384,7 +383,7 @@ test("C06/R3-F02 bare (no --output-schema) sync create/wait/get: an asset 503, a
       }
       return;
     }
-    return jsonReply(res, 200, taskBody({ id: "paid-legacy-created-id", model_urls: { glb: `${api.url}/asset.glb` } }));
+    return jsonReply(res, 200, taskBody({ id: "paid-created-id", model_urls: { glb: `${api.url}/asset.glb` } }));
   });
   try {
     const dir = tmpDir();
@@ -392,56 +391,56 @@ test("C06/R3-F02 bare (no --output-schema) sync create/wait/get: an asset 503, a
     const configDir = String(env["MESHY_CONFIG_DIR"]);
 
     // Sync create (no flag), asset host 503.
-    const created = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture legacy", "-o", join(dir, "legacy-created")], { env, cwd: dir });
+    const created = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture created", "-o", join(dir, "created-out")], { env, cwd: dir });
     assert.equal(created.code, 7, `${created.stderr}\n${created.stdout}`);
-    const payload = parseSingleJson(created.stdout) as BareErrorEnvelope;
+    const payload = parseSingleJson(created.stdout) as ErrorEnvelope;
     assert.equal(payload.error.code, "network");
     assert.equal(payload.error.http_status, 503);
-    assert.equal(payload.result?.task_id, "paid-legacy-created-id");
-    assert.equal(payload.result?.task_id, "paid-legacy-created-id");
+    assert.equal(payload.result?.task_id, "paid-created-id");
+    assert.equal(payload.result?.task_id, "paid-created-id");
     assert.equal(payload.result?.submission?.state, "accepted");
     const [operationId] = journalOperationIds(configDir);
     assert.ok(operationId, "the journal holds the accepted record");
     assert.equal(payload.result?.submission?.operation_id, operationId, "the error names the journal's operation id");
     assert.equal(payload.result?.submission?.operation_id, operationId);
-    assert.match(payload.result?.next?.wait ?? "", /wait paid-legacy-created-id/);
-    assert.deepEqual(payload.result?.downloads?.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]]);
-    assert.ok(payload.error.hint && /paid-legacy-created-id/.test(payload.error.hint), "the hint (also printed on stderr) names the task");
-    assert.match(created.stderr, /paid-legacy-created-id/);
+    assert.match(payload.result?.next?.wait ?? "", /wait paid-created-id/);
+    assert.deepEqual(payload.result?.downloads?.files.map((f) => [f.key, f.status]), [["model.glb", "failed"]]);
+    assert.ok(payload.error.hint && /paid-created-id/.test(payload.error.hint), "the hint (also printed on stderr) names the task");
+    assert.match(created.stderr, /paid-created-id/);
     assert.equal(api.requests.filter((q) => q.method === "POST").length, 1);
     assert.equal(api.requests.filter((q) => q.method === "DELETE").length, 0);
 
     // wait -o: same fields.
-    const waited = await runCli(["text-to-3d", "wait", "paid-legacy-created-id", "-o", join(dir, "legacy-wait")], { env, cwd: dir });
+    const waited = await runCli(["text-to-3d", "wait", "paid-created-id", "-o", join(dir, "wait-out")], { env, cwd: dir });
     assert.equal(waited.code, 7, waited.stderr);
-    const wp = parseSingleJson(waited.stdout) as BareErrorEnvelope;
-    assert.equal(wp.result?.task_id, "paid-legacy-created-id");
+    const wp = parseSingleJson(waited.stdout) as ErrorEnvelope;
+    assert.equal(wp.result?.task_id, "paid-created-id");
     assert.equal(wp.error.http_status, 503);
 
     // Sidecar failure after the asset landed.
     assetMode = "ok";
-    const sideDir = join(dir, "legacy-sidecar");
+    const sideDir = join(dir, "sidecar-out");
     plant = () => {
       mkdirSync(sideDir, { recursive: true });
       mkdirSync(join(sideDir, "meta.json"));
     };
-    const side = await runCli(["text-to-3d", "get", "paid-legacy-created-id", "-o", sideDir], { env, cwd: dir });
+    const side = await runCli(["text-to-3d", "get", "paid-created-id", "-o", sideDir], { env, cwd: dir });
     assert.equal(side.code, 11, `${side.stderr}\n${side.stdout}`);
-    const sp = parseSingleJson(side.stdout) as BareErrorEnvelope;
-    assert.equal(sp.result?.task_id, "paid-legacy-created-id");
+    const sp = parseSingleJson(side.stdout) as ErrorEnvelope;
+    assert.equal(sp.result?.task_id, "paid-created-id");
     assert.equal(sp.result?.downloads?.state, "partial");
     assert.equal(sp.result?.downloads?.failed_step, "sidecar");
-    assert.deepEqual(sp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model_glb", "written"]]);
+    assert.deepEqual(sp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model.glb", "written"]]);
     assert.ok(existsSync(join(sideDir, "model.glb")));
 
     // SIGINT during the transfer.
     assetMode = "slow";
-    const target = join(dir, "legacy-int.glb");
-    const interrupted = await runCli(["text-to-3d", "get", "paid-legacy-created-id", "-o", target], { env, cwd: dir, onSpawn: (c) => (child = c) });
+    const target = join(dir, "interrupted.glb");
+    const interrupted = await runCli(["text-to-3d", "get", "paid-created-id", "-o", target], { env, cwd: dir, onSpawn: (c) => (child = c) });
     assert.equal(interrupted.code, 130, `${interrupted.stderr}\n${interrupted.stdout}`);
-    const ip = parseSingleJson(interrupted.stdout) as BareErrorEnvelope;
+    const ip = parseSingleJson(interrupted.stdout) as ErrorEnvelope;
     assert.equal(ip.error.code, "interrupted");
-    assert.equal(ip.result?.task_id, "paid-legacy-created-id");
+    assert.equal(ip.result?.task_id, "paid-created-id");
     assert.ok(!existsSync(target));
 
   } finally {

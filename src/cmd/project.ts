@@ -98,21 +98,20 @@ const recordCommand = new Command("record")
       const warnings: Warning[] = [];
       const missing = (opts.file ?? []).filter((f) => !existsSync(join(projectDir, f)));
       if (missing.length) warnings.push(warning("recorded_file_missing", `recorded file(s) not present in the project yet: ${missing.join(", ")}`));
-      if (res.migrated_from_legacy) warnings.push(warning("metadata_migrated", "legacy metadata.json migrated to schema_version 2 (backup kept beside it)"));
       if (!res.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${res.index.error}; run \`meshy project rebuild-index\``));
-      await emitResult(opened, { project_dir: res.project_dir, action: res.action, entry: res.entry, task_count: res.metadata.tasks.length, index: res.index, migrated_from_legacy: res.migrated_from_legacy }, { warnings });
+      await emitResult(opened, { project_dir: res.project_dir, action: res.action, entry: res.entry, task_count: res.metadata.tasks.length, index: res.index }, { warnings });
     },
   );
 
 const showCommand = new Command("show")
-  .description("Show a project's metadata.json (legacy files are shown in the v2 shape without being rewritten)")
+  .description("Show a project's metadata.json and whether each recorded file is present")
   .requiredOption("--project <dir>", "project directory")
   .action(async (opts: { project: string }, thisCmd: Command) => {
     const opened = openCommand(thisCmd, "project.show");
     buildLocalRuntime(opened.flags);
     const read = readProject(opts.project);
     const files = read.metadata.tasks.flatMap((t) => t.files.map((f) => ({ task_id: t.task_id, stage: t.stage, file: f, present: existsSync(join(read.path, f)) })));
-    await emitResult(opened, { project_dir: read.path, legacy_format: read.legacy, metadata: read.metadata, files });
+    await emitResult(opened, { project_dir: read.path, metadata: read.metadata, files });
   });
 
 const listCommand = new Command("list")

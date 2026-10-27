@@ -8,8 +8,8 @@
  * this file.
  *
  * Views are pure (command, value, painter) → text. They read the envelope's
- * `result` (or a bare payload in tests); tasks are normalised through
- * toTaskView. A command without a view — or a payload its view does not
+ * `result` (or that `result` alone); tasks arrive as TaskViews. A command
+ * without a view — or a payload its view does not
  * recognise — gets the generic fallback: the `result` only, epoch-ms times as
  * local time, URLs shortened.
  */
@@ -19,7 +19,7 @@ import { plain, type Painter, type Style } from "./color.js";
 import { renderPretty } from "./output.js";
 import { safeSegment } from "./paths.js";
 import { SCHEMA_VERSION } from "./result.js";
-import { toTaskView, type TaskView } from "./task-view.js";
+import type { TaskView } from "./task-view.js";
 
 type Obj = Record<string, unknown>;
 
@@ -113,7 +113,7 @@ function submittedView(body: Obj, paint: Painter, prefix: string): string | null
 export interface TaskCardOptions {
   /** Wins over the server's timestamps (make: the whole chain, wall clock). */
   seconds?: number | null;
-  /** Used only when the server's timestamps cannot say (legacy `wait`: the time spent waiting). */
+  /** Used only when the server's timestamps cannot say (the time spent waiting). */
   fallbackSeconds?: number | null;
   saved?: string[];
   /** Replaces the Credits row (make: the chain's estimate). */
@@ -200,12 +200,11 @@ function downloadTip(resource: string, taskId: string, dir: string, where: strin
 }
 
 function taskListView(body: unknown, paint: Painter): string | null {
-  const items = Array.isArray(body) ? body : isObj(body) && Array.isArray(body["items"]) ? (body["items"] as unknown[]) : null;
-  if (!items) return null;
-  const tasks = items.map((i) => (isObj(i) ? taskFrom({ task: i }) ?? taskFrom(i) : null));
+  if (!isObj(body) || !Array.isArray(body["items"])) return null;
+  const tasks = (body["items"] as unknown[]).map((i) => taskFrom({ task: i }));
   if (tasks.some((t) => t === null)) return null; // not a task list (showcases, projects, …)
-  // Only a task list has a legacy array body or a v1 `page`; an empty showcase list is not "No tasks".
-  if (tasks.length === 0) return Array.isArray(body) || (isObj(body) && isObj(body["page"])) ? paint("No tasks.", "dim") : null;
+  // Only a task list has a `page`; an empty showcase list is not "No tasks".
+  if (tasks.length === 0) return isObj(body["page"]) ? paint("No tasks.", "dim") : null;
   const rows = (tasks as TaskView[]).map((t) => [
     t.task_id,
     t.status ?? "-",
@@ -236,8 +235,8 @@ function makeView(body: unknown, paint: Painter, facts: ViewFacts): string | nul
 
   const stopped = body["stopped_after"];
   if (stopped !== undefined) {
-    const id = str(body["task_id"]) ?? (isObj(stopped) ? str(stopped["task_id"]) : null);
-    const resume = str(body["resume"]) ?? str(body["hint"]);
+    const id = isObj(stopped) ? str(stopped["task_id"]) : null;
+    const resume = str(body["resume"]);
     return [`${paint("✓", "green")} Stopped after step 1  ${id ?? ""}`, ...(resume ? [paint(`resume: ${resume}`, "dim")] : [])].join("\n");
   }
 
@@ -245,10 +244,9 @@ function makeView(body: unknown, paint: Painter, facts: ViewFacts): string | nul
   if (!task) {
     // --async: step 1 submitted, the rest is the caller's.
     const submitted = body["submitted"];
-    const id = str(body["task_id"]) ?? (isObj(submitted) ? str(submitted["task_id"]) : null);
+    const id = isObj(submitted) ? str(submitted["task_id"]) : null;
     if (!id) return null;
-    const resource = isObj(submitted) ? str(submitted["resource"]) : null;
-    const next = str(body["hint"]) ?? `meshy ${resource ?? "text-to-3d"} wait ${id}`;
+    const next = (isObj(body["next"]) ? str(body["next"]["wait"]) : null) ?? `meshy ${str((submitted as Obj)["resource"]) ?? "text-to-3d"} wait ${id}`;
     const later = Array.isArray(body["pending_steps"])
       ? (body["pending_steps"] as unknown[]).map((s) => (isObj(s) ? str(s["command"]) : null)).filter((c): c is string => Boolean(c))
       : [];
@@ -338,7 +336,7 @@ function downloadView(body: unknown, paint: Painter): string | null {
   const out = [`${paint("✓", "green")} Saved ${plural(written.length, "file")}`];
   for (const f of files) {
     const failed = f["status"] === "failed";
-    const mark = failed ? paint("✗", "red") : f["status"] === "skipped" ? paint("-", "dim") : " ";
+    const mark = failed ? paint("✗", "red") : " ";
     out.push(`${mark} ${displayPath(String(f["path"] ?? f["key"] ?? ""))}${failed && f["error"] ? `  ${paint(String(f["error"]), "red")}` : ""}`);
   }
   if (str(downloads["metadata_path"])) out.push(paint(`metadata: ${displayPath(downloads["metadata_path"] as string)}`, "dim"));
@@ -491,11 +489,10 @@ function resourcesView(body: unknown, paint: Painter): string | null {
 
 /**
  * A recovery command as a person should run it. Hints are written for agents
- * (`--format json`; older ones still carry `--output-schema v1`, which since
- * D-065 means JSON) — copied at a terminal they would answer in braces.
+ * (`--format json`) — copied at a terminal they would answer in braces.
  */
 export function forHumans(text: string): string {
-  return text.replace(/\s+--output-schema[ =]v1\b/g, "").replace(/\s+--format[ =](?:json|ndjson)\b/g, "");
+  return text.replace(/\s+--format[ =](?:json|ndjson)\b/g, "");
 }
 
 /**
@@ -595,12 +592,10 @@ function isEnvelope(v: unknown): v is Obj {
   return isObj(v) && v["schema_version"] === SCHEMA_VERSION && "result" in v;
 }
 
-/** A result's `task` (a TaskView), or a bare task-shaped body normalised into one. */
+/** A result's `task` (a TaskView), or null. */
 function taskFrom(body: Obj): TaskView | null {
   const t = body["task"];
-  if (isObj(t) && typeof t["task_id"] === "string") return t as unknown as TaskView;
-  if (typeof body["id"] === "string" && typeof body["status"] === "string") return toTaskView(body);
-  return null;
+  return isObj(t) && typeof t["task_id"] === "string" ? (t as unknown as TaskView) : null;
 }
 
 function savedFiles(body: Obj): string[] {
@@ -610,7 +605,6 @@ function savedFiles(body: Obj): string[] {
 }
 
 function elapsedOf(body: Obj): number | null {
-  if (typeof body["elapsed_seconds"] === "number") return body["elapsed_seconds"];
   for (const k of ["wait", "stream"]) {
     const info = body[k];
     if (isObj(info) && typeof info["elapsed_seconds"] === "number") return info["elapsed_seconds"];

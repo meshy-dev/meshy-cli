@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { TaskSchema } from "../src/client/types.js";
 import { jsonReply, parseSingleJson, runCli, startMockApi } from "./helpers/cli.js";
 
-const FIXTURE = join(import.meta.dirname, "fixtures", "skill-parity", "creative-lab-lamp-prototype.in-progress.json");
+const FIXTURE = join(import.meta.dirname, "fixtures", "creative-lab-lamp-prototype.in-progress.json");
 const inProgress = JSON.parse(readFileSync(FIXTURE, "utf8")) as Record<string, unknown>;
 
 test("L01 a Creative Lab task body with finished_at: null (captured live while IN_PROGRESS) parses; null timestamps and counts read as 0, the v2 zero form is unchanged", () => {
@@ -47,7 +47,7 @@ test("L01 creative-lab lamp prototype get/wait on a task that is still IN_PROGRE
   });
   try {
     const env = api.env({ MESHY_POLL_INTERVAL_MS: "20" });
-    const got = await runCli(["creative-lab", "lamp", "prototype", "get", "cl-live", "--output-schema", "v1"], { env });
+    const got = await runCli(["creative-lab", "lamp", "prototype", "get", "cl-live"], { env });
     assert.equal(got.code, 0, `${got.stderr}\n${got.stdout}`);
     const g = parseSingleJson(got.stdout) as { ok: boolean; result: { task: { status: string; progress: number; finished_at: number } } };
     assert.equal(g.ok, true);
@@ -55,7 +55,7 @@ test("L01 creative-lab lamp prototype get/wait on a task that is still IN_PROGRE
     assert.equal(g.result.task.progress, 5);
     assert.equal(g.result.task.finished_at, null, "the v1 view shows a timestamp that has not happened as null — for the Creative Lab null and the v2 zero alike");
 
-    const waited = await runCli(["creative-lab", "lamp", "prototype", "wait", "cl-live", "--output-schema", "v1"], { env });
+    const waited = await runCli(["creative-lab", "lamp", "prototype", "wait", "cl-live"], { env });
     assert.equal(waited.code, 0, `${waited.stderr}\n${waited.stdout}`);
     const w = parseSingleJson(waited.stdout) as { ok: boolean; result: { task: { status: string; finished_at: number }; wait: { polls: number; timed_out: boolean } } };
     assert.equal(w.ok, true);
@@ -74,10 +74,10 @@ test("L01 creative-lab lamp prototype get/wait on a task that is still IN_PROGRE
 });
 
 // ---------------------------------------------------------------------------
-// L02 — the legacy `-o` layout names Creative Lab parts and bundles like `meshy download`
+// L02 — `-o` names Creative Lab parts and bundles by the asset, end to end
 // ---------------------------------------------------------------------------
 
-test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.lamp_stl), and a keychain OBJ bundle saves as model.obj.zip; slot keys and digests unchanged", async () => {
+test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.lamp_stl), and a keychain OBJ bundle saves as model.obj.zip; stable keys and digests", async () => {
   const { mkdirSync, statSync } = await import("node:fs");
   const { tmpDir } = await import("./helpers/cli.js");
   const stl = Buffer.concat([Buffer.alloc(80, 0), Buffer.from([1, 0, 0, 0]), Buffer.alloc(50, 7)]);
@@ -104,22 +104,22 @@ test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.l
     const env = api.env();
     const lampOut = join(dir, "lamp");
     mkdirSync(lampOut);
-    const lamp = await runCli(["creative-lab", "lamp", "build", "get", "lamp-1", "--output-schema", "v1", "-o", lampOut], { env, cwd: dir });
+    const lamp = await runCli(["creative-lab", "lamp", "build", "get", "lamp-1", "-o", lampOut], { env, cwd: dir });
     assert.equal(lamp.code, 0, `${lamp.stderr}\n${lamp.stdout}`);
     const l = parseSingleJson(lamp.stdout) as { result: { downloads: { files: Array<{ key: string; path: string; bytes: number; status: string }> } } };
     assert.deepEqual(l.result.downloads.files.map((f) => [f.key, f.path.split("/").at(-1), f.status]), [
-      ["model_lamp_stl", "lamp.stl", "written"],
-      ["model_base_stl", "base.stl", "written"],
+      ["model.lamp_stl", "lamp.stl", "written"],
+      ["model.base_stl", "base.stl", "written"],
     ]);
     for (const f of l.result.downloads.files) assert.equal(statSync(f.path).size, stl.length);
     assert.deepEqual(Object.keys((JSON.parse(readFileSync(join(lampOut, "meta.json"), "utf8")) as { task: { model_urls: Record<string, string> } }).task.model_urls).sort(), ["base_stl", "lamp_stl"]);
 
     const keyOut = join(dir, "keychain");
     mkdirSync(keyOut);
-    const key = await runCli(["creative-lab", "keychain", "build", "get", "key-1", "--output-schema", "v1", "-o", keyOut], { env, cwd: dir });
+    const key = await runCli(["creative-lab", "keychain", "build", "get", "key-1", "-o", keyOut], { env, cwd: dir });
     assert.equal(key.code, 0, `${key.stderr}\n${key.stdout}`);
     const k = parseSingleJson(key.stdout) as { result: { downloads: { files: Array<{ key: string; path: string; status: string }>; material_links: unknown } } };
-    assert.deepEqual(k.result.downloads.files.map((f) => [f.key, f.path.split("/").at(-1), f.status]), [["model_obj", "model.obj.zip", "written"]]);
+    assert.deepEqual(k.result.downloads.files.map((f) => [f.key, f.path.split("/").at(-1), f.status]), [["model.obj", "model.obj.zip", "written"]]);
     assert.ok(readFileSync(k.result.downloads.files[0]!.path).equals(zip), "the bundle bytes are saved untouched");
     assert.equal(k.result.downloads.material_links, null, "a ZIP bundle is not relinked");
   } finally {

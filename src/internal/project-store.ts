@@ -1,5 +1,5 @@
 /**
- * Project store — the `meshy_output/` layout the Skills established.
+ * Project store — the `meshy_output/` project layout.
  *
  *   <root>/history.json                    index of projects (rebuildable)
  *   <root>/<folder>/metadata.json          the facts about one project
@@ -13,13 +13,11 @@
  * caller gets `index: { updated: false }` and `rebuild-index` repairs it.
  * Locks are never nested in the other order.
  *
- * Legacy files written by the Python helper (no schema_version, tasks with
- * only task_id/task_type/stage/files/created_at) are read as v1 and migrated
- * on the first write with a `.bak-<timestamp>` copy; unknown fields survive.
- * The CLI's own download `meta.json` is a third format and never written here.
+ * Only schema_version 2 is read; unknown fields survive a rewrite. The
+ * download sidecar `meta.json` is a different file and never written here.
  */
 
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, copyFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, resolve as resolvePath, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { writeJsonFile } from "./atomic-file.js";
@@ -130,7 +128,7 @@ export function historyPath(root: string): string {
   return join(root, "history.json");
 }
 
-/** Folder name: `YYYYMMDD_HHmmss_<slug>_<id-prefix|random>` (legacy shape, collision-safe). */
+/** Folder name: `YYYYMMDD_HHmmss_<slug>_<id-prefix|random>` (collision-safe). */
 export function projectFolderName(name: string, taskId: string | null, now: Date, random: () => string = () => randomBytes(2).toString("hex")): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
@@ -164,13 +162,18 @@ function readJsonFile(path: string): unknown {
   }
 }
 
-/** Normalise any metadata.json (legacy v1 or v2) into the v2 view without touching disk. */
-export function normalizeMetadata(raw: unknown, folder: string): { metadata: ProjectMetadata; legacy: boolean } {
+/** Parse a metadata.json into the typed view without touching disk; anything but schema_version 2 is refused. */
+export function normalizeMetadata(raw: unknown, folder: string): ProjectMetadata {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new CliError({ code: "local_io", message: `metadata.json in ${folder} is not a JSON object` });
   }
   const o = raw as Record<string, unknown>;
-  const legacy = typeof o["schema_version"] !== "number";
+  if (o["schema_version"] !== METADATA_SCHEMA_VERSION) {
+    throw new CliError({
+      code: "local_io",
+      message: `metadata.json in ${folder} is not schema_version ${METADATA_SCHEMA_VERSION} (got ${JSON.stringify(o["schema_version"] ?? null)}); start a new project with \`meshy project init\``,
+    });
+  }
   const tasksRaw = Array.isArray(o["tasks"]) ? (o["tasks"] as unknown[]) : [];
   const tasks: ProjectTaskEntry[] = tasksRaw
     .filter((t): t is Record<string, unknown> => Boolean(t) && typeof t === "object" && !Array.isArray(t))
@@ -194,7 +197,7 @@ export function normalizeMetadata(raw: unknown, folder: string): { metadata: Pro
     });
   const metadata: ProjectMetadata = {
     ...o,
-    schema_version: legacy ? METADATA_SCHEMA_VERSION : (o["schema_version"] as number),
+    schema_version: METADATA_SCHEMA_VERSION,
     project_name: typeof o["project_name"] === "string" ? (o["project_name"] as string) : folder,
     folder: typeof o["folder"] === "string" ? (o["folder"] as string) : folder,
     root_task_id: typeof o["root_task_id"] === "string" ? (o["root_task_id"] as string) : null,
@@ -202,13 +205,12 @@ export function normalizeMetadata(raw: unknown, folder: string): { metadata: Pro
     updated_at: typeof o["updated_at"] === "string" ? (o["updated_at"] as string) : "",
     tasks,
   };
-  return { metadata, legacy };
+  return metadata;
 }
 
 export interface ProjectRead {
   path: string;
   metadata: ProjectMetadata;
-  legacy: boolean;
   exists: boolean;
 }
 
@@ -218,17 +220,11 @@ export function readProject(projectDir: string): ProjectRead {
   if (raw === undefined) {
     throw new CliError({ code: "not_found", message: `${dir} has no metadata.json; run \`meshy project init\` or pass an existing project directory` });
   }
-  const { metadata, legacy } = normalizeMetadata(raw, basename(dir));
-  return { path: dir, metadata, legacy, exists: true };
+  return { path: dir, metadata: normalizeMetadata(raw, basename(dir)), exists: true };
 }
 
-function writeMetadata(dir: string, metadata: ProjectMetadata, wasLegacy: boolean, now: Date): void {
-  const target = metadataPath(dir);
-  if (wasLegacy && existsSync(target)) {
-    const backup = `${target}.bak-${ISO(now).replace(/[:.]/g, "-")}`;
-    copyFileSync(target, backup);
-  }
-  writeJsonFile(target, metadata, { overwrite: true, mode: 0o644 });
+function writeMetadata(dir: string, metadata: ProjectMetadata): void {
+  writeJsonFile(metadataPath(dir), metadata, { overwrite: true, mode: 0o644 });
 }
 
 export interface InitResult {
@@ -261,7 +257,7 @@ export function initProject(root: string, opts: { name?: string; taskId?: string
     updated_at: ISO(now),
     tasks: [],
   };
-  withFileLock(projectLock(dir), () => writeMetadata(dir, metadata, false, now), { timeoutMs: opts.lockTimeoutMs });
+  withFileLock(projectLock(dir), () => writeMetadata(dir, metadata), { timeoutMs: opts.lockTimeoutMs });
   const index = refreshIndexEntry(rootAbs, dir, metadata, opts);
   return { root: rootAbs, project_dir: dir, folder, metadata, index };
 }
@@ -271,7 +267,6 @@ export interface RecordResult {
   metadata: ProjectMetadata;
   entry: ProjectTaskEntry;
   action: "added" | "merged";
-  migrated_from_legacy: boolean;
   index: { updated: boolean; error: string | null };
 }
 
@@ -295,7 +290,7 @@ export function recordTask(projectDir: string, input: RecordInput, opts: StoreOp
       if (raw === undefined) {
         throw new CliError({ code: "not_found", message: `${dir} has no metadata.json; run \`meshy project init\` first` });
       }
-      const { metadata, legacy } = normalizeMetadata(raw, basename(dir));
+      const metadata = normalizeMetadata(raw, basename(dir));
       const existing = metadata.tasks.find((t) => t.task_id === input.taskId && t.stage === input.stage);
       let entry: ProjectTaskEntry;
       let action: "added" | "merged";
@@ -331,15 +326,15 @@ export function recordTask(projectDir: string, input: RecordInput, opts: StoreOp
       }
       if (!metadata.root_task_id) metadata.root_task_id = input.taskId;
       metadata.updated_at = ISO(now);
-      writeMetadata(dir, metadata, legacy, now);
-      return { metadata, entry, action, legacy };
+      writeMetadata(dir, metadata);
+      return { metadata, entry, action };
     },
     { timeoutMs: opts.lockTimeoutMs },
   );
 
   const root = opts.root ? resolvePath(opts.root) : resolvePath(dir, "..");
   const index = opts.skipIndex ? { updated: false, error: opts.skipIndex } : refreshIndexEntry(root, dir, result.metadata, opts);
-  return { project_dir: dir, metadata: result.metadata, entry: result.entry, action: result.action, migrated_from_legacy: result.legacy, index };
+  return { project_dir: dir, metadata: result.metadata, entry: result.entry, action: result.action, index };
 }
 
 function historyEntryFor(metadata: ProjectMetadata, folder: string): HistoryEntry {
@@ -460,8 +455,7 @@ export function rebuildIndex(root: string, opts: StoreOptions = {}): RebuildResu
     }
     try {
       const raw = readJsonFile(metadataPath(dir));
-      const { metadata } = normalizeMetadata(raw, f);
-      entries.push(historyEntryFor(metadata, f));
+      entries.push(historyEntryFor(normalizeMetadata(raw, f), f));
     } catch (err) {
       skipped.push({ folder: f, reason: err instanceof Error ? err.message : String(err) });
     }

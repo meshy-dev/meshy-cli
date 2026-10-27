@@ -11,13 +11,11 @@
  * any MIME-driven extension change — is checked against the authorised root.
  *
  * Two entry points share the core:
- *   downloadArtifacts — `-o`: the primary artifacts (or every one with
- *                       --all-assets) under the 0.2.0 role-based names, plus
- *                       the meta.json sidecar. An explicit `root` (the
- *                       --workspace) confines every path.
- *   downloadAssets    — the selective downloader behind `meshy download` and
- *                       the v1 manifest.
- * Both relink OBJ → MTL → texture references after the set has landed (see
+ *   downloadAssets     — writes a list of enumerated assets (artifacts.ts):
+ *                        `meshy download` selects them explicitly;
+ *   downloadTaskAssets — `-o`: the task's default selection (or every asset
+ *                        with --all-assets) plus the meta.json sidecar.
+ * OBJ → MTL → texture references are relinked after the set has landed (see
  * material-links.ts), so a saved OBJ loads with the files beside it.
  */
 
@@ -28,13 +26,13 @@ import { basename, dirname, extname, join, relative, resolve as resolvePath } fr
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
+import type { TaskResourceDescriptor } from "../client/resource-registry.js";
 import type { Task } from "../client/types.js";
 import { publishTempFile, tempPathFor, writeJsonFile } from "./atomic-file.js";
 import { CliError, UsageError } from "./errors.js";
-import { logger } from "./logger.js";
-import { freezeRoot, isInside, looksLikeFile, realpathLenient, resolveWithinRoot, safeExtension, safeSegment, type AuthorisedRoot } from "./paths.js";
+import { freezeRoot, isInside, looksLikeFile, resolveWithinRoot, safeExtension, type AuthorisedRoot } from "./paths.js";
 import { USER_AGENT } from "./user-agent.js";
-import { modelAsset, productFromTaskType, type Asset } from "./artifacts.js";
+import { enumerateAssets, selectDefaultAssets, type Asset, type DefaultSelection, type SkipReason } from "./artifacts.js";
 import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";
 
 /** Extensions sharp can transcode between. */
@@ -303,7 +301,7 @@ export interface DownloadedFile {
   format: string | null;
   container_format: string | null;
   extracted: boolean | null;
-  status: "written" | "failed" | "skipped";
+  status: "written" | "failed";
   error: string | null;
   publish_method: string | null;
   /** True when the file's material references were rewritten to the saved names (OBJ/MTL only). */
@@ -318,7 +316,7 @@ export interface DownloadAssetsOptions extends FetchOptions {
   overwrite?: boolean;
   /** Authorised root every final path must stay inside — frozen before the first transfer (a string is frozen here). */
   root: string | AuthorisedRoot;
-  /** Validate magic/content-type for models (the legacy wrapper turns this off). */
+  /** Validate magic/content-type for models (default on). */
   validateContent?: boolean;
   /** Bounded URL refresh hook (API source): returns fresh URLs by key or null. */
   refreshUrls?: () => Promise<Map<string, string> | null>;
@@ -595,523 +593,132 @@ async function convertImage(buffer: Buffer, targetExt: string, targetPath: strin
 }
 
 // ---------------------------------------------------------------------------
-// `-o` downloader (0.2.0 file layout preserved)
+// `-o`: the default selection of a task, written by downloadAssets
 // ---------------------------------------------------------------------------
 
-export interface Artifact {
-  /** Stable slot name ("model_glb", "image_0", "texture_0_base_color", ...) */
-  key: string;
-  /** Source URL (presigned). */
-  url: string;
-  /** Expected extension inferred from the slot name (no dot, may be empty). */
-  preferredExt: string;
-  /** File name to save under when the slot name is not `<stem>.<ext>` (Creative Lab parts, bundles). */
-  filename?: string;
-}
-
-export function enumerateArtifacts(task: Task): Artifact[] {
-  const out: Artifact[] = [];
-
-  if (task.model_urls) {
-    // `model_urls` keys are usually formats (glb, obj) but Creative Lab builds
-    // use part names (`lamp_stl`, `base_stl`, `bundle_zip`) and deliver the
-    // keychain / fridge-magnet OBJ as a ZIP bundle. The selective downloader
-    // already knows this (artifacts.ts); the legacy layout names the files the
-    // same way while keeping its slot keys (`model_lamp_stl`).
-    const product = productFromTaskType(task.type)?.product ?? null;
-    for (const [ext, url] of Object.entries(task.model_urls)) {
-      if (typeof url === "string" && url) {
-        const asset = modelAsset(ext, url, product);
-        out.push({ key: `model_${ext}`, url, preferredExt: asset.format ?? ext.toLowerCase(), filename: asset.filename });
-      }
-    }
-  }
-
-  if (task.thumbnail_url) {
-    out.push({ key: "thumbnail", url: task.thumbnail_url, preferredExt: "png" });
-  }
-
-  if (Array.isArray(task.texture_urls)) {
-    task.texture_urls.forEach((set, i) => {
-      for (const [name, url] of Object.entries(set)) {
-        if (typeof url === "string" && url) {
-          out.push({ key: `texture_${i}_${name}`, url, preferredExt: "png" });
-        }
-      }
-    });
-  }
-
-  if (Array.isArray(task.image_urls)) {
-    task.image_urls.forEach((url, i) => {
-      if (typeof url === "string" && url) {
-        out.push({ key: `image_${i}`, url, preferredExt: "" });
-      }
-    });
-  }
-
-  // Rigging / animate-style endpoints nest outputs under `result`; the
-  // bundled walking/running clips live one level deeper.
-  if (task.result && typeof task.result === "object") {
-    const motionFormat = task.result["motion_format"];
-    for (const [key, value] of Object.entries(task.result)) {
-      if (key === "basic_animations" && value && typeof value === "object" && !Array.isArray(value)) {
-        for (const [sub, url] of Object.entries(value as Record<string, unknown>)) {
-          if (typeof url !== "string" || !/^https?:/.test(url)) continue;
-          const extMatch = sub.match(/_(fbx|glb|usdz|obj|png|jpg|jpeg|webp)_url$/i);
-          out.push({ key: `basic_animations_${sub}`, url, preferredExt: extMatch ? extMatch[1]!.toLowerCase() : "" });
-        }
-        continue;
-      }
-      if (typeof value !== "string" || !/^https?:/.test(value)) continue;
-      const extMatch = key.match(/_(fbx|glb|usdz|obj|png|jpg|jpeg|webp)_url$/i);
-      let preferredExt = extMatch ? extMatch[1]!.toLowerCase() : "";
-      if (key === "motion_url" && (motionFormat === "fbx" || motionFormat === "bvh")) {
-        preferredExt = motionFormat;
-      }
-      out.push({ key, url: value, preferredExt });
-    }
-  }
-
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// `-o` selection: the files a person asked for, not every URL of the task
-// ---------------------------------------------------------------------------
-
-/** Why `-o` left an artifact on the server. meta.json keeps its URL for `meshy download`. */
-export type SkipReason = "embedded_textures" | "bundled_animation" | "alternate_format" | "pre_remesh_variant" | "not_selected";
-
-/** Manifest entry (`result.downloads.skipped[]`, meta.json `skipped`). */
-export interface SkippedArtifact {
+/** Manifest entry for what `-o` left on the server (`result.downloads.skipped[]`, meta.json `skipped`). */
+export interface SkippedAsset {
   key: string;
   reason: SkipReason;
 }
 
-export interface ArtifactSelection {
-  selected: Artifact[];
-  skipped: Array<{ artifact: Artifact; reason: SkipReason }>;
-}
-
-/**
- * Model formats whose file already carries the textures (GLB, USDZ, the
- * Creative Lab ZIP bundles) or has none to carry (STL, 3MF, VOX). OBJ, glTF,
- * FBX and blend are not assumed self-contained: their maps stay.
- */
-const SELF_CONTAINED_MODEL_FORMATS = new Set(["glb", "usdz", "stl", "3mf", "vox", "zip"]);
-
-/**
- * Results the API delivers in two formats under one stem:
- * `rigged_character_{glb,fbx}_url` (rigging), `animation_{glb,fbx}_url` (animate).
- */
-const RESULT_PAIR = /^(rigged_character|animation)_(glb|fbx)_url$/;
-
-/**
- * The default `-o` set: every model format the task produced, the thumbnail,
- * images, motion and post-process outputs, the rig / animation result in GLB.
- * Left on the server: the rig's bundled walking/running clips, the FBX copy of
- * a result that also came as GLB, texture maps a delivered model already
- * embeds, and the pre-remesh GLB. A task with nothing primary keeps everything.
- *
- * Classification reads the legacy slot keys built by enumerateArtifacts: they
- * are the stable `downloads.files[].key` contract of `-o`.
- */
-export function selectPrimaryArtifacts(artifacts: readonly Artifact[]): ArtifactSelection {
-  const models = artifacts.filter((a) => a.key.startsWith("model_") && a.key !== "model_pre_remeshed_glb");
-  const texturesEmbedded = models.length > 0 && models.every((m) => SELF_CONTAINED_MODEL_FORMATS.has(m.preferredExt));
-  const glbStems = new Set<string>();
-  for (const a of artifacts) {
-    const m = RESULT_PAIR.exec(a.key);
-    if (m && m[2] === "glb") glbStems.add(m[1]!);
-  }
-  const reasonFor = (a: Artifact): SkipReason | null => {
-    if (a.key.startsWith("basic_animations_")) return "bundled_animation";
-    if (a.key.startsWith("texture_")) return texturesEmbedded ? "embedded_textures" : null;
-    if (a.key === "model_pre_remeshed_glb") return models.length > 0 ? "pre_remesh_variant" : null;
-    const pair = RESULT_PAIR.exec(a.key);
-    return pair && pair[2] !== "glb" && glbStems.has(pair[1]!) ? "alternate_format" : null;
-  };
-  const selection: ArtifactSelection = { selected: [], skipped: [] };
-  for (const artifact of artifacts) {
-    const reason = reasonFor(artifact);
-    if (reason) selection.skipped.push({ artifact, reason });
-    else selection.selected.push(artifact);
-  }
-  return selection.selected.length > 0 ? selection : { selected: [...artifacts], skipped: [] };
-}
-
-/**
- * Single-file `-o <file.ext>`: the artifact whose format matches the
- * extension (`-o car.glb` → the model GLB), first among the selected files,
- * then among the alternate formats (`-o hero.fbx` on rigging → the FBX rigged
- * character). A sole selected file is taken as before (an image is converted
- * to the requested format). Null when nothing or several match.
- */
-function pickSingleFile(selection: ArtifactSelection, outputPath: string): Artifact | null {
-  const ext = extname(outputPath).slice(1).toLowerCase();
-  const matches = (a: Artifact): boolean => a.preferredExt === ext || extEquivalent(a.preferredExt, ext);
-  const direct = selection.selected.filter(matches);
-  if (direct.length > 0) return direct.length === 1 ? direct[0]! : null;
-  const alternates = selection.skipped.filter((s) => s.reason === "alternate_format" && matches(s.artifact));
-  if (alternates.length === 1) return alternates[0]!.artifact;
-  return selection.selected.length === 1 ? selection.selected[0]! : null;
-}
-
-export interface LegacyDownloadedFile {
-  /** Legacy artifact slot ("model_glb", "thumbnail", "texture_0_base_color", …). */
-  key: string;
-  /** Final absolute path (after any content-type driven rename) — or the planned path for a failed entry. */
-  path: string;
-  bytes: number;
-  sha256: string;
-  content_type: string | null;
-  status: "written" | "failed";
-  error: string | null;
-  /** True when the file's material references were rewritten to the saved names. */
-  relinked: boolean;
-}
-
-export interface DownloadResult {
-  savedFiles: string[];
-  metadataPath: string;
-  /** OBJ/MTL/texture reference report when the artifacts contained a text OBJ. */
-  materialLinks: MaterialLinkReport | null;
-  /**
-   * Per-file manifest in download order. When the download stops early the
-   * same list (written files + the failed one) travels on the thrown
-   * CliError's `result.downloads`, so nothing already on disk is forgotten.
-   */
-  files: LegacyDownloadedFile[];
-  /** Artifacts left on the server (not in --all-assets mode), each with its reason. */
-  skipped: SkippedArtifact[];
-}
-
-export interface DownloadArtifactsOptions {
-  /** Authorised root (the --workspace, frozen when the flags were read); every directory and file must resolve inside it. Default: the output directory itself. A string is frozen here. */
-  root?: string | AuthorisedRoot;
-  /** Cooperative cancellation (SIGINT): aborts the in-flight transfer and stops every later download, relink and publish. */
+export interface TaskDownloadOptions {
+  /** The --workspace frozen with the flags; every directory and file must resolve inside it. Default: the output directory. */
+  root?: AuthorisedRoot;
+  /** Cooperative cancellation (SIGINT): aborts the in-flight transfer and everything after it. */
   signal?: AbortSignal;
-  /** --all-assets: save every artifact of the task (directory only) instead of the primary set. */
+  /** --all-assets: every asset of the task (directory only) instead of the default selection. */
   allAssets?: boolean;
 }
 
-function interruptedBefore(what: string): CliError {
-  return new CliError({ code: "interrupted", message: `interrupted before ${what}; nothing further was written` });
+export interface TaskDownloadResult {
+  files: DownloadedFile[];
+  skipped: SkippedAsset[];
+  metadataPath: string;
+  materialLinks: MaterialLinkReport | null;
+  warnings: Array<{ code: string; message: string }>;
 }
 
 /**
- * A failure *after* every transfer landed (relink, digest refresh, sidecar).
- * The manifest keeps every committed file with the bytes actually on disk —
- * a relink may already have rewritten some — and names the step that failed;
- * a cooperative interrupt is `interrupted` (130), everything else keeps its class.
+ * Single-file `-o <file.ext>`: the asset whose format matches the extension
+ * (`-o car.glb` → the model GLB), first among the selected assets, then among
+ * the alternate formats (`-o hero.fbx` on rigging → the FBX rigged character).
+ * A sole selected asset of unknown format, or an image the extension can
+ * transcode to, is taken as well. Null when nothing or several match.
  */
-function finalisationFailure(step: "relink" | "digest" | "sidecar", err: unknown, files: LegacyDownloadedFile[], signal: AbortSignal | undefined): CliError {
+function pickSingleFile(selection: DefaultSelection, outputPath: string): Asset | null {
+  const ext = safeExtension(extname(outputPath));
+  const matches = (a: Asset): boolean => a.format !== null && (a.format === ext || extEquivalent(a.format, ext));
+  const direct = selection.selected.filter(matches);
+  if (direct.length > 0) return direct.length === 1 ? direct[0]! : null;
+  const alternates = selection.skipped.filter((s) => s.reason === "alternate_format" && matches(s.asset));
+  if (alternates.length === 1) return alternates[0]!.asset;
+  const sole = selection.selected.length === 1 ? selection.selected[0]! : null;
+  const transcodable = (a: Asset): boolean => a.format === null || (CONVERTIBLE_IMAGE_EXTS.has(a.format) && CONVERTIBLE_IMAGE_EXTS.has(ext));
+  return sole && transcodable(sole) ? sole : null;
+}
+
+/**
+ * `-o`: save a SUCCEEDED task's default selection (or every asset with
+ * `allAssets`) into a directory with a `meta.json` sidecar, or one asset into
+ * a file path with a `<stem>_meta.json` sidecar. Every planned path is checked
+ * before any request: inside the workspace, and not already there.
+ */
+export async function downloadTaskAssets(task: Task, outputPath: string, descriptor: TaskResourceDescriptor, opts: TaskDownloadOptions = {}): Promise<TaskDownloadResult> {
+  const all = enumerateAssets(task as unknown as Record<string, unknown>, descriptor).assets;
+  if (all.length === 0) throw new Error(`task ${task.id} has no downloadable assets`);
+
+  const singleFile = looksLikeFile(outputPath);
+  if (singleFile && opts.allAssets && all.length > 1) {
+    throw new UsageError(`--all-assets saves all ${all.length} files of task ${task.id} and needs a directory — '${outputPath}' looks like a file (e.g. '${stripExt(outputPath)}')`);
+  }
+  let selection: DefaultSelection = opts.allAssets ? { selected: [...all], skipped: [] } : selectDefaultAssets(all);
+  if (singleFile) {
+    const chosen = pickSingleFile(selection, outputPath);
+    if (!chosen) {
+      throw new UsageError(
+        `'${outputPath}' does not name exactly one file of task ${task.id} (it has ${selection.selected.map((a) => a.filename).join(", ")}): ` +
+          `use one of those extensions, or pass a directory path for --output (e.g. '${stripExt(outputPath)}').`,
+      );
+    }
+    const reasons = new Map(selection.skipped.map((s) => [s.asset, s.reason]));
+    selection = { selected: [chosen], skipped: all.filter((a) => a !== chosen).map((asset) => ({ asset, reason: reasons.get(asset) ?? "not_selected" })) };
+  }
+
+  const targetDir = singleFile ? dirname(resolvePath(outputPath)) : resolvePath(outputPath);
+  const metadataPath = singleFile ? `${stripExt(resolvePath(outputPath))}_meta.json` : join(targetDir, "meta.json");
+  const planned = singleFile ? [resolvePath(outputPath)] : selection.selected.map((a) => join(targetDir, a.filename));
+  const existing = [...planned, metadataPath].filter((p) => existsSync(p));
+  if (existing.length > 0) {
+    throw new UsageError(`refusing to overwrite existing file(s):\n  ${existing.join("\n  ")}\n(delete them or choose a different --output path to rerun)`);
+  }
+  if (opts.root) {
+    resolveWithinRoot(targetDir, opts.root, { label: "output directory" });
+    for (const p of [...planned, metadataPath]) resolveWithinRoot(p, opts.root, { label: "planned download path" });
+  }
+  mkdirSync(targetDir, { recursive: true });
+  const root = opts.root ?? freezeRoot(targetDir, { label: "output directory" });
+
+  const result = await downloadAssets(selection.selected, {
+    ...(singleFile ? { targetFile: resolvePath(outputPath) } : { targetDir }),
+    root,
+    ...(opts.signal ? { signal: opts.signal } : {}),
+  });
+  const skipped = selection.skipped.map((s) => ({ key: s.asset.key, reason: s.reason }));
+  try {
+    if (opts.signal?.aborted) throw new CliError({ code: "interrupted", message: "interrupted before the sidecar was written; nothing further was written" });
+    writeMeta(task, descriptor.id, metadataPath, result.files.map((f) => f.path), skipped, root);
+  } catch (err) {
+    throw sidecarFailure(err, result.files, opts.signal);
+  }
+  return { files: result.files, skipped, metadataPath, materialLinks: result.materialLinks, warnings: result.warnings };
+}
+
+/**
+ * The sidecar failed (or was interrupted) after every asset landed: the
+ * manifest keeps each committed file with the bytes on disk; an interrupt is
+ * `interrupted` (130), everything else keeps its class.
+ */
+function sidecarFailure(err: unknown, files: DownloadedFile[], signal: AbortSignal | undefined): CliError {
   redigest(files);
-  const downloads = { state: "partial", files, metadata_path: null, failed_step: step };
-  const written = files.filter((f) => f.status === "written").length;
+  const downloads = { state: "partial", files, metadata_path: null, failed_step: "sidecar" };
   const interrupted = (err instanceof CliError && err.code === "interrupted") || Boolean(signal?.aborted);
-  const message = `${written} file(s) were written but the ${step} step ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`;
+  const message = `${files.length} file(s) were written but the sidecar step ${interrupted ? "was interrupted" : "failed"}: ${err instanceof Error ? err.message : String(err)}`;
   if (err instanceof CliError) {
-    return new CliError({
-      code: interrupted ? "interrupted" : err.code,
-      message,
-      httpStatus: err.httpStatus,
-      retryable: err.retryable,
-      recovery: err.recovery,
-      hint: err.hint,
-      details: err.details,
-      warnings: err.warnings,
-      result: { ...(err.result ?? {}), downloads },
-      cause: err,
-    });
+    return new CliError({ code: interrupted ? "interrupted" : err.code, message, httpStatus: err.httpStatus, retryable: err.retryable, recovery: err.recovery, hint: err.hint, details: err.details, warnings: err.warnings, result: { ...(err.result ?? {}), downloads }, cause: err });
   }
   return new CliError({ code: interrupted ? "interrupted" : "local_io", message, result: { downloads }, cause: err });
 }
 
 /**
- * Wrap a per-artifact failure so the caller sees what already landed. The
- * original classification (network / not_found / validation / interrupted /
- * local_io, HTTP status, recovery) is kept; only the message names the artifact.
- */
-function downloadFailure(artifact: Artifact, err: unknown, files: LegacyDownloadedFile[]): CliError {
-  const message = err instanceof Error ? err.message : String(err);
-  const downloads = { state: files.some((f) => f.status === "written") ? "partial" : "failed", files, metadata_path: null };
-  if (err instanceof CliError) {
-    return new CliError({
-      code: err.code,
-      message: `download failed for ${artifact.key}: ${message}`,
-      exitCode: err.exitCode,
-      httpStatus: err.httpStatus,
-      retryable: err.retryable,
-      recovery: err.recovery,
-      hint: err.hint,
-      details: err.details,
-      warnings: err.warnings,
-      result: { ...(err.result ?? {}), downloads },
-      cause: err,
-    });
-  }
-  return new CliError({ code: "local_io", message: `download failed for ${artifact.key}: ${message}`, result: { downloads }, cause: err });
-}
-
-export async function downloadArtifacts(
-  task: Task,
-  outputPath: string,
-  resource: string,
-  opts: DownloadArtifactsOptions = {},
-): Promise<DownloadResult> {
-  const all = enumerateArtifacts(task);
-  // An explicit workspace is the root for everything written here — the
-  // directory, every planned file and the sidecar — checked before mkdir.
-  const workspaceRoot: AuthorisedRoot | null = opts.root === undefined ? null : typeof opts.root === "string" ? freezeRoot(opts.root, { label: "--workspace" }) : opts.root;
-  if (all.length === 0) {
-    // Report-only tasks (analyze-printability) carry their result in a
-    // structured field instead of downloadable files. Persist the full task
-    // JSON so `-o` still means "give me the result on disk".
-    if (task.printability != null) {
-      return saveReportOnly(task, outputPath, resource, workspaceRoot);
-    }
-    throw new Error(`task ${task.id} has no downloadable artifacts`);
-  }
-
-  const singleFileMode = looksLikeFile(outputPath);
-  if (singleFileMode && opts.allAssets && all.length > 1) {
-    throw new UsageError(`--all-assets saves all ${all.length} files of task ${task.id} and needs a directory — '${outputPath}' looks like a file (e.g. '${stripExt(outputPath)}').`);
-  }
-  let selection: ArtifactSelection = opts.allAssets ? { selected: [...all], skipped: [] } : selectPrimaryArtifacts(all);
-  if (singleFileMode) {
-    const chosen = pickSingleFile(selection, outputPath);
-    if (!chosen) {
-      throw new UsageError(
-        `task ${task.id} produced ${selection.selected.length} files to save (${selection.selected.map(deriveFilename).join(", ")}) and '${outputPath}' does not pick exactly one of them. ` +
-          `Pass a directory path for --output instead (e.g. '${stripExt(outputPath)}').`,
-      );
-    }
-    const reasons = new Map(selection.skipped.map((s) => [s.artifact, s.reason]));
-    selection = {
-      selected: [chosen],
-      skipped: all.filter((a) => a !== chosen).map((artifact) => ({ artifact, reason: reasons.get(artifact) ?? "not_selected" })),
-    };
-  }
-  const artifacts = selection.selected;
-  const skipped: SkippedArtifact[] = selection.skipped.map((s) => ({ key: s.artifact.key, reason: s.reason }));
-
-  // Plan every path we'd write up front so we can bail before any network
-  // work when a destination already exists. This prevents silent overwrite
-  // of prior runs.
-  let targetDir: string;
-  const plan: Array<{ artifact: Artifact; target: string }> = [];
-  if (singleFileMode) {
-    targetDir = dirname(outputPath) || ".";
-    plan.push({ artifact: artifacts[0]!, target: outputPath });
-  } else {
-    targetDir = outputPath;
-    for (const artifact of artifacts) plan.push({ artifact, target: join(targetDir, deriveFilename(artifact)) });
-  }
-  // Per-file meta in single-file mode (`-o a.png` → `a_meta.json`) so two
-  // outputs can share a directory without trampling each other. Directory
-  // mode keeps the plain `meta.json` alongside the artifacts.
-  const metadataPath = singleFileMode
-    ? `${stripExt(outputPath)}_meta.json`
-    : join(targetDir, "meta.json");
-
-  const existing = [...plan.map((p) => p.target), metadataPath].filter((p) => existsSync(p));
-  if (existing.length > 0) {
-    throw new UsageError(
-      `refusing to overwrite existing file(s):\n  ${existing.join("\n  ")}\n` +
-        `(delete them or choose a different --output path to rerun)`,
-    );
-  }
-
-  if (workspaceRoot) {
-    resolveWithinRoot(targetDir, workspaceRoot, { label: "output directory" });
-    for (const p of [...plan.map((x) => x.target), metadataPath]) resolveWithinRoot(p, workspaceRoot, { label: "planned download path" });
-  }
-
-  mkdirSync(targetDir, { recursive: true });
-  const root: AuthorisedRoot = workspaceRoot ?? freezeRoot(targetDir, { label: "output directory" });
-  const files: LegacyDownloadedFile[] = [];
-  const saved: string[] = [];
-  for (const { artifact, target } of plan) {
-    if (opts.signal?.aborted) throw downloadFailure(artifact, interruptedBefore(`${artifact.key} was downloaded`), files);
-    try {
-      const placed = await downloadArtifact(artifact, target, root, opts.signal);
-      saved.push(placed.path);
-      files.push({ key: artifact.key, path: placed.path, bytes: placed.bytes, sha256: placed.sha256, content_type: placed.contentType, status: "written", error: null, relinked: false });
-    } catch (err) {
-      files.push({ key: artifact.key, path: target, bytes: 0, sha256: "", content_type: null, status: "failed", error: err instanceof Error ? err.message : String(err), relinked: false });
-      throw downloadFailure(artifact, err, files);
-    }
-  }
-  // --- Finalisation: relink, refresh digests, publish the sidecar. Every step
-  // runs under the same failure handling as the transfers: whatever fails or is
-  // interrupted, the manifest still lists every committed file with the bytes
-  // actually on disk, and the sidecar is published like an asset (root re-proven
-  // at publication, symlink refused, exclusive — never truncating a file that
-  // appeared since the preflight).
-  const linkables = plan.map((p, i) => ({ key: p.artifact.key, path: resolvePath(saved[i]!), sourceName: basenameOfUrl(p.artifact.url) }));
-  let step: "relink" | "digest" | "sidecar" = "relink";
-  let materialLinks: MaterialLinkReport | null = null;
-  try {
-    if (opts.signal?.aborted) throw interruptedBefore("the material references were relinked");
-    materialLinks = await relinkMaterials(linkables, { signal: opts.signal });
-    step = "digest";
-    if (materialLinks) {
-      for (const path of materialLinks.rewritten) {
-        const entry = files.find((f) => resolvePath(f.path) === path);
-        if (!entry) continue;
-        const digest = fileDigest(path);
-        entry.bytes = digest.bytes;
-        entry.sha256 = digest.sha256;
-        entry.relinked = true;
-      }
-      for (const w of materialLinks.warnings) logger.warn(w.message);
-    }
-    step = "sidecar";
-    if (opts.signal?.aborted) throw interruptedBefore("the sidecar was written");
-    writeMeta(task, resource, metadataPath, saved, skipped, root);
-  } catch (err) {
-    throw finalisationFailure(step, err, files, opts.signal);
-  }
-  return { savedFiles: saved, metadataPath, materialLinks, files, skipped };
-}
-
-function deriveFilename(artifact: Artifact): string {
-  if (artifact.filename) return artifact.filename;
-  if (artifact.key.startsWith("model_")) {
-    const ext = artifact.key.slice("model_".length);
-    return `model.${ext}`;
-  }
-  if (artifact.key === "thumbnail") {
-    return `thumbnail.${artifact.preferredExt || "png"}`;
-  }
-  // Keys from `result.*_url` (animate / rigging) arrive like
-  // "animation_glb_url". The trailing "_url" is structural; the real name
-  // is what precedes it.
-  const stem = artifact.key.replace(/_url$/, "");
-  // Unknown extension → leave it off; downloadArtifact will append the
-  // content-type-derived extension so we don't emit a bogus `.bin`.
-  return artifact.preferredExt ? `${stem}.${artifact.preferredExt}` : stem;
-}
-
-interface PlacedArtifact {
-  path: string;
-  bytes: number;
-  sha256: string;
-  contentType: string | null;
-}
-
-/** Fetch one artifact into place. Errors keep their class: a CliError from the fetch/publish core is rethrown untouched. */
-async function downloadArtifact(artifact: Artifact, targetPath: string, root: AuthorisedRoot, signal: AbortSignal | undefined): Promise<PlacedArtifact> {
-  logger.debug(`GET ${redact(artifact.url)}`);
-  const fetched = await fetchToTemp(artifact.url, targetPath, { signal });
-  const actualExt = extFromContentType(fetched.contentType);
-  const requestedExt = extname(targetPath).slice(1).toLowerCase();
-  let finalPath = targetPath;
-  let tmp = fetched.tmpPath;
-  let bytes = fetched.bytes;
-  let sha = fetched.sha256;
-
-  try {
-    if (!requestedExt && actualExt) {
-      // No extension requested (e.g. unknown-format image artifact) — pick one
-      // from the content-type so the file has a reasonable suffix.
-      finalPath = `${targetPath}.${actualExt}`;
-    } else if (actualExt && requestedExt && actualExt !== requestedExt && !extEquivalent(actualExt, requestedExt)) {
-      if (CONVERTIBLE_IMAGE_EXTS.has(actualExt) && CONVERTIBLE_IMAGE_EXTS.has(requestedExt)) {
-        // Both sides are image formats sharp understands — convert.
-        logger.debug(`converting ${actualExt} → ${requestedExt} for ${artifact.key}`);
-        const converted = `${tmp}.conv`;
-        await convertImage(readFileSync(tmp), requestedExt, converted);
-        removeQuietly(tmp);
-        tmp = converted;
-        const digest = fileDigest(converted);
-        bytes = digest.bytes;
-        sha = digest.sha256;
-      } else {
-        // Can't convert safely — save with the true extension so the file isn't a lie.
-        finalPath = `${targetPath.slice(0, targetPath.length - (requestedExt.length + 1))}.${actualExt}`;
-        logger.warn(
-          `extension mismatch for ${artifact.key}: requested .${requestedExt}, got ${fetched.contentType || "?"}; ` +
-            `cannot transcode ${actualExt} → ${requestedExt}, saving as ${finalPath}`,
-        );
-      }
-    }
-    if (signal?.aborted) throw new CliError({ code: "interrupted", message: `interrupted before ${artifact.key} was published` });
-    // The final name may differ from the pre-checked one; it still may not
-    // clobber anything and must stay under the output directory.
-    const resolved = resolveWithinRoot(finalPath, root, { label: "download target" }).path;
-    publishTempFile(tmp, resolved, { overwrite: false });
-  } catch (err) {
-    removeQuietly(tmp);
-    throw err;
-  }
-  return { path: finalPath === targetPath ? targetPath : finalPath, bytes, sha256: sha, contentType: fetched.contentType };
-}
-
-/**
- * Save a no-artifact task (e.g. analyze-printability) to disk. Two layouts:
- *   - `-o report.json` (or any .json file): write the full task object there;
- *     no sidecar (the file IS the report).
- *   - `-o some/dir/` (or any non-file path): write `meta.json` inside,
- *     matching the directory-mode layout used elsewhere.
- * Other single-file extensions are rejected — the data is JSON, lying about
- * the extension would be worse than a clear error. Every path is proven inside
- * the workspace (when given) before any directory or file is created.
- */
-function saveReportOnly(task: Task, outputPath: string, resource: string, workspaceRoot: AuthorisedRoot | null): DownloadResult {
-  const singleFileMode = looksLikeFile(outputPath);
-  const abs = resolvePath(outputPath);
-  if (singleFileMode) {
-    const ext = extname(abs).slice(1).toLowerCase();
-    if (ext !== "json") {
-      throw new UsageError(
-        `${resource} produces a JSON report — pass '-o <path>.json' or a directory path (got '${outputPath}').`,
-      );
-    }
-    if (existsSync(abs)) {
-      throw new UsageError(
-        `refusing to overwrite existing file:\n  ${outputPath}\n` +
-          `(delete it or choose a different --output path to rerun)`,
-      );
-    }
-    if (workspaceRoot) resolveWithinRoot(abs, workspaceRoot, { label: "report path" });
-    writeJsonFile(abs, { resource, task, downloaded_at: new Date().toISOString() }, { overwrite: false, mode: 0o644 });
-    return { savedFiles: [], metadataPath: abs, materialLinks: null, files: [], skipped: [] };
-  }
-  const metadataPath = join(abs, "meta.json");
-  if (existsSync(metadataPath)) {
-    throw new UsageError(
-      `refusing to overwrite existing file:\n  ${metadataPath}\n` +
-        `(delete it or choose a different --output path to rerun)`,
-    );
-  }
-  if (workspaceRoot) {
-    resolveWithinRoot(abs, workspaceRoot, { label: "output directory" });
-    resolveWithinRoot(metadataPath, workspaceRoot, { label: "planned download path" });
-  }
-  mkdirSync(abs, { recursive: true });
-  writeMeta(task, resource, metadataPath, [], [], workspaceRoot ?? freezeRoot(abs, { label: "output directory" }));
-  return { savedFiles: [], metadataPath, materialLinks: null, files: [], skipped: [] };
-}
-
-/**
- * The legacy sidecar (`meta.json` / `<stem>_meta.json`), published under the
- * same rules as an asset: the real path is re-proven inside `root` at
+ * The sidecar (`meta.json` / `<stem>_meta.json`): the full task — every URL,
+ * so `meshy download --task-json` can fetch a skipped asset later — the saved
+ * paths and what was skipped. Published under the root re-proven at
  * publication time (a symlink or file that appeared since the preflight is
- * refused, never followed or truncated) and the write is exclusive and atomic.
+ * refused, never followed or truncated); the write is exclusive and atomic.
  */
-function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], skipped: SkippedArtifact[], root: AuthorisedRoot): void {
-  const meta = {
-    resource,
-    task,
-    saved_files: savedFiles,
-    // Left on the server by the default -o selection; the URLs are in `task`.
-    skipped,
-    downloaded_at: new Date().toISOString(),
-  };
+function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], skipped: SkippedAsset[], root: AuthorisedRoot): void {
+  const meta = { resource, task, saved_files: savedFiles, skipped, downloaded_at: new Date().toISOString() };
   const resolved = resolveWithinRoot(path, root, { label: "sidecar path" }).path;
   writeJsonFile(resolved, meta, { overwrite: false, mode: 0o644 });
 }
-
-export { safeSegment as _safeSegmentForTests };

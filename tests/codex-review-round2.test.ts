@@ -17,8 +17,7 @@ import sharp from "sharp";
 import { credentialBinding } from "../src/internal/operation-store.js";
 import { jsonReply, parseNdjson, parseSingleJson, runCli, startMockApi, tmpDir, type MockApi } from "./helpers/cli.js";
 
-const V1 = ["--output-schema", "v1"];
-const CREATE = ["text-to-3d", "create", "--mode", "preview", "--prompt", "round two", "--async", ...V1];
+const CREATE = ["text-to-3d", "create", "--mode", "preview", "--prompt", "round two", "--async"];
 
 function taskBody(fields: Record<string, unknown> = {}): Record<string, unknown> {
   return { id: "round2-task", status: "SUCCEEDED", type: "text-to-3d-preview", progress: 100, ...fields };
@@ -42,10 +41,6 @@ function sha(path: string): string {
 /** Directory snapshot (names only) — used to prove nothing appeared outside a boundary. */
 function listing(dir: string): string[] {
   return existsSync(dir) ? readdirSync(dir).sort() : ["<absent>"];
-}
-
-function localEnv(): Record<string, string | undefined> {
-  return { PATH: process.env["PATH"], HOME: process.env["HOME"], MESHY_CLI_NO_UPDATE_NOTIFIER: "1", MESHY_CONFIG_DIR: tmpDir("cfg-") };
 }
 
 async function pngBytes(color: string): Promise<Buffer> {
@@ -77,7 +72,7 @@ test("N01/R2-F01 analyze-printability get/wait/stream -o: outside targets are re
     for (const verb of ["get", "wait", "stream"]) {
       // File form.
       const file = join(outside, `report-${verb}`, "report.json");
-      const r = await runCli(["analyze-printability", verb, "round2-task", ...V1, "--workspace", workspace, "-o", file], { env, cwd: dir });
+      const r = await runCli(["analyze-printability", verb, "round2-task", "--workspace", workspace, "-o", file], { env, cwd: dir });
       assert.equal(r.code, 11, `${verb} file: ${r.stderr}\n${r.stdout}`);
       const out = (verb === "stream" ? parseSingleJson(r.stdout) : parseSingleJson(r.stdout)) as { error: { code: string }; result: { task_id: string; downloads: { state: string } } };
       assert.equal(out.error.code, "local_io");
@@ -85,27 +80,23 @@ test("N01/R2-F01 analyze-printability get/wait/stream -o: outside targets are re
       assert.equal(out.result.downloads.state, "failed");
       assert.ok(!existsSync(join(outside, `report-${verb}`)), `${verb}: the parent directory was not created`);
       // Directory form.
-      const d = await runCli(["analyze-printability", verb, "round2-task", ...V1, "--workspace", workspace, "-o", join(outside, `dir-${verb}`)], { env, cwd: dir });
+      const d = await runCli(["analyze-printability", verb, "round2-task", "--workspace", workspace, "-o", join(outside, `dir-${verb}`)], { env, cwd: dir });
       assert.equal(d.code, 11, `${verb} dir: ${d.stderr}`);
       assert.ok(!existsSync(join(outside, `dir-${verb}`)));
     }
     assert.deepEqual(listing(outside), outsideBefore, "nothing outside the workspace changed");
     // Symlinked parent inside the workspace pointing outside.
     symlinkSync(outside, join(workspace, "link"));
-    const viaLink = await runCli(["analyze-printability", "get", "round2-task", ...V1, "--workspace", workspace, "-o", join(workspace, "link", "report.json")], { env, cwd: dir });
+    const viaLink = await runCli(["analyze-printability", "get", "round2-task", "--workspace", workspace, "-o", join(workspace, "link", "report.json")], { env, cwd: dir });
     assert.equal(viaLink.code, 11, viaLink.stderr);
     assert.deepEqual(listing(outside), outsideBefore);
-    // Legacy schema, same boundary.
-    const legacy = await runCli(["analyze-printability", "get", "round2-task", "--workspace", workspace, "-o", join(outside, "legacy.json")], { env, cwd: dir });
-    assert.equal(legacy.code, 11, legacy.stderr);
-    assert.deepEqual(listing(outside), outsideBefore);
     // Inside the workspace: file and directory forms both write the report.
-    const okFile = await runCli(["analyze-printability", "get", "round2-task", ...V1, "--workspace", workspace, "-o", join(workspace, "reports", "r.json")], { env, cwd: dir });
+    const okFile = await runCli(["analyze-printability", "get", "round2-task", "--workspace", workspace, "-o", join(workspace, "reports", "r.json")], { env, cwd: dir });
     assert.equal(okFile.code, 0, `${okFile.stderr}\n${okFile.stdout}`);
-    const saved = JSON.parse(readFileSync(join(workspace, "reports", "r.json"), "utf8")) as { task: { printability: { status: string } } };
-    assert.equal(saved.task.printability.status, "healthy");
+    assert.equal((JSON.parse(readFileSync(join(workspace, "reports", "r.json"), "utf8")) as { status: string }).status, "healthy", "the file is the report");
+    assert.equal((JSON.parse(readFileSync(join(workspace, "reports", "r_meta.json"), "utf8")) as { task: { id: string } }).task.id, "round2-task");
     assert.equal((parseSingleJson(okFile.stdout) as { result: { downloads: { state: string; metadata_path: string } } }).result.downloads.state, "completed");
-    const okDir = await runCli(["analyze-printability", "wait", "round2-task", ...V1, "--workspace", workspace, "-o", join(workspace, "report-dir")], { env, cwd: dir });
+    const okDir = await runCli(["analyze-printability", "wait", "round2-task", "--workspace", workspace, "-o", join(workspace, "report-dir")], { env, cwd: dir });
     assert.equal(okDir.code, 0, okDir.stderr);
     assert.ok(existsSync(join(workspace, "report-dir", "meta.json")));
   } finally {
@@ -144,7 +135,7 @@ test("N02/R2-F01 --workspace equal to the project dir: metadata is recorded, the
     assert.ok(ro.warnings.some((w) => w.code === "index_dirty"));
     assert.deepEqual(listing(root), rootBefore, "no history.json, lock or temp file appeared in the parent");
 
-    const get = await runCli(["text-to-3d", "get", "round2-task", ...V1, "--project", projectDir, "--workspace", projectDir], { env, cwd: dir });
+    const get = await runCli(["text-to-3d", "get", "round2-task", "--project", projectDir, "--workspace", projectDir], { env, cwd: dir });
     assert.equal(get.code, 0, `${get.stderr}\n${get.stdout}`);
     const go = parseSingleJson(get.stdout) as { result: { project: { index: { updated: boolean } } }; warnings: Array<{ code: string }> };
     assert.equal(go.result.project.index.updated, false);
@@ -277,7 +268,7 @@ test("N04/R2-F02 two material groups keep distinct textures: source names decide
     );
     assert.ok(!env.warnings.some((w) => w.code.startsWith("material_reference")));
 
-    // Legacy `-o` uses the same mapping.
+    // A task's `-o` uses the same mapping.
     const api = await startMockApi((req, res) => {
       if (req.path.startsWith("/openapi/")) {
         return jsonReply(res, 200, taskBody({ model_urls: { obj: `${host.url}/character.obj`, mtl: `${host.url}/character.mtl` }, texture_urls: [{ base_color: `${host.url}/assets/body.png` }, { base_color: `${host.url}/assets/eyes.jpg` }] }));
@@ -285,10 +276,10 @@ test("N04/R2-F02 two material groups keep distinct textures: source names decide
       return jsonReply(res, 404, {});
     });
     try {
-      const legacyOut = join(dir, "legacy");
-      const legacy = await runCli(["text-to-3d", "get", "round2-task", "-o", legacyOut], { env: api.env(), cwd: dir });
-      assert.equal(legacy.code, 0, legacy.stderr);
-      const lm = readFileSync(join(legacyOut, "model.mtl"), "utf8");
+      const taskOut = join(dir, "task-o");
+      const viaTask = await runCli(["text-to-3d", "get", "round2-task", "-o", taskOut], { env: api.env(), cwd: dir });
+      assert.equal(viaTask.code, 0, viaTask.stderr);
+      const lm = readFileSync(join(taskOut, "model.mtl"), "utf8");
       assert.match(lm, /^map_Kd texture_0_base_color\.png$/m);
       assert.match(lm, /^map_Kd texture_1_base_color\.png$/m);
     } finally {
@@ -358,7 +349,7 @@ test("N05/R2-F03 stream: save-json conflict, project failure and download failur
       ["asset 404", ["-o", join(dir, "asset.glb")], 5, "not_found"],
     ];
     for (const [label, extra, exitCode, code] of cases) {
-      const nd = await runCli(["text-to-3d", "stream", "round2-task", ...V1, "--format", "ndjson", ...extra], { env: api.env(), cwd: dir });
+      const nd = await runCli(["text-to-3d", "stream", "round2-task", "--format", "ndjson", ...extra], { env: api.env(), cwd: dir });
       assert.equal(nd.code, exitCode, `${label}: ${nd.stderr}\n${nd.stdout}`);
       const lines = parseNdjson(nd.stdout) as Array<{ event?: string; sequence?: number; ok: boolean; error: { code: string } | null; result: { task_id: string; task: { status: string } } }>;
       assert.deepEqual(lines.map((l) => l.event), ["task", "outcome"], `${label}: one task event, one outcome`);
@@ -368,13 +359,13 @@ test("N05/R2-F03 stream: save-json conflict, project failure and download failur
       assert.equal(lines[1]!.result.task_id, "round2-task");
       assert.equal(lines[1]!.result.task.status, "SUCCEEDED");
       // json/pretty: exactly one final document with the same classification.
-      const js = await runCli(["text-to-3d", "stream", "round2-task", ...V1, ...extra], { env: api.env(), cwd: dir });
+      const js = await runCli(["text-to-3d", "stream", "round2-task", ...extra], { env: api.env(), cwd: dir });
       assert.equal(js.code, exitCode, `${label} json: ${js.stderr}`);
       const env = parseSingleJson(js.stdout) as { ok: boolean; error: { code: string }; result: { task_id: string } };
       assert.equal(env.ok, false);
       assert.equal(env.error.code, code);
       assert.equal(env.result.task_id, "round2-task");
-      const pretty = await runCli(["text-to-3d", "stream", "round2-task", ...V1, "--format", "pretty", ...extra], { env: api.env(), cwd: dir });
+      const pretty = await runCli(["text-to-3d", "stream", "round2-task", "--format", "pretty", ...extra], { env: api.env(), cwd: dir });
       assert.equal(pretty.code, exitCode, `${label} pretty: ${pretty.stderr}`);
       // pretty: a person gets the error on stderr, and stdout carries no envelope.
       assert.equal(pretty.stdout, "", `${label} pretty: no envelope on stdout`);
@@ -412,14 +403,14 @@ test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the 
       second = { status, body: { message: `asset ${status}` } };
       for (const verb of ["get", "wait"]) {
         const out = join(dir, `${verb}-${status}`);
-        const r = await runCli(["text-to-3d", verb, "round2-task", ...V1, "-o", out], { env: api.env(), cwd: dir });
+        const r = await runCli(["text-to-3d", verb, "round2-task", "-o", out], { env: api.env(), cwd: dir });
         assert.equal(r.code, exitCode, `${verb} ${status}: ${r.stderr}\n${r.stdout}`);
         const env = parseSingleJson(r.stdout) as { error: { code: string; http_status: number }; result: { task_id: string; downloads: { state: string; files: Array<{ key: string; path: string; status: string; sha256: string; error: string | null }> } } };
         assert.equal(env.error.code, code);
         assert.equal(env.error.http_status, status);
         assert.equal(env.result.task_id, "round2-task");
         assert.equal(env.result.downloads.state, "partial");
-        assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "written"], ["thumbnail", "failed"]]);
+        assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "written"], ["thumbnail.primary", "failed"]]);
         const written = env.result.downloads.files[0]!;
         assert.equal(written.path, join(out, "model.glb"));
         assert.ok(existsSync(written.path), "the committed file is not rolled back");
@@ -432,7 +423,7 @@ test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the 
     // make: same rule on its final download.
     second = { status: 503, body: { message: "outage" } };
     const makeOut = join(dir, "make-out");
-    const mk = await runCli(["make", "a cactus", ...V1, "-o", makeOut], { env: api.env(), cwd: dir });
+    const mk = await runCli(["make", "a cactus", "-o", makeOut], { env: api.env(), cwd: dir });
     assert.equal(mk.code, 7, `${mk.stderr}\n${mk.stdout}`);
     const mo = parseSingleJson(mk.stdout) as { error: { code: string; http_status: number }; result: { task_id: string; executed: unknown[]; downloads: { state: string; files: Array<{ key: string; status: string }> } } };
     assert.equal(mo.error.code, "network");
@@ -440,16 +431,8 @@ test("N06/R2-F04 task -o: first asset written, second asset 503/404/403 → the 
     assert.equal(mo.result.task_id, "round2-task");
     assert.equal(mo.result.executed.length, 2);
     assert.equal(mo.result.downloads.state, "partial");
-    assert.deepEqual(mo.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "written"], ["thumbnail", "failed"]]);
+    assert.deepEqual(mo.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "written"], ["thumbnail.primary", "failed"]]);
     assert.ok(existsSync(join(makeOut, "model.glb")));
-    // Without the flag: the same envelope keeps the class.
-    const bare = await runCli(["text-to-3d", "get", "round2-task", "-o", join(dir, "bare-out")], { env: api.env(), cwd: dir });
-    assert.equal(bare.code, 7, bare.stderr);
-    const lp = parseSingleJson(bare.stdout) as { error: { code: string; http_status: number }; result: { downloads: { state: string; files: unknown[] } } };
-    assert.equal(lp.error.code, "network");
-    assert.equal(lp.error.http_status, 503);
-    assert.equal(lp.result.downloads.state, "partial");
-    assert.equal(lp.result.downloads.files.length, 2);
   } finally {
     await api.close();
   }
@@ -492,7 +475,7 @@ test("N08/R2-F05 SIGINT during the asset transfer (before headers, mid-body, on 
       mode = m;
       api.requests.length = 0;
       const target = join(dir, `${m}.glb`);
-      const r = await runCli(["text-to-3d", "get", "round2-task", ...V1, "-o", target], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c) });
+      const r = await runCli(["text-to-3d", "get", "round2-task", "-o", target], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c) });
       assert.equal(r.code, 130, `${m}: ${r.stderr}\n${r.stdout}`);
       const env = parseSingleJson(r.stdout) as { error: { code: string }; result: { task_id: string; submission: { state: string }; next: { get: string }; downloads: { state: string; files: Array<{ key: string; status: string; error: string | null }> } } };
       assert.equal(env.error.code, "interrupted");
@@ -500,7 +483,7 @@ test("N08/R2-F05 SIGINT during the asset transfer (before headers, mid-body, on 
       assert.equal(env.result.submission.state, "accepted");
       assert.match(env.result.next.get, /get round2-task/);
       assert.equal(env.result.downloads.state, "failed");
-      assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]]);
+      assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "failed"]]);
       assert.ok(!existsSync(target), `${m}: no final file`);
       assert.ok(!existsSync(join(dir, `${m}_meta.json`)), `${m}: no sidecar`);
       assert.ok(!readdirSync(dir).some((f) => f.includes(".tmp-")), `${m}: temp file cleaned`);
@@ -510,21 +493,15 @@ test("N08/R2-F05 SIGINT during the asset transfer (before headers, mid-body, on 
     mode = "second";
     api.requests.length = 0;
     const out = join(dir, "second");
-    const r = await runCli(["text-to-3d", "wait", "round2-task", ...V1, "-o", out], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c) });
+    const r = await runCli(["text-to-3d", "wait", "round2-task", "-o", out], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c) });
     assert.equal(r.code, 130, `${r.stderr}\n${r.stdout}`);
     const env = parseSingleJson(r.stdout) as { error: { code: string }; result: { downloads: { state: string; files: Array<{ key: string; status: string; path: string }> } } };
     assert.equal(env.error.code, "interrupted");
     assert.equal(env.result.downloads.state, "partial");
-    assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "written"], ["thumbnail", "failed"]]);
+    assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "written"], ["thumbnail.primary", "failed"]]);
     assert.ok(existsSync(env.result.downloads.files[0]!.path));
     assert.deepEqual(readdirSync(out), ["model.glb"], "no temp file, no sidecar");
     assert.ok(!api.requests.some((q) => q.method === "DELETE" || q.method === "POST"));
-    // Legacy schema and make share the behaviour.
-    mode = "headers";
-    api.requests.length = 0;
-    const legacy = await runCli(["text-to-3d", "get", "round2-task", "-o", join(dir, "legacy.glb")], { env: api.env(), cwd: dir, onSpawn: (c) => (child = c) });
-    assert.equal(legacy.code, 130, legacy.stderr);
-    assert.ok(!existsSync(join(dir, "legacy.glb")));
   } finally {
     await api.close();
   }

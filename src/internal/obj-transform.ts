@@ -1,5 +1,5 @@
 /**
- * OBJ print preparation — the legacy `fix_obj.py` transform as a streaming module.
+ * OBJ print preparation as a streaming module.
  *
  * Meshy exports Y-up OBJ files in arbitrary units; slicers want Z-up
  * millimetres with the model standing on the build plate. The transform is

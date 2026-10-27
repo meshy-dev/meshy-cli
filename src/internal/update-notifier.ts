@@ -17,7 +17,6 @@ import { spawn } from "node:child_process";
 import { configDir } from "./credentials.js";
 import { PACKAGE_NAME, VERSION } from "./version.js";
 import { painterFor } from "./color.js";
-import type { OutputFormat } from "./output.js";
 
 // ---------------------------------------------------------------------------
 // Constants

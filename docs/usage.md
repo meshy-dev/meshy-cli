@@ -303,8 +303,9 @@ get/list/wait/stream/delete verbs.
 ## Saving artifacts with `-o` and `meshy download` (selective)
 
 When `-o` is set on a `create`/`wait`/`get`/`stream` or on `make`, the CLI
-saves the task's **primary** files, writes a sidecar metadata file, and reports
-the download in `result.downloads` (stdout keeps the usual envelope).
+saves the task's **primary** files with the same downloader as `meshy download`,
+writes a sidecar metadata file, and reports the download in `result.downloads`
+(stdout keeps the usual envelope; keys are the `meshy download --asset` keys).
 Directory-mode outputs share a single `meta.json`; single-file outputs get a
 per-file `<stem>_meta.json`. A task that is not yet SUCCEEDED yields
 `downloads.state: "not_ready"` with exit 0.
@@ -313,8 +314,9 @@ The primary files are:
 
 - every model format the task produced. That is GLB unless `--target-formats`
   asked for more.
-- the thumbnail, the generated images, motion clips and `processed_*` outputs.
-- the rig or animation result in GLB.
+- the primary thumbnail, the generated images, motion clips, `processed_*`
+  outputs and reports (`printability.json`).
+- the rig or animation result in GLB (`rigged_character.glb`, `animation_glb.glb`).
 
 Left on the server by default, and listed under `result.downloads.skipped`
 (`{key, reason}`) and in `meta.json`:
@@ -326,16 +328,17 @@ Left on the server by default, and listed under `result.downloads.skipped`
 - `alternate_format`: the FBX copy of a rig or animation result that also came
   as GLB.
 - `pre_remesh_variant`: `model_urls.pre_remeshed_glb`.
+- `extra_thumbnail`: per-view and alpha thumbnails next to a primary one.
 
-`--all-assets` saves all of them too; that is the 0.5.0 behaviour, and it needs
-a directory. `meta.json` keeps every URL, so
+`--all-assets` saves all of them too, and needs a directory. `meta.json` keeps every URL, so
 `meshy download --task-json meta.json --asset <key>` fetches a skipped file
 later.
 
 A file path picks the one file of that format: `-o car.glb` writes the model
 GLB, `-o hero.fbx` on a rigging task writes the FBX rigged character, and
 `-o leaf.jpeg` converts a single generated image. When no file or more than one
-file matches, the command asks for a directory instead.
+file matches — or the extension names another model format — the command asks
+for a directory instead of renaming anything.
 
 ```bash
 meshy-cli text-to-image create --ai-model nano-banana-2-1 --aspect-ratio 16:9 --prompt "a leaf" -o assets/leaf-wide.jpeg
@@ -408,8 +411,8 @@ meshy project list --root ./meshy_output
 meshy project rebuild-index --root ./meshy_output
 ```
 
-`metadata.json` (schema 2; legacy files are read as-is and migrated on the first
-write with a backup) is the source of truth; `history.json` is a rebuildable
+`metadata.json` (`schema_version: 2`; any other file is refused) is the source
+of truth; `history.json` is a rebuildable
 index. A repeat `(task_id, stage)` merges instead of duplicating.
 
 ## Printing helpers
@@ -464,7 +467,6 @@ URI is accepted when its bytes are a GLB.
 | `--api-key-file <path>` | Read `MESHY_API_KEY` from an explicit dotenv-style file (only that key) |
 | `--base-url-v1 <url>` / `--base-url-v2 <url>` | Override endpoints (staging/proxy) |
 | `--base-url-creative-lab <url>` | Override the Creative Lab base (default: `<v1 origin>/openapi/creative-lab`) |
-| `--output-schema v1` | Accepted as a no-op for compatibility: every command prints the `meshy.cli/v1` envelope. `legacy` was removed in 0.5.0 and is refused |
 | `--format json\|pretty\|ndjson` | Stdout rendering. Defaults to `pretty` when stdout is a terminal and `json` everywhere else — piped, redirected, or spawned as a subprocess, which is every agent, script and CI run. `--json` is shorthand for `--format json` |
 | `-o, --output <path>` | Task verbs and `make`: save the primary files of a SUCCEEDED task into a directory (+ `meta.json`), or the one file of a format into a file path (`car.glb`); stdout keeps the envelope and adds `result.downloads`. `mesh prepare-print`: the output file |
 | `--all-assets` | With `-o <dir>`: also save texture maps, the rig's bundled clips, FBX copies and the pre-remesh model (listed in `result.downloads.skipped` otherwise) |

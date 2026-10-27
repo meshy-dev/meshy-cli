@@ -10,9 +10,9 @@
  * containers export MESHY_API_KEY and must not be silently overridden by
  * whatever a developer once logged into on that machine.
  *
- * An empty or placeholder --api-key / MESHY_API_KEY counts as "unset" (0.2.0
- * behaviour; CI and the runtime tests rely on `MESHY_API_KEY=""` meaning
- * "fall through to the stored profile"). An explicit --api-key-file is different:
+ * An empty or placeholder --api-key / MESHY_API_KEY counts as "unset": CI and
+ * the runtime tests rely on `MESHY_API_KEY=""` meaning "fall through to the
+ * stored profile". An explicit --api-key-file is different:
  * naming a file is an instruction, so an unreadable, malformed or key-less
  * file is an error, never a fall-through to another account.
  *

@@ -45,10 +45,6 @@ const FACTORIES: OptionFactory[] = [
       "ndjson",
     ]),
   () => new Option("--json", "output as JSON (alias for --format json)"),
-  // Compatibility no-op since 0.5.0: every command prints the meshy.cli/v1
-  // envelope. Still parsed so the recovery hints and skill examples that carry
-  // `--output-schema v1` keep working; `legacy` is refused in runtime.ts.
-  () => new Option("--output-schema <schema>", "(deprecated, no-op) only v1 is accepted").hideHelp(),
   outputOption,
   allAssetsOption,
   () =>

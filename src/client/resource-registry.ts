@@ -6,9 +6,6 @@
  * supported verbs, billing class and the payload fields that carry media.
  * Commands, the `resources` index, payload normalisation and the transport
  * all read from here; nothing else hard-codes a path.
- *
- * docs/skill-parity/endpoint-contracts.json documents the same data and
- * tests/resource-registry.test.ts fails when the two drift apart.
  */
 
 export type ApiBase = "v1" | "v2" | "creative-lab";
@@ -56,8 +53,8 @@ export interface TaskResourceDescriptor {
   base: ApiBase;
   /** Appended to the base URL of the API family. */
   relativePath: string;
-  /** Full path as the Skills documented it, for `resources` and endpoint-contracts. */
-  legacyEndpoint: string;
+  /** Full API path (`/openapi/v1/image-to-3d`), reported in results and by `resources`. */
+  endpoint: string;
   supports: VerbSupport;
   mediaFields: readonly MediaField[];
   /** `type` values the server reports for this resource. */
@@ -102,7 +99,7 @@ function v1(id: string, relativePath: string, opts: {
     commandPath: [id],
     base: "v1",
     relativePath,
-    legacyEndpoint: `/openapi/v1${relativePath}`,
+    endpoint: `/openapi/v1${relativePath}`,
     supports: ALL_VERBS,
     mediaFields: opts.mediaFields ?? [],
     taskTypes: opts.taskTypes,
@@ -122,7 +119,6 @@ export const CREATIVE_LAB_PRODUCTS: readonly CreativeLabProduct[] = [
   "keycap",
   "fidget-pixel",
 ];
-export const CREATIVE_LAB_SINGLE_PRODUCTS: readonly CreativeLabSingleProduct[] = ["fidget-collapsible"];
 export const CREATIVE_LAB_STAGES: readonly CreativeLabStage[] = ["prototype", "build"];
 const CREATIVE_LAB_IMAGE_FORMATS = ["jpg", "jpeg", "png", "webp"] as const;
 
@@ -133,7 +129,7 @@ function creativeLab(product: CreativeLabProduct, stage: CreativeLabStage, summa
     commandPath: ["creative-lab", product, stage],
     base: "creative-lab",
     relativePath,
-    legacyEndpoint: `/openapi/creative-lab${relativePath}`,
+    endpoint: `/openapi/creative-lab${relativePath}`,
     supports: ALL_VERBS,
     mediaFields: stage === "prototype" ? [image("image_url", false, CREATIVE_LAB_IMAGE_FORMATS)] : [],
     taskTypes: [`creative-lab-${product}-${stage}`],
@@ -152,7 +148,7 @@ function creativeLabSingle(product: CreativeLabSingleProduct, summary: string): 
     commandPath: ["creative-lab", product],
     base: "creative-lab",
     relativePath,
-    legacyEndpoint: `/openapi/creative-lab${relativePath}`,
+    endpoint: `/openapi/creative-lab${relativePath}`,
     supports: ALL_VERBS,
     mediaFields: [image("image_url", false, CREATIVE_LAB_IMAGE_FORMATS)],
     taskTypes: [`creative-lab-${product}`],
@@ -169,7 +165,7 @@ export const TASK_RESOURCES: readonly TaskResourceDescriptor[] = [
     commandPath: ["text-to-3d"],
     base: "v2",
     relativePath: "/text-to-3d",
-    legacyEndpoint: "/openapi/v2/text-to-3d",
+    endpoint: "/openapi/v2/text-to-3d",
     supports: ALL_VERBS,
     mediaFields: [image("texture_image_url")],
     taskTypes: ["text-to-3d-preview", "text-to-3d-refine"],
@@ -224,19 +220,12 @@ export function requireTaskResource(id: string): TaskResourceDescriptor {
   return d;
 }
 
-export function taskResourceByCommandPath(path: readonly string[]): TaskResourceDescriptor | undefined {
-  return TASK_RESOURCES.find((d) => d.commandPath.length === path.length && d.commandPath.every((p, i) => p === path[i]));
-}
-
 /** Resolve a Creative Lab descriptor from user-supplied tokens without ever building a path from them. */
 export function creativeLabResource(product: string, stage: string): TaskResourceDescriptor | undefined {
   if (!(CREATIVE_LAB_PRODUCTS as readonly string[]).includes(product)) return undefined;
   if (!(CREATIVE_LAB_STAGES as readonly string[]).includes(stage)) return undefined;
   return BY_ID.get(`creative-lab.${product}.${stage}`);
 }
-
-/** Resource ids that map 1:1 onto a top-level command (used by the legacy `--resource` flag and the index). */
-export const TOP_LEVEL_TASK_RESOURCE_IDS: readonly string[] = TASK_RESOURCES.filter((d) => d.commandPath.length === 1).map((d) => d.id);
 
 export interface QueryResourceDescriptor {
   id: string;
@@ -293,7 +282,7 @@ export function resourceIndex(): ResourceIndexEntry[] {
     kind: "task",
     command: `meshy ${d.commandPath.join(" ")}`,
     summary: d.summary,
-    endpoint: d.legacyEndpoint,
+    endpoint: d.endpoint,
     verbs: verbsOf(d.supports),
   }));
   const queries: ResourceIndexEntry[] = QUERY_RESOURCES.map((q) => ({

@@ -22,12 +22,12 @@ test("dropNullish — removes undefined and null, keeps falsy", () => {
 });
 
 test("mergePayload — flag values override base JSON", () => {
-  const base = { prompt: "old", seed: 42, legacy: "keep" };
+  const base = { prompt: "old", seed: 42, extra: "keep" };
   const flags = { prompt: "new", enablePbr: undefined, moderation: true };
   assert.deepEqual(mergePayload(base, flags), {
     prompt: "new",
     seed: 42,
-    legacy: "keep",
+    extra: "keep",
     moderation: true,
   });
 });

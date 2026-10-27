@@ -5,13 +5,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { enumerateAssets, resolveAssetKey, selectAssets, SelectionError } from "../src/internal/artifacts.js";
+import { enumerateAssets, resolveAssetKey, selectAssets, selectDefaultAssets, SelectionError } from "../src/internal/artifacts.js";
 import { requireTaskResource } from "../src/client/resource-registry.js";
-import { enumerateArtifacts } from "../src/internal/download.js";
-import type { Task } from "../src/client/types.js";
 import { extractTaskObject, toTaskView } from "../src/internal/task-view.js";
 
-const rig = JSON.parse(readFileSync(new URL("./fixtures/skill-parity/task-rigging.synthetic.json", import.meta.url), "utf8")) as Record<string, unknown>;
+const rig = JSON.parse(readFileSync(new URL("./fixtures/task-rigging.synthetic.json", import.meta.url), "utf8")) as Record<string, unknown>;
 
 test("T-060 rigging: rig + nested walking/running animations are enumerated with role keys", () => {
   const e = enumerateAssets(rig, requireTaskResource("rigging"));
@@ -85,11 +83,10 @@ test("T-060 motion clips use motion_format; report-only tasks yield a JSON repor
   assert.deepEqual(odd.unknown_urls.map((u) => u.path), ["result.mystery_url", "result.nested.deeper"]);
 });
 
-test("T-061 selection: keys (with legacy aliases), model format, kind, all; contradictions and misses throw with candidates", () => {
+test("T-061 selection: keys, model format, kind, all; contradictions and misses throw with candidates", () => {
   const task = { id: "t", type: "image-to-3d", status: "SUCCEEDED", model_urls: { glb: "https://a/g", obj: "https://a/o", mtl: "https://a/m" }, thumbnail_url: "https://a/t.png", texture_urls: [{ base_color: "https://a/bc.png" }] };
   const e = enumerateAssets(task);
-  assert.deepEqual(selectAssets(e, { keys: ["model.glb", "thumbnail"] }, { withDependencies: true }).selected.map((a) => a.key), ["model.glb", "thumbnail.primary"]);
-  assert.deepEqual(selectAssets(e, { keys: ["model_glb", "texture_0_base_color"] }, { withDependencies: true }).selected.map((a) => a.key), ["model.glb", "texture.0.base_color"]);
+  assert.deepEqual(selectAssets(e, { keys: ["model.glb", "thumbnail.primary"] }, { withDependencies: true }).selected.map((a) => a.key), ["model.glb", "thumbnail.primary"]);
   assert.deepEqual(selectAssets(e, { modelFormat: "GLB" }, { withDependencies: true }).selected.map((a) => a.key), ["model.glb"]);
   assert.deepEqual(selectAssets(e, { kind: "texture" }, { withDependencies: true }).selected.map((a) => a.key), ["texture.0.base_color"]);
   assert.equal(selectAssets(e, { all: true }, { withDependencies: false }).selected.length, 5);
@@ -99,8 +96,8 @@ test("T-061 selection: keys (with legacy aliases), model format, kind, all; cont
   assert.throws(() => selectAssets(e, { keys: ["model.usdz"] }, { withDependencies: true }), (err: unknown) => err instanceof SelectionError && err.candidates.length === 5);
   assert.throws(() => selectAssets(e, { modelFormat: "3mf" }, { withDependencies: true }), SelectionError);
   assert.throws(() => selectAssets(e, {}, { withDependencies: true }), SelectionError);
-  assert.equal(resolveAssetKey("animation_glb_url", enumerateAssets({ id: "a", status: "SUCCEEDED", result: { animation_glb_url: "https://a/x.glb" } }).assets)?.key, "result.animation_glb_url");
-  assert.equal(resolveAssetKey("walking_glb_url", enumerateAssets(rig).assets)?.key, "result.basic_animations.walking_glb_url");
+  assert.equal(resolveAssetKey("result.basic_animations.walking_glb_url", enumerateAssets(rig).assets)?.key, "result.basic_animations.walking_glb_url");
+  assert.equal(resolveAssetKey("walking_glb_url", enumerateAssets(rig).assets), undefined, "only stable keys resolve");
 });
 
 test("T-062 OBJ without MTL in the task reports the missing dependency instead of pretending", () => {
@@ -119,29 +116,54 @@ test("T-063 the same task yields the same assets from an API task, a meta.json a
   assert.deepEqual(enumerateAssets(env.task).assets.map((a) => a.key), fromApi);
 });
 
-test("every key the -o manifest uses (files and skipped) resolves in meshy download --asset to the same URL", () => {
-  const u = (name: string): string => `https://cdn.example.com/${name}`;
-  const task = {
-    id: "t",
-    type: "rig",
-    status: "SUCCEEDED",
-    model_urls: { glb: u("m.glb"), obj: u("m.obj"), mtl: u("m.mtl"), pre_remeshed_glb: u("p.glb") },
-    thumbnail_url: u("t.png"),
-    texture_urls: [{ base_color: u("bc.png"), metallic_roughness: u("mr.png") }],
-    image_urls: [u("i.png")],
-    result: {
-      rigged_character_glb_url: u("r.glb"),
-      rigged_character_fbx_url: u("r.fbx"),
-      animation_glb_url: u("a.glb"),
-      animation_fbx_url: u("a.fbx"),
-      processed_usdz_url: u("a.usdz"),
-      motion_url: u("mo.fbx"),
-      basic_animations: { walking_glb_url: u("w.glb"), running_fbx_url: u("r2.fbx"), walking_armature_glb_url: u("wa.glb") },
-    },
-  };
-  const assets = enumerateAssets(task).assets;
-  for (const artifact of enumerateArtifacts(task as unknown as Task)) {
-    assert.equal(resolveAssetKey(artifact.key, assets)?.url, artifact.url, artifact.key);
+// ---------------------------------------------------------------------------
+// selectDefaultAssets — what `-o` saves without --all-assets
+// ---------------------------------------------------------------------------
+
+const cdn = (name: string): string => `https://cdn.example.com/${name}`;
+const defaults = (task: Record<string, unknown>) => {
+  const sel = selectDefaultAssets(enumerateAssets({ id: "t", status: "SUCCEEDED", ...task }).assets);
+  return { selected: sel.selected.map((a) => a.key), skipped: sel.skipped.map((s) => [s.asset.key, s.reason]) };
+};
+
+test("default selection — GLB-only model task: model + primary thumbnail; embedded texture maps and per-view thumbnails stay on the server", () => {
+  const sel = defaults({ model_urls: { glb: cdn("m.glb") }, thumbnail_url: cdn("t.png"), thumbnail_urls: { front: cdn("f.png") }, texture_urls: [{ base_color: cdn("bc.png"), normal: cdn("n.png") }] });
+  assert.deepEqual(sel.selected, ["model.glb", "thumbnail.primary"]);
+  assert.deepEqual(sel.skipped, [["thumbnail.front", "extra_thumbnail"], ["texture.0.base_color", "embedded_textures"], ["texture.0.normal", "embedded_textures"]]);
+});
+
+test("default selection — texture maps stay when a delivered model does not embed them (OBJ + MTL, FBX, glTF)", () => {
+  const deliveries: Array<Record<string, string>> = [{ obj: cdn("m.obj"), mtl: cdn("m.mtl") }, { glb: cdn("m.glb"), fbx: cdn("m.fbx") }, { gltf: cdn("m.gltf") }];
+  for (const model_urls of deliveries) {
+    const sel = defaults({ model_urls, texture_urls: [{ base_color: cdn("bc.png") }] });
+    assert.ok(sel.selected.includes("texture.0.base_color"), JSON.stringify(model_urls));
+    assert.deepEqual(sel.skipped, []);
   }
 });
 
+test("default selection — every produced model format is kept; the pre-remesh GLB is not; a ZIP bundle counts as self-contained", () => {
+  assert.deepEqual(defaults({ model_urls: { glb: cdn("m.glb"), stl: cdn("m.stl"), pre_remeshed_glb: cdn("p.glb") } }), { selected: ["model.glb", "model.stl"], skipped: [["model.pre_remeshed_glb", "pre_remesh_variant"]] });
+  assert.deepEqual(defaults({ type: "creative-lab-keycap-build", model_urls: { obj_zip: cdn("k.zip") }, texture_urls: [{ base_color: cdn("bc.png") }] }).skipped, [["texture.0.base_color", "embedded_textures"]]);
+});
+
+test("default selection — rigging keeps the GLB rigged character, not its FBX copy or the bundled clips", () => {
+  assert.deepEqual(defaults({ result: { rigged_character_fbx_url: cdn("r.fbx"), rigged_character_glb_url: cdn("r.glb"), basic_animations: { running_glb_url: cdn("run.glb"), running_fbx_url: cdn("run.fbx") } } }), {
+    selected: ["result.rigged_character_glb_url"],
+    skipped: [["result.rigged_character_fbx_url", "alternate_format"], ["result.basic_animations.running_glb_url", "bundled_animation"], ["result.basic_animations.running_fbx_url", "bundled_animation"]],
+  });
+});
+
+test("default selection — animate keeps the GLB clip and every post-process output; an FBX-only result, images, motion and reports are kept", () => {
+  assert.deepEqual(defaults({ result: { animation_fbx_url: cdn("a.fbx"), animation_glb_url: cdn("a.glb"), processed_usdz_url: cdn("a.usdz"), processed_armature_fbx_url: cdn("arm.fbx") } }), {
+    selected: ["result.animation_glb_url", "result.processed_usdz_url", "result.processed_armature_fbx_url"],
+    skipped: [["result.animation_fbx_url", "alternate_format"]],
+  });
+  assert.deepEqual(defaults({ result: { animation_fbx_url: cdn("a.fbx") } }).selected, ["result.animation_fbx_url"]);
+  assert.deepEqual(defaults({ image_urls: [cdn("0.png"), cdn("1.png")] }).selected, ["image.0", "image.1"]);
+  assert.deepEqual(defaults({ result: { motion_url: cdn("m.fbx"), motion_format: "fbx" } }).selected, ["result.motion_url"]);
+  assert.deepEqual(defaults({ printability: { status: "healthy" } }).selected, ["report.printability"]);
+});
+
+test("default selection — a task with nothing primary keeps everything", () => {
+  assert.deepEqual(defaults({ result: { basic_animations: { walking_glb_url: cdn("w.glb") } } }), { selected: ["result.basic_animations.walking_glb_url"], skipped: [] });
+});

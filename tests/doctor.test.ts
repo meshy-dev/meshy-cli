@@ -18,13 +18,18 @@ import { MeshyApiError } from "../src/client/errors.js";
 import { TransportError } from "../src/client/transport.js";
 import { apiCheckFailure, buildDoctorCommand } from "../src/cmd/doctor.js";
 import { resetCommandContextForTests } from "../src/internal/context.js";
-import { runDoctor, runDoctorDetailed, type DoctorReport } from "../src/internal/doctor.js";
+import { runDoctorDetailed, type DoctorOptions, type DoctorReport } from "../src/internal/doctor.js";
 import { authRequiredError, CliError, UsageError } from "../src/internal/errors.js";
 import { mirrorGlobalOptionsToDescendants, registerRootGlobalOptions, walkCommands } from "../src/internal/global-options.js";
 import type { V1Envelope } from "../src/internal/result.js";
 import type { GlobalFlags } from "../src/internal/runtime.js";
 import { VERSION } from "../src/internal/version.js";
 import { jsonReply, parseSingleJson, startMockApi } from "./helpers/cli.js";
+
+/** The report of one diagnosis run (the command also reads the API failure; these tests read the report). */
+async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
+  return (await runDoctorDetailed(opts)).report;
+}
 
 const FLAG_SECRET = "msy_flag_secret_value_789";
 const ENV_SECRET = "msy_env_secret_value_456";
@@ -426,7 +431,7 @@ async function runDoctorCommand(args: string[]): Promise<InProcessRun> {
 type DoctorResult = DoctorReport & { saved_json: { path: string; bytes: number } | null };
 
 test("T-102 command: the default run emits one ok envelope, exit 0 semantics, and touches no network", async () => {
-  const run = await withNoNetwork(() => runDoctorCommand(["--output-schema", "v1"]));
+  const run = await withNoNetwork(() => runDoctorCommand(["--format", "json"]));
   assert.equal(run.error, null, String(run.error));
   const env = parseSingleJson(run.stdout) as V1Envelope<DoctorResult>;
   assert.deepEqual(Object.keys(env), ["schema_version", "command", "ok", "result", "error", "warnings"]);
@@ -442,7 +447,7 @@ test("T-102 command: the default run emits one ok envelope, exit 0 semantics, an
   assert.equal((parseSingleJson(missingWs.stdout) as V1Envelope<DoctorResult>).ok, true);
 });
 
-test("command: --save-json stores the report (not the envelope); legacy schema and -o are usage errors", async () => {
+test("command: --save-json stores the report (not the envelope); -o is a usage error", async () => {
   const dir = tmp();
   const target = join(dir, "doctor.json");
   const run = await runDoctorCommand(["--save-json", target]);
@@ -453,8 +458,6 @@ test("command: --save-json stores the report (not the envelope); legacy schema a
   assert.equal(saved["local_ready"], true);
   assert.ok(!("schema_version" in saved));
   assert.ok(!("saved_json" in saved));
-  const legacy = await runDoctorCommand(["--output-schema", "legacy"]);
-  assert.ok(legacy.error instanceof UsageError);
   const output = await runDoctorCommand(["-o", "x.json"]);
   assert.ok(output.error instanceof UsageError);
   assert.match((output.error as Error).message, /--save-json/);

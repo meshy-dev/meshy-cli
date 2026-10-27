@@ -178,11 +178,6 @@ export function describeTextureKey(key: string): { set: number | null; channel: 
   return { set: Number(m[1]), channel: canonicalChannel(m[2]!) };
 }
 
-/** @deprecated kept for callers of the round-1 API. */
-export function channelOfTextureKey(key: string): string | null {
-  return describeTextureKey(key).channel;
-}
-
 /** Channel word inside a referenced file name (`texture_normal.png`, `Body_BaseColor.jpg`). */
 export function channelInFileName(name: string): string | null {
   const stem = basename(name).replace(/\.[A-Za-z0-9]+$/, "");

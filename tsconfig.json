@@ -8,6 +8,7 @@
     "rootDir": "src",
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
     "exactOptionalPropertyTypes": false,
     "declaration": true,
     "declarationMap": true,

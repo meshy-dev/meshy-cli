@@ -21,7 +21,6 @@ import sharp from "sharp";
 import { relinkMaterials } from "../src/internal/material-links.js";
 import { jsonReply, parseSingleJson, runCli, startMockApi, tmpDir } from "./helpers/cli.js";
 
-const V1 = ["--output-schema", "v1"];
 const ENVELOPE_KEYS = ["schema_version", "command", "ok", "result", "error", "warnings"].sort();
 
 function taskBody(fields: Record<string, unknown> = {}): Record<string, unknown> {
@@ -380,89 +379,87 @@ test("R5-F02 arbitration matrix: eight key/reference combinations in both orders
 type Verb = "get" | "wait" | "stream" | "create-async" | "create-sync";
 type Fault = "missing" | "damaged";
 
-test("E03/R5-F03 bare/v1 × get/wait/stream/create-async/create-sync × metadata missing/damaged during the request (--project P --workspace P): exit 11 with the task, journal operation and a record_project command that carries --workspace and --operation-id; single POST for create; verbatim replay after the repair records the task with 0 requests and index_dirty", async () => {
-  for (const schema of ["bare", "v1"] as const) {
-    for (const verb of ["get", "wait", "stream", "create-async", "create-sync"] as Verb[]) {
-      for (const fault of ["missing", "damaged"] as Fault[]) {
-        const id = `${schema}-${verb}-${fault}`;
-        let plant: (() => void) | null = null;
-        const api = await startMockApi((req, res) => {
-          plant?.();
-          plant = null;
-          if (req.method === "POST") return jsonReply(res, 200, { result: id });
-          if (req.method === "DELETE") return jsonReply(res, 500, { message: "never" });
-          const body = taskBody({ id });
-          if (req.path.endsWith("/stream")) {
-            res.writeHead(200, { "content-type": "text/event-stream" });
-            return void res.end(`data: ${JSON.stringify(body)}\n\n`);
-          }
-          return jsonReply(res, 200, body);
-        });
-        try {
-          const dir = tmpDir();
-          const env = api.env();
-          const configDir = String(env["MESHY_CONFIG_DIR"]);
-          const init = await runCli(["project", "init", "--root", join(dir, "projects"), "--name", id], { env, cwd: dir });
-          assert.equal(init.code, 0, init.stderr);
-          const proj = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
-          const meta = join(proj, "metadata.json");
-          const original = readFileSync(meta);
-          plant = fault === "missing" ? () => renameSync(meta, `${meta}.backup`) : () => writeFileSync(meta, "{ invalid json");
-          const args = verb.startsWith("create") ? ["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture", ...(verb === "create-async" ? ["--async"] : [])] : ["text-to-3d", verb, id];
-          const r = await runCli([...args, ...(schema === "v1" ? V1 : []), "--project", proj, "--workspace", proj], { env, cwd: dir });
-          assert.equal(r.code, 11, `${id}: ${r.stderr}\n${r.stdout}`);
-          const out = parseSingleJson(r.stdout) as Record<string, unknown>;
-          const result = out["result"] as { task_id: string; submission: { state: string; operation_id: string | null; task_id?: string } };
-          const isCreate = verb.startsWith("create");
-          const records = journal(configDir);
-          assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, id);
-          const error = out["error"] as { code: string; message: string; recovery: { action: string; automatic: boolean; command: string } | null; hint?: string };
-          assert.equal(error.code, "local_io", id);
-          assert.ok(error.recovery, `${id}: a recovery is offered`);
-          assert.equal(error.recovery!.action, "record_project", id);
-          assert.equal(error.hint, error.recovery!.command, id);
-          assert.match(error.message, fault === "missing" ? /has no metadata\.json any more/ : /not valid JSON/, id);
-          const command: string = error.recovery!.command;
-          assert.equal(result.task_id, id, `${id}: the task is kept`);
-          assert.equal(result.submission.state, "accepted");
-          const words = shellSplit(command);
-          assert.equal(optionValue(words, "--stage"), "preview", id);
-          assert.equal(optionValue(words, "--resource"), "text-to-3d", id);
-          if (isCreate) {
-            assert.equal(records.length, 1, `${id}: exactly one journal record — nothing re-submitted`);
-            assert.equal(records[0]!.state, "accepted");
-            assert.equal(records[0]!.task_id, id);
-            assert.equal(result.submission.operation_id, records[0]!.operation_id, `${id}: submission names the journal record`);
-            assert.equal(optionValue(words, "--operation-id"), records[0]!.operation_id, `${id}: the recovery keeps the operation id`);
-            assert.equal(api.requests.filter((q) => q.method === "POST").length, 1, id);
-          } else {
-            assert.equal(records.length, 0, id);
-            assert.equal(api.requests.filter((q) => q.method === "POST").length, 0, id);
-          }
-          // Exact request sequence for every entry: the fixture is SUCCEEDED on the first GET, so no extra poll is tolerated.
-          const base = "/openapi/v2/text-to-3d";
-          const expectedRequests: Array<[string, string]> =
-            verb === "get" || verb === "wait" ? [["GET", `${base}/${id}`]] : verb === "stream" ? [["GET", `${base}/${id}/stream`]] : verb === "create-async" ? [["POST", base]] : [["POST", base], ["GET", `${base}/${id}`]];
-          assert.deepEqual(api.requests.map((q) => [q.method, q.path]), expectedRequests, `${id}: exact method/path sequence`);
-          // A damaged metadata still lets the snapshot land; a missing one does not — and the command says which.
-          const taskJson = optionValue(words, "--task-json");
-          if (fault === "missing" || verb === "create-async") assert.equal(taskJson, undefined, `${id}: no snapshot was written`);
-          else {
-            assert.equal(taskJson, `task_${id}.json`, id);
-            assert.ok(existsSync(join(proj, taskJson!)), `${id}: the snapshot exists in the project`);
-          }
-          // Repair the project, then replay exactly the command handed out.
-          if (fault === "missing") renameSync(`${meta}.backup`, meta);
-          else writeFileSync(meta, original);
-          const before = api.requests.length;
-          const { entry } = await replayRecord(command, env, dir, { projectDir: proj, workspace: proj, taskId: id, requestsBefore: before, requests: () => api.requests.length });
-          assert.equal(entry["stage"], "preview", id);
-          assert.equal(entry["resource"], "text-to-3d", id);
-          if (isCreate) assert.equal(entry["operation_id"], records[0]!.operation_id, `${id}: the journal operation is recorded`);
-          if (taskJson) assert.equal(entry["task_json"], taskJson, id);
-        } finally {
-          await api.close();
+test("E03/R5-F03 get/wait/stream/create-async/create-sync × metadata missing/damaged during the request (--project P --workspace P): exit 11 with the task, journal operation and a record_project command that carries --workspace and --operation-id; single POST for create; verbatim replay after the repair records the task with 0 requests and index_dirty", async () => {
+  for (const verb of ["get", "wait", "stream", "create-async", "create-sync"] as Verb[]) {
+    for (const fault of ["missing", "damaged"] as Fault[]) {
+      const id = `${verb}-${fault}`;
+      let plant: (() => void) | null = null;
+      const api = await startMockApi((req, res) => {
+        plant?.();
+        plant = null;
+        if (req.method === "POST") return jsonReply(res, 200, { result: id });
+        if (req.method === "DELETE") return jsonReply(res, 500, { message: "never" });
+        const body = taskBody({ id });
+        if (req.path.endsWith("/stream")) {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          return void res.end(`data: ${JSON.stringify(body)}\n\n`);
         }
+        return jsonReply(res, 200, body);
+      });
+      try {
+        const dir = tmpDir();
+        const env = api.env();
+        const configDir = String(env["MESHY_CONFIG_DIR"]);
+        const init = await runCli(["project", "init", "--root", join(dir, "projects"), "--name", id], { env, cwd: dir });
+        assert.equal(init.code, 0, init.stderr);
+        const proj = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
+        const meta = join(proj, "metadata.json");
+        const original = readFileSync(meta);
+        plant = fault === "missing" ? () => renameSync(meta, `${meta}.backup`) : () => writeFileSync(meta, "{ invalid json");
+        const args = verb.startsWith("create") ? ["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture", ...(verb === "create-async" ? ["--async"] : [])] : ["text-to-3d", verb, id];
+        const r = await runCli([...args, "--project", proj, "--workspace", proj], { env, cwd: dir });
+        assert.equal(r.code, 11, `${id}: ${r.stderr}\n${r.stdout}`);
+        const out = parseSingleJson(r.stdout) as Record<string, unknown>;
+        const result = out["result"] as { task_id: string; submission: { state: string; operation_id: string | null; task_id?: string } };
+        const isCreate = verb.startsWith("create");
+        const records = journal(configDir);
+        assert.deepEqual(Object.keys(out).sort(), ENVELOPE_KEYS, id);
+        const error = out["error"] as { code: string; message: string; recovery: { action: string; automatic: boolean; command: string } | null; hint?: string };
+        assert.equal(error.code, "local_io", id);
+        assert.ok(error.recovery, `${id}: a recovery is offered`);
+        assert.equal(error.recovery!.action, "record_project", id);
+        assert.equal(error.hint, error.recovery!.command, id);
+        assert.match(error.message, fault === "missing" ? /has no metadata\.json any more/ : /not valid JSON/, id);
+        const command: string = error.recovery!.command;
+        assert.equal(result.task_id, id, `${id}: the task is kept`);
+        assert.equal(result.submission.state, "accepted");
+        const words = shellSplit(command);
+        assert.equal(optionValue(words, "--stage"), "preview", id);
+        assert.equal(optionValue(words, "--resource"), "text-to-3d", id);
+        if (isCreate) {
+          assert.equal(records.length, 1, `${id}: exactly one journal record — nothing re-submitted`);
+          assert.equal(records[0]!.state, "accepted");
+          assert.equal(records[0]!.task_id, id);
+          assert.equal(result.submission.operation_id, records[0]!.operation_id, `${id}: submission names the journal record`);
+          assert.equal(optionValue(words, "--operation-id"), records[0]!.operation_id, `${id}: the recovery keeps the operation id`);
+          assert.equal(api.requests.filter((q) => q.method === "POST").length, 1, id);
+        } else {
+          assert.equal(records.length, 0, id);
+          assert.equal(api.requests.filter((q) => q.method === "POST").length, 0, id);
+        }
+        // Exact request sequence for every entry: the fixture is SUCCEEDED on the first GET, so no extra poll is tolerated.
+        const base = "/openapi/v2/text-to-3d";
+        const expectedRequests: Array<[string, string]> =
+          verb === "get" || verb === "wait" ? [["GET", `${base}/${id}`]] : verb === "stream" ? [["GET", `${base}/${id}/stream`]] : verb === "create-async" ? [["POST", base]] : [["POST", base], ["GET", `${base}/${id}`]];
+        assert.deepEqual(api.requests.map((q) => [q.method, q.path]), expectedRequests, `${id}: exact method/path sequence`);
+        // A damaged metadata still lets the snapshot land; a missing one does not — and the command says which.
+        const taskJson = optionValue(words, "--task-json");
+        if (fault === "missing" || verb === "create-async") assert.equal(taskJson, undefined, `${id}: no snapshot was written`);
+        else {
+          assert.equal(taskJson, `task_${id}.json`, id);
+          assert.ok(existsSync(join(proj, taskJson!)), `${id}: the snapshot exists in the project`);
+        }
+        // Repair the project, then replay exactly the command handed out.
+        if (fault === "missing") renameSync(`${meta}.backup`, meta);
+        else writeFileSync(meta, original);
+        const before = api.requests.length;
+        const { entry } = await replayRecord(command, env, dir, { projectDir: proj, workspace: proj, taskId: id, requestsBefore: before, requests: () => api.requests.length });
+        assert.equal(entry["stage"], "preview", id);
+        assert.equal(entry["resource"], "text-to-3d", id);
+        if (isCreate) assert.equal(entry["operation_id"], records[0]!.operation_id, `${id}: the journal operation is recorded`);
+        if (taskJson) assert.equal(entry["task_json"], taskJson, id);
+      } finally {
+        await api.close();
       }
     }
   }
@@ -483,39 +480,37 @@ test("R5-F03 a project that leaves the workspace during the request (replaced by
     const configDir = String(env["MESHY_CONFIG_DIR"]);
     const workspace = join(dir, "workspace");
     mkdirSync(workspace);
-    for (const schema of ["bare", "v1"] as const) {
-      taskId = `escaped-${schema}`;
-      const init = await runCli(["project", "init", "--root", join(workspace, "projects"), "--name", `escape-${schema}`], { env, cwd: dir });
-      assert.equal(init.code, 0, init.stderr);
-      const proj = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
-      const outside = join(dir, `outside-${schema}`);
-      // The project passes the preflight, then leaves the workspace while the POST is in flight.
-      plant = () => {
-        renameSync(proj, outside);
-        symlinkSync(outside, proj);
-      };
-      api.requests.length = 0;
-      const r = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture", "--async", ...(schema === "v1" ? V1 : []), "--project", proj, "--workspace", workspace], { env, cwd: dir });
-      assert.equal(r.code, 11, `${schema}: ${r.stderr}\n${r.stdout}`);
-      assert.equal(api.requests.filter((q) => q.method === "POST").length, 1, `${schema}: the POST happened (the preflight had passed)`);
-      const out = parseSingleJson(r.stdout) as Record<string, unknown>;
-      const result = out["result"] as { task_id: string; submission: { operation_id: string | null } };
-      assert.equal(result.task_id, taskId, `${schema}: the accepted task is named`);
-      const records = journal(configDir).filter((j) => j.task_id === taskId);
-      assert.equal(records.length, 1, `${schema}: journaled exactly once`);
-      assert.equal(records[0]!.state, "accepted");
-      assert.equal(result.submission.operation_id, records[0]!.operation_id);
-      const message = (out["error"] as { message: string }).message;
-      assert.match(message, /no longer a target inside the authorised boundary/, schema);
-      assert.match(message, /symbolic link|outside the authorised root/, schema);
-      assert.match(message, /nothing was recorded/, schema);
-      assert.match(message, new RegExp(`operation ${records[0]!.operation_id}`), `${schema}: the journal operation is named`);
-      const hint = (out["error"] as { hint?: string }).hint;
-      assert.ok(!(hint ?? "").startsWith("meshy project record"), `${schema}: no record command that would cross the boundary`);
-      assert.equal((out["error"] as { recovery: unknown }).recovery, null, "no recovery that drops the workspace");
-      assert.deepEqual(listing(outside), ["metadata.json"], `${schema}: nothing was written through the symlink (no snapshot, no lock, no temp)`);
-      assert.equal((JSON.parse(readFileSync(join(outside, "metadata.json"), "utf8")) as { tasks: unknown[] }).tasks.length, 0, `${schema}: the escaped metadata was not written`);
-    }
+    taskId = "escaped";
+    const init = await runCli(["project", "init", "--root", join(workspace, "projects"), "--name", "escape"], { env, cwd: dir });
+    assert.equal(init.code, 0, init.stderr);
+    const proj = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
+    const outside = join(dir, "outside");
+    // The project passes the preflight, then leaves the workspace while the POST is in flight.
+    plant = () => {
+      renameSync(proj, outside);
+      symlinkSync(outside, proj);
+    };
+    api.requests.length = 0;
+    const r = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "fixture", "--async", "--project", proj, "--workspace", workspace], { env, cwd: dir });
+    assert.equal(r.code, 11, `${r.stderr}\n${r.stdout}`);
+    assert.equal(api.requests.filter((q) => q.method === "POST").length, 1, "the POST happened (the preflight had passed)");
+    const out = parseSingleJson(r.stdout) as Record<string, unknown>;
+    const result = out["result"] as { task_id: string; submission: { operation_id: string | null } };
+    assert.equal(result.task_id, taskId, "the accepted task is named");
+    const records = journal(configDir).filter((j) => j.task_id === taskId);
+    assert.equal(records.length, 1, "journaled exactly once");
+    assert.equal(records[0]!.state, "accepted");
+    assert.equal(result.submission.operation_id, records[0]!.operation_id);
+    const message = (out["error"] as { message: string }).message;
+    assert.match(message, /no longer a target inside the authorised boundary/);
+    assert.match(message, /symbolic link|outside the authorised root/);
+    assert.match(message, /nothing was recorded/);
+    assert.match(message, new RegExp(`operation ${records[0]!.operation_id}`), "the journal operation is named");
+    const hint = (out["error"] as { hint?: string }).hint;
+    assert.ok(!(hint ?? "").startsWith("meshy project record"), "no record command that would cross the boundary");
+    assert.equal((out["error"] as { recovery: unknown }).recovery, null, "no recovery that drops the workspace");
+    assert.deepEqual(listing(outside), ["metadata.json"], "nothing was written through the symlink (no snapshot, no lock, no temp)");
+    assert.equal((JSON.parse(readFileSync(join(outside, "metadata.json"), "utf8")) as { tasks: unknown[] }).tasks.length, 0, "the escaped metadata was not written");
   } finally {
     await api.close();
   }

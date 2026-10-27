@@ -97,11 +97,10 @@ test("off and liveOnly write nothing", () => {
   assert.equal(s.out + pipe.out, "");
 });
 
-test("D-065: a typed --output-schema v1 means JSON even on a TTY; a typed --format still wins", () => {
+test("an untyped format follows the TTY; a typed --format wins; --json wins over both", () => {
   assert.equal(resolveFormat({}, true), "pretty");
   assert.equal(resolveFormat({}, false), "json");
-  assert.equal(resolveFormat({ outputSchema: "v1" }, true), "json");
-  assert.equal(resolveFormat({ outputSchema: "legacy" }, true), "pretty");
-  assert.equal(resolveFormat({ outputSchema: "v1", format: "pretty" }, true), "pretty");
+  assert.equal(resolveFormat({ format: "json" }, true), "json");
+  assert.equal(resolveFormat({ format: "pretty" }, false), "pretty");
   assert.equal(resolveFormat({ format: "pretty", json: true }, true), "json");
 });
