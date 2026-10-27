@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { enumerateAssets, resolveAssetKey, selectAssets, SelectionError } from "../src/internal/artifacts.js";
 import { requireTaskResource } from "../src/client/resource-registry.js";
+import { enumerateArtifacts } from "../src/internal/download.js";
+import type { Task } from "../src/client/types.js";
 import { extractTaskObject, toTaskView } from "../src/internal/task-view.js";
 
 const rig = JSON.parse(readFileSync(new URL("./fixtures/skill-parity/task-rigging.synthetic.json", import.meta.url), "utf8")) as Record<string, unknown>;
@@ -116,3 +118,30 @@ test("T-063 the same task yields the same assets from an API task, a meta.json a
   assert.deepEqual(enumerateAssets(meta.task).assets.map((a) => a.key), fromApi);
   assert.deepEqual(enumerateAssets(env.task).assets.map((a) => a.key), fromApi);
 });
+
+test("every key the -o manifest uses (files and skipped) resolves in meshy download --asset to the same URL", () => {
+  const u = (name: string): string => `https://cdn.example.com/${name}`;
+  const task = {
+    id: "t",
+    type: "rig",
+    status: "SUCCEEDED",
+    model_urls: { glb: u("m.glb"), obj: u("m.obj"), mtl: u("m.mtl"), pre_remeshed_glb: u("p.glb") },
+    thumbnail_url: u("t.png"),
+    texture_urls: [{ base_color: u("bc.png"), metallic_roughness: u("mr.png") }],
+    image_urls: [u("i.png")],
+    result: {
+      rigged_character_glb_url: u("r.glb"),
+      rigged_character_fbx_url: u("r.fbx"),
+      animation_glb_url: u("a.glb"),
+      animation_fbx_url: u("a.fbx"),
+      processed_usdz_url: u("a.usdz"),
+      motion_url: u("mo.fbx"),
+      basic_animations: { walking_glb_url: u("w.glb"), running_fbx_url: u("r2.fbx"), walking_armature_glb_url: u("wa.glb") },
+    },
+  };
+  const assets = enumerateAssets(task).assets;
+  for (const artifact of enumerateArtifacts(task as unknown as Task)) {
+    assert.equal(resolveAssetKey(artifact.key, assets)?.url, artifact.url, artifact.key);
+  }
+});
+

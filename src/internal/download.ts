@@ -11,9 +11,10 @@
  * any MIME-driven extension change — is checked against the authorised root.
  *
  * Two entry points share the core:
- *   downloadArtifacts — the 0.2.0 `-o` behaviour (all artifacts, role-based
- *                       names, meta.json sidecar); output shape unchanged. An
- *                       explicit `root` (the --workspace) confines every path.
+ *   downloadArtifacts — `-o`: the primary artifacts (or every one with
+ *                       --all-assets) under the 0.2.0 role-based names, plus
+ *                       the meta.json sidecar. An explicit `root` (the
+ *                       --workspace) confines every path.
  *   downloadAssets    — the selective downloader behind `meshy download` and
  *                       the v1 manifest.
  * Both relink OBJ → MTL → texture references after the set has landed (see
@@ -594,7 +595,7 @@ async function convertImage(buffer: Buffer, targetExt: string, targetPath: strin
 }
 
 // ---------------------------------------------------------------------------
-// Legacy `-o` wrapper (0.2.0 layout preserved)
+// `-o` downloader (0.2.0 file layout preserved)
 // ---------------------------------------------------------------------------
 
 export interface Artifact {
