@@ -465,6 +465,12 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   every GET the server saw started within the budget, the second waited the full
   interval, a third can only be the deadline wake-up, and the counted polls match
   the GETs seen (at most one cut off by the deadline).
+- 0.6.0: the "third GET ≥ 280 ms after the first" bound is dropped. Offsets are
+  measured from the first GET the server sees, but the CLI's deadline starts
+  earlier (runtime setup, ~20 ms on CI), so a correct deadline wake-up showed at
+  277–278 ms and failed CI twice. Where the third GET lands is proven by the
+  fake-clock early-wake test; the subprocess test keeps the bounds a real clock
+  can prove.
 
 ## D-045 The legacy sidecar is published like an asset
 

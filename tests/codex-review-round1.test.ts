@@ -200,8 +200,9 @@ test("R03/F07 wait: slow body, expiry during sleep and --timeout 0 behave as spe
     // ~250 ms, then the sleep is cut to the ~50 ms left. The loop may wake a
     // fraction before the deadline and issue one more deadline-bound GET (D-044:
     // an early wake may poll again, never after the deadline), so the count is
-    // 1–3 and a third GET can only sit at the deadline itself — never inside the
-    // interval — and every GET the server saw started within the budget.
+    // 1–3 and every GET the server saw started within the budget. Where exactly
+    // a third GET lands is the fake-clock tests' job (tests/poll.test.ts): the
+    // server's clock starts at the first GET, the CLI's deadline earlier.
     mode = "instant";
     stamps.length = 0;
     origin = Date.now();
@@ -215,7 +216,6 @@ test("R03/F07 wait: slow body, expiry during sleep and --timeout 0 behave as spe
     assert.ok(offsets.length >= eo.result.wait.polls && offsets.length - eo.result.wait.polls <= 1, `every counted poll is a GET the server saw (at most one deadline-bound GET was cut off): polls=${eo.result.wait.polls} gets=${JSON.stringify(offsets)}`);
     assert.ok(offsets.every((t) => t <= 300 + 60), `every GET started within the budget: ${JSON.stringify(offsets)}`);
     if (offsets.length >= 2) assert.ok(offsets[1]! >= 250 - 20, `the second GET waited the full interval: ${JSON.stringify(offsets)}`);
-    if (offsets.length === 3) assert.ok(offsets[2]! >= 300 - 20, `a third GET can only be the deadline wake-up: ${JSON.stringify(offsets)}`);
 
     // --timeout 0: exactly one query bounded by the read timeout, not by a zero budget.
     mode = "slow-200";
