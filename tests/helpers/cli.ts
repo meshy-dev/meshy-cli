@@ -9,7 +9,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,8 +35,9 @@ export interface RunOptions {
   onSpawn?: (child: ChildProcess) => void;
 }
 
+/** A fresh directory by its real path (manifests report real paths; macOS puts tmp behind /var → /private/var). */
 export function tmpDir(prefix = "meshy-cli-test-"): string {
-  return mkdtempSync(join(tmpdir(), prefix));
+  return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
 }
 
 export function isolatedEnv(extra: Record<string, string | undefined> = {}): Record<string, string | undefined> {

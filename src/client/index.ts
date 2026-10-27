@@ -22,7 +22,6 @@ import { createTransport, type Transport } from "./transport.js";
 import { assertCredentialAllowedForOrigin, type MeshyConfig } from "../internal/config.js";
 import { UsageError } from "../internal/errors.js";
 
-export type { HttpFetch } from "./endpoints/base.js";
 
 export class MeshyClient {
   readonly config: MeshyConfig;
@@ -39,7 +38,7 @@ export class MeshyClient {
     const common = { readTimeoutMs: config.readTimeoutMs, fetchImpl: opts.fetchImpl, credentialKind: config.credentialKind };
     this.v1 = createTransport({ ...common, baseUrl: config.baseUrlV1, apiKey: config.apiKey });
     this.v2 = createTransport({ ...common, baseUrl: config.baseUrlV2, apiKey: config.apiKey });
-    this.balance = new BalanceEndpoint((path, init) => this.v1.fetchRaw(path, init));
+    this.balance = new BalanceEndpoint(this.v1);
     this.showcases = new ShowcasesEndpoint(this.v1);
   }
 

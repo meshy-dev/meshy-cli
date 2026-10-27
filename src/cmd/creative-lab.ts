@@ -167,9 +167,6 @@ const PRODUCTS: Record<CreativeLabProduct, ProductDescriptor> = {
       cmd.addOption(new Option("--image-subject <kind>", "what the photo shows (default: character)").choices(["character", "landscape"])),
     prototypeExtraPayload: (opts) => ({ image_subject: opts.imageSubject }),
     validatePrototype: (payload) => {
-      if ("text" in payload) {
-        throw new UsageError("lamp prototype: the `text` input is deprecated and not accepted by this CLI; provide --image-url (a photo) instead");
-      }
       if (payload.image_subject !== undefined && payload.image_subject !== "character" && payload.image_subject !== "landscape") {
         throw new UsageError("image_subject must be 'character' or 'landscape'");
       }

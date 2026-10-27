@@ -29,7 +29,7 @@ import { TransportError } from "../client/transport.js";
 import type { Task } from "../client/types.js";
 import { emitResult, openCommand, rejectOutputFlag, saveRawJson, type OpenedCommand, type SavedJson } from "./command-helpers.js";
 import { abortSignal, wasInterrupted } from "./context.js";
-import { downloadArtifacts, type SkippedArtifact } from "./download.js";
+import { downloadTaskAssets, type SkippedAsset } from "./download.js";
 import { classifyError, CliError, UsageError, type Warning } from "./errors.js";
 import { normalizeMediaPayload } from "./file-input.js";
 import { allAssetsOption, outputOption } from "./global-options.js";
@@ -112,7 +112,7 @@ export interface DownloadOutcome {
   files: Array<{ key?: string; path: string; status: "written" | "failed"; bytes?: number; sha256?: string; error?: string | null }>;
   metadata_path: string | null;
   /** Artifacts `-o` left on the server (without --all-assets), with the reason; meta.json keeps their URLs. */
-  skipped?: SkippedArtifact[];
+  skipped?: SkippedAsset[];
   /** OBJ/MTL/texture reference report when the download contained a text OBJ. */
   material_links?: MaterialLinkReport | null;
   /** Set when the transfers landed but a later step (relink | digest | sidecar) failed or was interrupted. */
@@ -895,8 +895,8 @@ function attachSubmission(err: Error, submission: { state: string; operation_id:
 }
 
 /**
- * `-o`: download a SUCCEEDED task's assets through the 0.2.0 file layout,
- * confined to the workspace when one is set. A failure keeps the task in the
+ * `-o`: save a SUCCEEDED task's default selection (every asset with
+ * --all-assets), confined to the workspace when one is set. A failure keeps the task in the
  * result — the assets are still on the server, the task still exists.
  */
 async function maybeDownloadV1(
@@ -912,10 +912,10 @@ async function maybeDownloadV1(
   if (!output) return NOT_REQUESTED();
   if (task.status !== "SUCCEEDED") return { state: "not_ready", files: [], metadata_path: null };
   try {
-    const { files, metadataPath, materialLinks, skipped } = await withSpinner(opened.format, "Downloading assets", () =>
-      downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspaceRoot, signal: abortSignal(), allAssets: opened.flags.allAssets }),
+    const { files, metadataPath, materialLinks, skipped, warnings: transferWarnings } = await withSpinner(opened.format, "Downloading assets", () =>
+      downloadTaskAssets(task, output, descriptor, { root: opened.flags.workspaceRoot, signal: abortSignal(), allAssets: opened.flags.allAssets }),
     );
-    if (materialLinks) warnings.push(...materialLinks.warnings);
+    warnings.push(...transferWarnings.map((w) => warning(w.code, w.message)));
     return {
       state: "completed",
       files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })),

@@ -1,7 +1,7 @@
 /**
  * download — selective asset download for a task.
  *
- * Sources (exactly one): --task-json <file> (API task, legacy meta.json or a
+ * Sources (exactly one): --task-json <file> (API task, an `-o` meta.json or a
  * v1 envelope/result), --url <asset-url>, or --resource <id> --task-id <id>
  * (one GET, then the assets). Selection (at most one): --asset <key>…,
  * --model-format <fmt>, --kind <kind>, --all; with several assets and no

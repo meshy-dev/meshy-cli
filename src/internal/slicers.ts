@@ -1,7 +1,7 @@
 /**
- * Slicer registry, detection and launch — the legacy `slicers.py` helper.
+ * Slicer registry, detection and launch.
  *
- * Seven slicers are registered with the install locations the skill used; the
+ * Seven slicers are registered with their usual install locations; the
  * `multicolor` flag is capability metadata only (the slicer can drive
  * multi-material prints — it says nothing about a particular printer).
  *
@@ -11,14 +11,13 @@
  *   Windows  — `<ProgramFiles | ProgramFiles(x86)>\<dir>\<exe>`, where a `*`
  *              suffix on the registered directory matches versioned installs
  *              ("Creality Print 5.1", "UltiMaker Cura 5.7")
- *   Linux    — the three executables the skill knew about, on PATH; the other
+ *   Linux    — the three slicers with a known executable, on PATH; the other
  *              four are reported as unsupported instead of guessed
  *
  * Launching only ever runs the detected path (or `open -a <bundle>` on macOS)
  * with the model file as a single argv element: no shell, no string commands,
- * no default-application fallback. The legacy Windows bug — detecting an exe
- * under Program Files, then running a same-named exe from PATH — is exactly
- * what the detected absolute path avoids. A spawn that fails is an error; a
+ * no default-application fallback. Running the detected absolute path means a
+ * same-named exe elsewhere on PATH is never the one launched. A spawn that fails is an error; a
  * spawn that succeeds is `launch_requested`, never proof that the slicer
  * imported the file. On macOS the short-lived `open` helper is awaited (bounded)
  * for its exit status; GUI processes are never awaited.
@@ -34,7 +33,7 @@ import { CliError, UsageError } from "./errors.js";
 export interface SlicerDescriptor {
   /** Stable slug for scripts (`orca-slicer`). */
   id: string;
-  /** Display name, as the legacy skill spelled it (`OrcaSlicer`). */
+  /** Display name, as the slicer spells itself (`OrcaSlicer`). */
   name: string;
   /** macOS bundle name without `.app`. */
   macApp: string;
@@ -42,7 +41,7 @@ export interface SlicerDescriptor {
   winExe: string;
   /** Windows directory under Program Files; a trailing `*` matches a version suffix. */
   winDir: string;
-  /** Linux executable expected on PATH, or null when the skill registered none. */
+  /** Linux executable expected on PATH, or null when none is known. */
   linuxExe: string | null;
   /** Capability metadata: the slicer supports multi-material / multi-colour prints. */
   multicolor: boolean;

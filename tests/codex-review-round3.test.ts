@@ -103,7 +103,7 @@ test("C01+C02/R3-F01,R3-F04 sidecar targets planted after the preflight (symlink
       assert.equal(env1.result.task_id, "round3-task");
       assert.equal(env1.result.downloads.state, "partial");
       assert.equal(env1.result.downloads.failed_step, "sidecar");
-      assert.deepEqual(env1.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "written"]]);
+      assert.deepEqual(env1.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "written"]]);
       const model = env1.result.downloads.files[0]!;
       assert.ok(existsSync(model.path), `${label}: the committed model is not rolled back`);
       assert.equal(sha(model.path), model.sha256);
@@ -132,7 +132,7 @@ test("C01+C02/R3-F01,R3-F04 sidecar targets planted after the preflight (symlink
     assert.equal(lp.error.code, "local_io");
     assert.equal(lp.result?.task_id, "round3-task");
     assert.equal(lp.result?.downloads?.failed_step, "sidecar");
-    assert.deepEqual(lp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model_glb", "written"]]);
+    assert.deepEqual(lp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model.glb", "written"]]);
     assert.equal(readFileSync(outside, "utf8"), "original-user-data");
   } finally {
     await api.close();
@@ -184,7 +184,7 @@ test("C03/R3-F05 SIGINT while the OBJ is being relinked exits 130, keeps the com
     assert.equal(env.result.task_id, "round3-task");
     assert.equal(env.result.downloads.state, "partial");
     assert.equal(env.result.downloads.failed_step, "relink");
-    assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model_obj", "written"], ["model_mtl", "written"]]);
+    assert.deepEqual(env.result.downloads.files.map((f) => [f.key, f.status]), [["model.obj", "written"], ["model.mtl", "written"]]);
     for (const f of env.result.downloads.files) {
       assert.ok(existsSync(f.path), `${f.key} stays on disk`);
       assert.equal(sha(f.path), f.sha256, `${f.key}: manifest digest is the file actually on disk`);
@@ -404,7 +404,7 @@ test("C06/R3-F02 sync create/wait/get: an asset 503, a sidecar failure and SIGIN
     assert.equal(payload.result?.submission?.operation_id, operationId, "the error names the journal's operation id");
     assert.equal(payload.result?.submission?.operation_id, operationId);
     assert.match(payload.result?.next?.wait ?? "", /wait paid-legacy-created-id/);
-    assert.deepEqual(payload.result?.downloads?.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]]);
+    assert.deepEqual(payload.result?.downloads?.files.map((f) => [f.key, f.status]), [["model.glb", "failed"]]);
     assert.ok(payload.error.hint && /paid-legacy-created-id/.test(payload.error.hint), "the hint (also printed on stderr) names the task");
     assert.match(created.stderr, /paid-legacy-created-id/);
     assert.equal(api.requests.filter((q) => q.method === "POST").length, 1);
@@ -430,7 +430,7 @@ test("C06/R3-F02 sync create/wait/get: an asset 503, a sidecar failure and SIGIN
     assert.equal(sp.result?.task_id, "paid-legacy-created-id");
     assert.equal(sp.result?.downloads?.state, "partial");
     assert.equal(sp.result?.downloads?.failed_step, "sidecar");
-    assert.deepEqual(sp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model_glb", "written"]]);
+    assert.deepEqual(sp.result?.downloads?.files.map((f) => [f.key, f.status]), [["model.glb", "written"]]);
     assert.ok(existsSync(join(sideDir, "model.glb")));
 
     // SIGINT during the transfer.

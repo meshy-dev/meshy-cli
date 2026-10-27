@@ -71,7 +71,7 @@ test("make: the tip is a runnable download command with the full id and a direct
 test("saved files replace the tip", () => {
   const withFiles = {
     ...V1,
-    result: { ...(V1.result as object), downloads: { state: "completed", files: [{ key: "model_glb", path: "/tmp/husky/model.glb", status: "written" }], metadata_path: "/tmp/husky/meta.json" } },
+    result: { ...(V1.result as object), downloads: { state: "completed", files: [{ key: "model.glb", path: "/tmp/husky/model.glb", status: "written" }], metadata_path: "/tmp/husky/meta.json" } },
   };
   const out = renderView("text-to-3d.wait", withFiles, plain);
   assert.match(out, /^Saved {4}\/tmp\/husky\/model\.glb$/m);
@@ -81,14 +81,14 @@ test("saved files replace the tip", () => {
 test("what -o left on the server is one dim line, counted by reason; nothing when everything was saved", () => {
   const withSkipped = (skipped: unknown[]) => ({
     ...V1,
-    result: { ...(V1.result as object), downloads: { state: "completed", files: [{ key: "model_glb", path: "/tmp/husky/model.glb", status: "written" }], metadata_path: "/tmp/husky/meta.json", skipped } },
+    result: { ...(V1.result as object), downloads: { state: "completed", files: [{ key: "model.glb", path: "/tmp/husky/model.glb", status: "written" }], metadata_path: "/tmp/husky/meta.json", skipped } },
   });
   const out = renderView(
     "text-to-3d.wait",
     withSkipped([
-      { key: "texture_0_base_color", reason: "embedded_textures" },
-      { key: "texture_0_normal", reason: "embedded_textures" },
-      { key: "rigged_character_fbx_url", reason: "alternate_format" },
+      { key: "texture.0.base_color", reason: "embedded_textures" },
+      { key: "texture.0.normal", reason: "embedded_textures" },
+      { key: "result.rigged_character_fbx_url", reason: "alternate_format" },
     ]),
     plain,
   );

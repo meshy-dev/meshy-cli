@@ -77,7 +77,7 @@ test("L01 creative-lab lamp prototype get/wait on a task that is still IN_PROGRE
 // L02 — the legacy `-o` layout names Creative Lab parts and bundles like `meshy download`
 // ---------------------------------------------------------------------------
 
-test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.lamp_stl), and a keychain OBJ bundle saves as model.obj.zip; slot keys and digests unchanged", async () => {
+test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.lamp_stl), and a keychain OBJ bundle saves as model.obj.zip; stable keys and digests", async () => {
   const { mkdirSync, statSync } = await import("node:fs");
   const { tmpDir } = await import("./helpers/cli.js");
   const stl = Buffer.concat([Buffer.alloc(80, 0), Buffer.from([1, 0, 0, 0]), Buffer.alloc(50, 7)]);
@@ -108,8 +108,8 @@ test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.l
     assert.equal(lamp.code, 0, `${lamp.stderr}\n${lamp.stdout}`);
     const l = parseSingleJson(lamp.stdout) as { result: { downloads: { files: Array<{ key: string; path: string; bytes: number; status: string }> } } };
     assert.deepEqual(l.result.downloads.files.map((f) => [f.key, f.path.split("/").at(-1), f.status]), [
-      ["model_lamp_stl", "lamp.stl", "written"],
-      ["model_base_stl", "base.stl", "written"],
+      ["model.lamp_stl", "lamp.stl", "written"],
+      ["model.base_stl", "base.stl", "written"],
     ]);
     for (const f of l.result.downloads.files) assert.equal(statSync(f.path).size, stl.length);
     assert.deepEqual(Object.keys((JSON.parse(readFileSync(join(lampOut, "meta.json"), "utf8")) as { task: { model_urls: Record<string, string> } }).task.model_urls).sort(), ["base_stl", "lamp_stl"]);
@@ -119,7 +119,7 @@ test("L02 -o on a Creative Lab lamp build saves lamp.stl / base.stl (not model.l
     const key = await runCli(["creative-lab", "keychain", "build", "get", "key-1", "-o", keyOut], { env, cwd: dir });
     assert.equal(key.code, 0, `${key.stderr}\n${key.stdout}`);
     const k = parseSingleJson(key.stdout) as { result: { downloads: { files: Array<{ key: string; path: string; status: string }>; material_links: unknown } } };
-    assert.deepEqual(k.result.downloads.files.map((f) => [f.key, f.path.split("/").at(-1), f.status]), [["model_obj", "model.obj.zip", "written"]]);
+    assert.deepEqual(k.result.downloads.files.map((f) => [f.key, f.path.split("/").at(-1), f.status]), [["model.obj", "model.obj.zip", "written"]]);
     assert.ok(readFileSync(k.result.downloads.files[0]!.path).equals(zip), "the bundle bytes are saved untouched");
     assert.equal(k.result.downloads.material_links, null, "a ZIP bundle is not relinked");
   } finally {

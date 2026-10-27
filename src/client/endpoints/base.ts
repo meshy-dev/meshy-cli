@@ -18,9 +18,6 @@ import {
   type Task,
 } from "../types.js";
 
-/** Legacy fetch signature kept for the `api` passthrough and older call sites. */
-export type HttpFetch = (path: string, init?: RequestInit) => Promise<Response>;
-
 export interface ListParams {
   page_num?: number;
   page_size?: number;

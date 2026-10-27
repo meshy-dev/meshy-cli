@@ -76,7 +76,7 @@ export interface Transport {
   readonly baseUrl: string;
   readonly authenticated: boolean;
   requestJson(method: string, path: string, opts?: RequestOptions): Promise<JsonResponse>;
-  /** Legacy-style fetch: validates the path, attaches auth, throws MeshyApiError on non-2xx. Body reading is the caller's. */
+  /** Raw fetch for the `api` passthrough: validates the path, attaches auth, throws MeshyApiError on non-2xx. Body reading is the caller's. */
   fetchRaw(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<Response>;
   openStream(path: string, opts?: { signal?: AbortSignal; headers?: Record<string, string>; connectTimeoutMs?: number }): Promise<StreamHandle>;
 }

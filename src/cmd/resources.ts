@@ -41,7 +41,6 @@ export const RESOURCES: ResourceEntry[] = [
   { name: "repair-printability", summary: "fix non-watertight / non-manifold geometry" },
   { name: "balance", summary: "remaining credit balance" },
   { name: "delete", summary: "delete a task of any resource except Creative Lab (whose own delete verb cancels)" },
-  // Added in S1 (appended so 0.2.0 consumers keep their positions).
   { name: "uv-unwrap", summary: "generate fresh UVs for a GLB (≤40k faces) — a UV white model for external texturing" },
   { name: "creative-lab", summary: "photo → printable product: figure | vinyl-figure | brick-figure | lamp | keychain | fridge-magnet | keycap | fidget-pixel (prototype then build) | fidget-collapsible (one stage)" },
   { name: "animation-catalog", summary: "animation library (action ids for animate); free, server-side search" },

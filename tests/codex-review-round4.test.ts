@@ -628,10 +628,10 @@ test("R4-T01 make: two chain steps get different task ids; submission.operation_
       assert.ok(api.requests[3]!.path.endsWith(`/${step2}`), `${label}: step 2 was polled by its own id`);
       assert.equal(api.requests[4]!.path, "/asset.glb");
       if (mode === "503") {
-        assert.deepEqual(result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]], label);
+        assert.deepEqual(result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "failed"]], label);
       } else {
         assert.equal(result.downloads.state, "failed", `${label}: the interrupted transfer wrote nothing, so the manifest says failed (not not_requested)`);
-        assert.deepEqual(result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]], label);
+        assert.deepEqual(result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "failed"]], label);
         assert.ok(!existsSync(target), `${label}: no final file after the interrupt`);
       }
     } finally {

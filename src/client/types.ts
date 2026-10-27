@@ -1,9 +1,10 @@
 /**
  * Zod schemas for Meshy request/response shapes (permissive passthrough).
  *
- * `TaskSchema` fills a few defaults so 0.2.0 summaries keep their shape. The
- * v1 TaskView is built from the *raw* JSON (see task-view.ts), never from the
- * defaulted object, so a field the server did not send stays null there.
+ * `TaskSchema` fills a few defaults (`type`, `status`) so internal code can read
+ * them as strings. The TaskView is built from the *raw* JSON (see
+ * task-view.ts), never from the defaulted object, so a field the server did
+ * not send stays null there.
  */
 
 import { z } from "zod";

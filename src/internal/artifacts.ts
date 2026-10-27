@@ -62,12 +62,11 @@ export function productFromTaskType(type: unknown): { product: string; stage: st
 }
 
 /**
- * The asset a `model_urls` entry stands for. Shared with the legacy `-o`
- * downloader so both paths name Creative Lab parts the same way (`lamp.stl`,
- * `base.stl`, `bundle.zip`, the keychain/fridge-magnet OBJ bundle as
- * `model.obj.zip`) instead of turning the key into an extension.
+ * The asset a `model_urls` entry stands for: Creative Lab parts get their own
+ * names (`lamp.stl`, `base.stl`, `bundle.zip`, the keychain/fridge-magnet OBJ
+ * bundle as `model.obj.zip`) instead of turning the key into an extension.
  */
-export function modelAsset(fmtKey: string, url: string, product: string | null): Asset {
+function modelAsset(fmtKey: string, url: string, product: string | null): Asset {
   const key = `model.${fmtKey}`;
   const sourcePath = `model_urls.${fmtKey}`;
   switch (fmtKey) {
@@ -233,28 +232,8 @@ function collectUnknownUrls(value: unknown, path: string, out: Array<{ path: str
   }
 }
 
-/** `-o` manifest keys (`downloads.files[].key`, `downloads.skipped[].key`) that differ from the stable keys. */
-export const LEGACY_KEY_ALIASES: Readonly<Record<string, string>> = {
-  thumbnail: "thumbnail.primary",
-  motion_url: "result.motion_url",
-};
-
 export function resolveAssetKey(requested: string, assets: readonly Asset[]): Asset | undefined {
-  const direct = assets.find((a) => a.key === requested);
-  if (direct) return direct;
-  const alias = LEGACY_KEY_ALIASES[requested];
-  if (alias) return assets.find((a) => a.key === alias);
-  let m = /^model_([a-z0-9_]+)$/i.exec(requested);
-  if (m) return assets.find((a) => a.key === `model.${m![1]}`);
-  m = /^image_(\d+)$/.exec(requested);
-  if (m) return assets.find((a) => a.key === `image.${m![1]}`);
-  m = /^texture_(\d+)_([a-z0-9_]+)$/i.exec(requested);
-  if (m) return assets.find((a) => a.key === `texture.${m![1]}.${m![2]}`);
-  m = /^basic_animations_([a-z0-9_]+_url)$/i.exec(requested);
-  if (m) return assets.find((a) => a.key === `result.basic_animations.${m![1]}`);
-  m = /^([a-z0-9_]+_url)$/i.exec(requested);
-  if (m) return assets.find((a) => a.key === `result.${m![1]}` || a.key === `result.basic_animations.${m![1]}`);
-  return undefined;
+  return assets.find((a) => a.key === requested);
 }
 
 export interface Selection {
@@ -309,6 +288,65 @@ export function selectAssets(enumeration: AssetEnumeration, sel: Selection, opts
     }
   }
   return { selected, dependencies, missingDependencies: missing };
+}
+
+// ---------------------------------------------------------------------------
+// `-o` default selection: the files a person asked for, not every URL
+// ---------------------------------------------------------------------------
+
+/** Why `-o` left an asset on the server. meta.json keeps its URL for `meshy download`. */
+export type SkipReason = "embedded_textures" | "bundled_animation" | "alternate_format" | "pre_remesh_variant" | "extra_thumbnail" | "not_selected";
+
+export interface DefaultSelection {
+  selected: Asset[];
+  skipped: Array<{ asset: Asset; reason: SkipReason }>;
+}
+
+/**
+ * Model formats whose file already carries the textures (GLB, USDZ, the
+ * Creative Lab ZIP bundles) or has none to carry (STL, 3MF, VOX). OBJ, glTF,
+ * FBX and blend are not assumed self-contained: their maps stay.
+ */
+const SELF_CONTAINED_MODEL_FORMATS = new Set(["glb", "usdz", "stl", "3mf", "vox", "zip"]);
+
+/**
+ * Results the API delivers in two formats under one stem:
+ * `rigged_character_{glb,fbx}_url` (rigging), `animation_{glb,fbx}_url` (animate).
+ */
+const RESULT_PAIR = /^result\.(rigged_character|animation)_(glb|fbx)_url$/;
+
+/**
+ * The default `-o` set: every model format the task produced, the primary
+ * thumbnail, images, motion, post-process outputs and reports, the rig /
+ * animation result in GLB. Left on the server: the rig's bundled
+ * walking/running clips, the FBX copy of a result that also came as GLB,
+ * texture maps a delivered model already embeds, the pre-remesh GLB and the
+ * per-view / alpha thumbnails. A task with nothing primary keeps everything.
+ */
+export function selectDefaultAssets(assets: readonly Asset[]): DefaultSelection {
+  const models = assets.filter((a) => a.kind === "model" && a.key !== "model.pre_remeshed_glb");
+  const texturesEmbedded = models.length > 0 && models.every((m) => SELF_CONTAINED_MODEL_FORMATS.has(m.format ?? ""));
+  const hasPrimaryThumbnail = assets.some((a) => a.key === "thumbnail.primary");
+  const glbStems = new Set<string>();
+  for (const a of assets) {
+    const m = RESULT_PAIR.exec(a.key);
+    if (m && m[2] === "glb") glbStems.add(m[1]!);
+  }
+  const reasonFor = (a: Asset): SkipReason | null => {
+    if (a.key.startsWith("result.basic_animations.")) return "bundled_animation";
+    if (a.kind === "texture") return texturesEmbedded ? "embedded_textures" : null;
+    if (a.key === "model.pre_remeshed_glb") return models.length > 0 ? "pre_remesh_variant" : null;
+    if (a.kind === "thumbnail") return hasPrimaryThumbnail && a.key !== "thumbnail.primary" ? "extra_thumbnail" : null;
+    const pair = RESULT_PAIR.exec(a.key);
+    return pair && pair[2] !== "glb" && glbStems.has(pair[1]!) ? "alternate_format" : null;
+  };
+  const selection: DefaultSelection = { selected: [], skipped: [] };
+  for (const asset of assets) {
+    const reason = reasonFor(asset);
+    if (reason) selection.skipped.push({ asset, reason });
+    else selection.selected.push(asset);
+  }
+  return selection.selected.length > 0 ? selection : { selected: [...assets], skipped: [] };
 }
 
 export class SelectionError extends Error {

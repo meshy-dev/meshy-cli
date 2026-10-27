@@ -637,7 +637,7 @@ test("R10/F10 stream -o downloads the assets in ndjson, json and pretty; a downl
     assert.equal(lines[1]!.result.task_id, "review-task");
     assert.equal(lines[1]!.result.task.status, "SUCCEEDED");
     assert.equal(lines[1]!.result.downloads.state, "failed");
-    assert.deepEqual(lines[1]!.result.downloads.files.map((f) => [f.key, f.status]), [["model_glb", "failed"]]);
+    assert.deepEqual(lines[1]!.result.downloads.files.map((f) => [f.key, f.status]), [["model.glb", "failed"]]);
     assert.ok(!existsSync(target));
     const badJson = await runCli(["text-to-3d", "stream", "review-task", "-o", join(dir, "failing2.glb")], { env: api.env(), cwd: dir });
     assert.equal(badJson.code, 5, badJson.stderr);

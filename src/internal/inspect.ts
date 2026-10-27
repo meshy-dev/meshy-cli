@@ -1,9 +1,8 @@
 /**
  * Face-count gate — the verdict logic behind `meshy inspect faces`.
  *
- * The legacy Skill's check-faces script defaulted a missing face_count to 0 and
- * printed a passing line for a model it never measured. Nothing here fabricates
- * a number: only a finite, non-negative integer that the task actually carries
+ * Nothing here fabricates a number — a missing face_count is never 0, and a
+ * model that was never measured never passes: only a finite, non-negative integer that the task actually carries
  * is "known"; everything else is `unknown`, which the command turns into exit
  * 13 rather than a pass (D-009). Strings are never parsed into numbers — a
  * `"1234"` that the server never meant as a count must not become one here.

@@ -1,9 +1,9 @@
 /**
  * mesh — local geometry helpers. No API, no credential, no network.
  *
- * `prepare-print` is the legacy `fix_obj.py` transform (Y-up → Z-up, scaled to a
- * target height, XY centred, grounded at Z=0) as a streaming, never-overwriting
- * command. The output file is chosen by the global `-o/--output <file>` flag:
+ * `prepare-print` turns a Meshy OBJ into a print-ready one (Y-up → Z-up,
+ * scaled to a target height, XY centred, grounded at Z=0) as a streaming,
+ * never-overwriting command. The output file is chosen by the global `-o/--output <file>` flag:
  * Commander parses root options wherever they appear, so a second `--output`
  * declared here would never receive the value. Without `-o` the result is
  * `<stem>.print.obj` next to the input; `--in-place` replaces the input itself.

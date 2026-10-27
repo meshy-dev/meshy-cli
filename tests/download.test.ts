@@ -1,21 +1,19 @@
 /**
- * Tests for artifact enumeration, extension reconciliation, and the
- * file/directory routing in downloadArtifacts. Network is mocked.
+ * `-o` (downloadTaskAssets): the default selection written into a directory
+ * or one file, extension reconciliation, the sidecar, and the refusals that
+ * happen before any request. Network is mocked.
  */
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
-import {
-  downloadArtifacts,
-  enumerateArtifacts,
-  selectPrimaryArtifacts,
-} from "../src/internal/download.js";
-import { looksLikeFile } from "../src/internal/paths.js";
+import { requireTaskResource } from "../src/client/resource-registry.js";
 import type { Task } from "../src/client/types.js";
+import { downloadTaskAssets } from "../src/internal/download.js";
+import { looksLikeFile } from "../src/internal/paths.js";
 
 function task(overrides: Partial<Task>): Task {
   return {
@@ -56,6 +54,17 @@ async function tinyPngBytes(): Promise<Buffer> {
     .toBuffer();
 }
 
+/** A body that passes the GLB magic check. */
+const GLB = (tag: string): string => `glTF${tag}`;
+
+/** A fresh directory, by its real path (the manifest reports real paths). */
+const tmp = (): string => realpathSync(mkdtempSync(join(tmpdir(), "meshy-dl-")));
+const paths = (files: Array<{ path: string }>): string[] => files.map((f) => f.path);
+const IMAGE = requireTaskResource("text-to-image");
+const IMAGE_TO_3D = requireTaskResource("image-to-3d");
+const RIGGING = requireTaskResource("rigging");
+const ANALYZE = requireTaskResource("analyze-printability");
+
 test("looksLikeFile — detects extensions", () => {
   assert.equal(looksLikeFile("foo.jpg"), true);
   assert.equal(looksLikeFile("foo/bar.glb"), true);
@@ -64,149 +73,16 @@ test("looksLikeFile — detects extensions", () => {
   assert.equal(looksLikeFile("out/"), false);
 });
 
-test("enumerateArtifacts — 2D image_urls", () => {
-  const arts = enumerateArtifacts(
-    task({
-      image_urls: ["https://example.com/a.png", "https://example.com/b.png"],
-    }),
-  );
-  assert.equal(arts.length, 2);
-  assert.deepEqual(arts.map((a) => a.key), ["image_0", "image_1"]);
-});
-
-test("enumerateArtifacts — 3D model_urls + thumbnail + textures", () => {
-  const arts = enumerateArtifacts(
-    task({
-      model_urls: {
-        glb: "https://example.com/m.glb",
-        fbx: "https://example.com/m.fbx",
-        mtl: null,
-      },
-      thumbnail_url: "https://example.com/t.png",
-      texture_urls: [
-        { base_color: "https://example.com/bc.png", metallic: null, normal: "https://example.com/n.png" },
-      ],
-    }),
-  );
-  const keys = arts.map((a) => a.key).sort();
-  assert.deepEqual(keys, [
-    "model_fbx",
-    "model_glb",
-    "texture_0_base_color",
-    "texture_0_normal",
-    "thumbnail",
-  ]);
-});
-
-test("enumerateArtifacts — animate-style result.*_url", () => {
-  const arts = enumerateArtifacts(
-    task({
-      result: {
-        animation_glb_url: "https://example.com/a.glb",
-        animation_fbx_url: "https://example.com/a.fbx",
-        empty_url: "",
-      },
-    }),
-  );
-  const keys = arts.map((a) => a.key).sort();
-  assert.deepEqual(keys, ["animation_fbx_url", "animation_glb_url"]);
-});
-
-test("enumerateArtifacts — text-to-motion uses motion_format for the extension", () => {
-  const arts = enumerateArtifacts(
-    task({
-      result: {
-        motion_url: "https://example.com/motion-clip",
-        motion_format: "bvh",
-        duration_ms: 3000,
-        mode: "swift",
-      },
-    }),
-  );
-  assert.deepEqual(arts, [{
-    key: "motion_url",
-    url: "https://example.com/motion-clip",
-    preferredExt: "bvh",
-  }]);
-});
-
-const cdn = (name: string): string => `https://cdn.example.com/${name}`;
-const keysOf = (arts: { key: string }[]): string[] => arts.map((a) => a.key);
-const skippedOf = (sel: ReturnType<typeof selectPrimaryArtifacts>): Array<[string, string]> => sel.skipped.map((s) => [s.artifact.key, s.reason]);
-
-test("selectPrimaryArtifacts — GLB-only model task: model + thumbnail, the embedded texture maps stay on the server", () => {
-  const sel = selectPrimaryArtifacts(
-    enumerateArtifacts(task({ model_urls: { glb: cdn("m.glb") }, thumbnail_url: cdn("t.png"), texture_urls: [{ base_color: cdn("bc.png"), normal: cdn("n.png") }] })),
-  );
-  assert.deepEqual(keysOf(sel.selected), ["model_glb", "thumbnail"]);
-  assert.deepEqual(skippedOf(sel), [["texture_0_base_color", "embedded_textures"], ["texture_0_normal", "embedded_textures"]]);
-});
-
-test("selectPrimaryArtifacts — texture maps stay when a delivered model does not embed them (OBJ, FBX, glTF)", () => {
-  const deliveries: Array<Record<string, string>> = [{ obj: cdn("m.obj"), mtl: cdn("m.mtl") }, { glb: cdn("m.glb"), fbx: cdn("m.fbx") }, { gltf: cdn("m.gltf") }];
-  for (const model_urls of deliveries) {
-    const sel = selectPrimaryArtifacts(enumerateArtifacts(task({ model_urls, texture_urls: [{ base_color: cdn("bc.png") }] })));
-    assert.ok(keysOf(sel.selected).includes("texture_0_base_color"), JSON.stringify(model_urls));
-    assert.deepEqual(sel.skipped, []);
-  }
-});
-
-test("selectPrimaryArtifacts — every requested model format is kept; the pre-remesh GLB is not", () => {
-  const sel = selectPrimaryArtifacts(enumerateArtifacts(task({ model_urls: { glb: cdn("m.glb"), stl: cdn("m.stl"), pre_remeshed_glb: cdn("p.glb") } })));
-  assert.deepEqual(keysOf(sel.selected), ["model_glb", "model_stl"]);
-  assert.deepEqual(skippedOf(sel), [["model_pre_remeshed_glb", "pre_remesh_variant"]]);
-});
-
-test("selectPrimaryArtifacts — rigging keeps the GLB rigged character, not its FBX copy or the bundled clips", () => {
-  const sel = selectPrimaryArtifacts(
-    enumerateArtifacts(task({ result: { rigged_character_fbx_url: cdn("r.fbx"), rigged_character_glb_url: cdn("r.glb"), basic_animations: { running_glb_url: cdn("run.glb"), running_fbx_url: cdn("run.fbx") } } })),
-  );
-  assert.deepEqual(keysOf(sel.selected), ["rigged_character_glb_url"]);
-  assert.deepEqual(skippedOf(sel), [
-    ["rigged_character_fbx_url", "alternate_format"],
-    ["basic_animations_running_glb_url", "bundled_animation"],
-    ["basic_animations_running_fbx_url", "bundled_animation"],
-  ]);
-});
-
-test("selectPrimaryArtifacts — animate keeps the GLB clip and every post-process output", () => {
-  const sel = selectPrimaryArtifacts(
-    enumerateArtifacts(task({ result: { animation_fbx_url: cdn("a.fbx"), animation_glb_url: cdn("a.glb"), processed_usdz_url: cdn("a.usdz"), processed_armature_fbx_url: cdn("arm.fbx") } })),
-  );
-  assert.deepEqual(keysOf(sel.selected), ["animation_glb_url", "processed_usdz_url", "processed_armature_fbx_url"]);
-  assert.deepEqual(skippedOf(sel), [["animation_fbx_url", "alternate_format"]]);
-});
-
-test("selectPrimaryArtifacts — an FBX-only result, images and motion are kept as they are", () => {
-  assert.deepEqual(keysOf(selectPrimaryArtifacts(enumerateArtifacts(task({ result: { animation_fbx_url: cdn("a.fbx") } }))).selected), ["animation_fbx_url"]);
-  assert.deepEqual(keysOf(selectPrimaryArtifacts(enumerateArtifacts(task({ image_urls: [cdn("0.png"), cdn("1.png")] }))).selected), ["image_0", "image_1"]);
-  assert.deepEqual(keysOf(selectPrimaryArtifacts(enumerateArtifacts(task({ result: { motion_url: cdn("m.fbx"), motion_format: "fbx" } }))).selected), ["motion_url"]);
-});
-
-test("selectPrimaryArtifacts — a task with nothing primary keeps everything", () => {
-  const sel = selectPrimaryArtifacts(enumerateArtifacts(task({ result: { basic_animations: { walking_glb_url: cdn("w.glb") } } })));
-  assert.deepEqual(keysOf(sel.selected), ["basic_animations_walking_glb_url"]);
-  assert.deepEqual(sel.skipped, []);
-});
-
-test("downloadArtifacts — single 2D file, content-type matches user ext, no conversion", async () => {
+test("a single image into a file: bytes unchanged, the sidecar is named after the file", async () => {
   const url = "https://cdn.example.com/img_0";
   const png = await tinyPngBytes();
-  const restore = installFetch({
-    [url]: { body: png, contentType: "image/png" },
-  });
+  const restore = installFetch({ [url]: { body: png, contentType: "image/png" } });
   try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const { savedFiles, metadataPath } = await downloadArtifacts(
-      task({ id: "t1", type: "text-to-image", image_urls: [url] }),
-      join(dir, "character", "front.png"),
-      "text-to-image",
-    );
-    assert.equal(savedFiles.length, 1);
-    assert.match(savedFiles[0]!, /character\/front\.png$/);
-    const bytes = readFileSync(savedFiles[0]!);
-    assert.ok(bytes.equals(png), "PNG bytes passed through unchanged");
-    // Meta is named after the file stem, not a generic meta.json.
+    const dir = tmp();
+    const { files, metadataPath } = await downloadTaskAssets(task({ id: "t1", type: "text-to-image", image_urls: [url] }), join(dir, "character", "front.png"), IMAGE);
+    assert.equal(files.length, 1);
+    assert.match(files[0]!.path, /character\/front\.png$/);
+    assert.ok(readFileSync(files[0]!.path).equals(png), "PNG bytes passed through unchanged");
     assert.match(metadataPath, /character\/front_meta\.json$/);
     assert.ok(existsSync(metadataPath));
   } finally {
@@ -214,358 +90,198 @@ test("downloadArtifacts — single 2D file, content-type matches user ext, no co
   }
 });
 
-test("downloadArtifacts — two single-file outputs in one directory don't collide", async () => {
-  const url1 = "https://cdn.example.com/a";
-  const url2 = "https://cdn.example.com/b";
+test("two single-file outputs in one directory keep separate sidecars", async () => {
+  const [url1, url2] = ["https://cdn.example.com/a", "https://cdn.example.com/b"];
   const png = await tinyPngBytes();
-  const restore = installFetch({
-    [url1]: { body: png, contentType: "image/png" },
-    [url2]: { body: png, contentType: "image/png" },
-  });
+  const restore = installFetch({ [url1!]: { body: png, contentType: "image/png" }, [url2!]: { body: png, contentType: "image/png" } });
   try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const r1 = await downloadArtifacts(
-      task({ id: "t1", type: "text-to-image", image_urls: [url1] }),
-      join(dir, "a.png"),
-      "text-to-image",
-    );
-    // Second call into the same directory with a different filename must not
-    // trip the overwrite guard — per-file meta keeps them independent.
-    const r2 = await downloadArtifacts(
-      task({ id: "t2", type: "text-to-image", image_urls: [url2] }),
-      join(dir, "b.png"),
-      "text-to-image",
-    );
+    const dir = tmp();
+    const r1 = await downloadTaskAssets(task({ id: "t1", type: "text-to-image", image_urls: [url1!] }), join(dir, "a.png"), IMAGE);
+    const r2 = await downloadTaskAssets(task({ id: "t2", type: "text-to-image", image_urls: [url2!] }), join(dir, "b.png"), IMAGE);
     assert.match(r1.metadataPath, /a_meta\.json$/);
     assert.match(r2.metadataPath, /b_meta\.json$/);
-    assert.notEqual(r1.metadataPath, r2.metadataPath);
   } finally {
     restore();
   }
 });
 
-test("downloadArtifacts — converts PNG → JPEG when user requests .jpeg", async () => {
+test("an image is transcoded to the extension the file path asks for (JPEG, WebP)", async () => {
   const url = "https://cdn.example.com/img_0";
-  const png = await tinyPngBytes();
-  const restore = installFetch({
-    [url]: { body: png, contentType: "image/png" },
-  });
+  const restore = installFetch({ [url]: { body: await tinyPngBytes(), contentType: "image/png" } });
   try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const { savedFiles } = await downloadArtifacts(
-      task({ id: "t1", type: "text-to-image", image_urls: [url] }),
-      join(dir, "character", "front.jpeg"),
-      "text-to-image",
-    );
-    assert.equal(savedFiles.length, 1);
-    assert.match(savedFiles[0]!, /character\/front\.jpeg$/, "file keeps the .jpeg extension");
-    const bytes = readFileSync(savedFiles[0]!);
-    // JPEG magic: 0xFF 0xD8 0xFF
-    assert.equal(bytes[0], 0xff);
-    assert.equal(bytes[1], 0xd8);
-    assert.equal(bytes[2], 0xff);
+    const dir = tmp();
+    const jpeg = await downloadTaskAssets(task({ id: "t1", type: "text-to-image", image_urls: [url] }), join(dir, "front.jpeg"), IMAGE);
+    const jb = readFileSync(jpeg.files[0]!.path);
+    assert.match(jpeg.files[0]!.path, /front\.jpeg$/);
+    assert.deepEqual([jb[0], jb[1], jb[2]], [0xff, 0xd8, 0xff], "JPEG magic");
+    assert.ok(jpeg.warnings.some((w) => w.code === "image_transcoded"));
+    const webp = await downloadTaskAssets(task({ id: "t2", type: "text-to-image", image_urls: [url] }), join(dir, "side.webp"), IMAGE);
+    const wb = readFileSync(webp.files[0]!.path);
+    assert.equal(wb.subarray(0, 4).toString("ascii"), "RIFF");
+    assert.equal(wb.subarray(8, 12).toString("ascii"), "WEBP");
   } finally {
     restore();
   }
 });
 
-test("downloadArtifacts — converts PNG → WebP when user requests .webp", async () => {
-  const url = "https://cdn.example.com/img_0";
-  const restore = installFetch({
-    [url]: { body: await tinyPngBytes(), contentType: "image/png" },
-  });
-  try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const { savedFiles } = await downloadArtifacts(
-      task({ id: "t1", type: "text-to-image", image_urls: [url] }),
-      join(dir, "out", "front.webp"),
-      "text-to-image",
-    );
-    const bytes = readFileSync(savedFiles[0]!);
-    // WebP magic: "RIFF" .... "WEBP"
-    assert.equal(bytes.subarray(0, 4).toString("ascii"), "RIFF");
-    assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP");
-  } finally {
-    restore();
-  }
-});
-
-test("downloadArtifacts — non-convertible mismatch falls back to correct extension", async () => {
+test("a body that cannot be transcoded keeps its true extension, with a warning", async () => {
   const url = "https://cdn.example.com/m.raw";
-  const restore = installFetch({
-    [url]: { body: "GLB", contentType: "model/gltf-binary" },
-  });
+  const restore = installFetch({ [url]: { body: GLB("-model"), contentType: "model/gltf-binary" } });
   try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    // User asks for .png but the server returns a 3D binary — sharp can't
-    // transcode glb → png, so we save as the true .glb and warn.
-    const { savedFiles } = await downloadArtifacts(
-      task({ id: "t1", type: "text-to-image", image_urls: [url] }),
-      join(dir, "out", "thing.png"),
-      "text-to-image",
-    );
-    assert.match(savedFiles[0]!, /out\/thing\.glb$/);
+    const { files, warnings } = await downloadTaskAssets(task({ id: "t1", type: "text-to-image", image_urls: [url] }), join(tmp(), "out", "thing.png"), IMAGE);
+    assert.match(files[0]!.path, /out\/thing\.glb$/);
+    assert.ok(warnings.some((w) => w.code === "extension_corrected"));
   } finally {
     restore();
   }
 });
 
-test("downloadArtifacts — multi-file 3D fans out into a directory", async () => {
-  const urls = {
-    glb: "https://cdn.example.com/model.glb",
-    fbx: "https://cdn.example.com/model.fbx",
-    thumb: "https://cdn.example.com/thumb.png",
-  };
+test("an image without an extension hint gets the content-type extension in a directory", async () => {
+  const url = "https://cdn.example.com/a";
+  const restore = installFetch({ [url]: { body: await tinyPngBytes(), contentType: "image/png" } });
+  try {
+    const { files } = await downloadTaskAssets(task({ id: "t4", type: "text-to-image", image_urls: [url] }), join(tmp(), "out"), IMAGE);
+    assert.match(files[0]!.path, /out\/image_0\.png$/);
+  } finally {
+    restore();
+  }
+});
+
+test("a directory gets every model format the task produced and the thumbnail; embedded texture maps stay on the server", async () => {
+  const base = "https://cdn.example.com/m/";
   const restore = installFetch({
-    [urls.glb]: { body: "GLB", contentType: "model/gltf-binary" },
-    [urls.fbx]: { body: "FBX", contentType: "application/octet-stream" },
-    [urls.thumb]: { body: "THUMB", contentType: "image/png" },
+    [`${base}m.glb`]: { body: GLB("-glb"), contentType: "model/gltf-binary" },
+    [`${base}m.stl`]: { body: "solid x", contentType: "model/stl" },
+    [`${base}t.png`]: { body: await tinyPngBytes(), contentType: "image/png" },
   });
   try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const outDir = join(dir, "robot");
-    const { savedFiles, metadataPath } = await downloadArtifacts(
-      task({
-        id: "t2",
-        type: "image-to-3d",
-        model_urls: { glb: urls.glb, fbx: urls.fbx },
-        thumbnail_url: urls.thumb,
-      }),
+    const outDir = join(tmp(), "robot");
+    const { files, skipped, metadataPath } = await downloadTaskAssets(
+      task({ id: "t2", type: "image-to-3d", model_urls: { glb: `${base}m.glb`, stl: `${base}m.stl` }, thumbnail_url: `${base}t.png`, texture_urls: [{ base_color: `${base}bc.png` }] }),
       outDir,
-      "image-to-3d",
+      IMAGE_TO_3D,
     );
-    const names = readdirSync(outDir).sort();
-    assert.deepEqual(names, ["meta.json", "model.fbx", "model.glb", "thumbnail.png"]);
-    assert.equal(savedFiles.length, 3);
-    assert.ok(existsSync(metadataPath));
+    assert.deepEqual(readdirSync(outDir).sort(), ["meta.json", "model.glb", "model.stl", "thumbnail.png"]);
+    assert.deepEqual(files.map((f) => f.key), ["model.glb", "model.stl", "thumbnail.primary"]);
+    assert.deepEqual(skipped, [{ key: "texture.0.base_color", reason: "embedded_textures" }]);
+    const meta = JSON.parse(readFileSync(metadataPath, "utf8")) as { saved_files: string[]; skipped: unknown; task: { texture_urls: unknown } };
+    assert.deepEqual(meta.saved_files, paths(files));
+    assert.deepEqual(meta.skipped, skipped);
+    assert.deepEqual(meta.task.texture_urls, [{ base_color: `${base}bc.png` }], "meta.json keeps every URL for meshy download");
   } finally {
     restore();
   }
 });
 
-test("downloadArtifacts — a file path picks the one asset of that format (make -o car.glb)", async () => {
-  const urls = { glb: "https://cdn.example.com/m.glb", thumb: "https://cdn.example.com/t.png", bc: "https://cdn.example.com/bc.png" };
-  const restore = installFetch({
-    [urls.glb]: { body: "GLB", contentType: "model/gltf-binary" },
-    [urls.thumb]: { body: "THUMB", contentType: "image/png" },
-    [urls.bc]: { body: "BC", contentType: "image/png" },
-  });
-  try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const out = join(dir, "car.glb");
-    const { savedFiles, skipped } = await downloadArtifacts(
-      task({ id: "t3", type: "text-to-3d", model_urls: { glb: urls.glb }, thumbnail_url: urls.thumb, texture_urls: [{ base_color: urls.bc }] }),
-      out,
-      "text-to-3d",
-    );
-    assert.deepEqual(savedFiles, [out]);
-    assert.equal(readFileSync(out, "utf8"), "GLB");
-    assert.deepEqual(readdirSync(dir).sort(), ["car.glb", "car_meta.json"]);
-    assert.deepEqual(skipped, [
-      { key: "thumbnail", reason: "not_selected" },
-      { key: "texture_0_base_color", reason: "embedded_textures" },
-    ]);
-  } finally {
-    restore();
-  }
-});
-
-test("downloadArtifacts — a file path picks the FBX copy when the extension asks for it (rigging -o hero.fbx)", async () => {
-  const urls = { glb: "https://cdn.example.com/rig.glb", fbx: "https://cdn.example.com/rig.fbx", walk: "https://cdn.example.com/walk.glb" };
-  const restore = installFetch({
-    [urls.glb]: { body: "RIG-GLB", contentType: "model/gltf-binary" },
-    [urls.fbx]: { body: "RIG-FBX", contentType: "application/octet-stream" },
-  });
-  try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const out = join(dir, "hero.fbx");
-    const { savedFiles, skipped } = await downloadArtifacts(
-      task({ id: "r1", type: "rig", result: { rigged_character_glb_url: urls.glb, rigged_character_fbx_url: urls.fbx, basic_animations: { walking_glb_url: urls.walk } } }),
-      out,
-      "rigging",
-    );
-    assert.deepEqual(savedFiles, [out]);
-    assert.equal(readFileSync(out, "utf8"), "RIG-FBX");
-    assert.deepEqual(skipped, [
-      { key: "rigged_character_glb_url", reason: "not_selected" },
-      { key: "basic_animations_walking_glb_url", reason: "bundled_animation" },
-    ]);
-  } finally {
-    restore();
-  }
-});
-
-test("downloadArtifacts — refuses a file path that matches none of several assets", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-  await assert.rejects(
-    () =>
-      downloadArtifacts(
-        task({
-          id: "t3",
-          type: "image-to-3d",
-          model_urls: { glb: "https://cdn.example.com/m.glb" },
-          thumbnail_url: "https://cdn.example.com/t.png",
-        }),
-        join(dir, "robot.obj"),
-        "image-to-3d",
-      ),
-    /model\.glb, thumbnail\.png.*Pass a directory path/,
-  );
-  assert.deepEqual(readdirSync(dir), [], "nothing is written");
-});
-
-test("downloadArtifacts — a directory gets the primary set; meta.json and the result list what stayed on the server", async () => {
+test("rigging into a directory: the GLB rigged character only; the FBX copy and the bundled clips are listed as skipped", async () => {
   const base = "https://cdn.example.com/r/";
   const result = {
     rigged_character_glb_url: `${base}rig.glb`,
     rigged_character_fbx_url: `${base}rig.fbx`,
-    basic_animations: { walking_glb_url: `${base}w.glb`, walking_fbx_url: `${base}w.fbx`, walking_armature_glb_url: `${base}wa.glb` },
+    basic_animations: { walking_glb_url: `${base}w.glb`, walking_armature_glb_url: `${base}wa.glb` },
   };
-  const restore = installFetch({ [`${base}rig.glb`]: { body: "RIG", contentType: "model/gltf-binary" } });
+  const restore = installFetch({ [`${base}rig.glb`]: { body: GLB("-rig"), contentType: "model/gltf-binary" } });
   try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const outDir = join(dir, "rig");
-    const { files, skipped, metadataPath } = await downloadArtifacts(task({ id: "r2", type: "rig", result }), outDir, "rigging");
-    assert.deepEqual(readdirSync(outDir).sort(), ["meta.json", "rigged_character_glb.glb"]);
-    assert.deepEqual(files.map((f) => f.key), ["rigged_character_glb_url"]);
-    const expected = [
-      { key: "rigged_character_fbx_url", reason: "alternate_format" },
-      { key: "basic_animations_walking_glb_url", reason: "bundled_animation" },
-      { key: "basic_animations_walking_fbx_url", reason: "bundled_animation" },
-      { key: "basic_animations_walking_armature_glb_url", reason: "bundled_animation" },
-    ];
-    assert.deepEqual(skipped, expected);
-    const meta = JSON.parse(readFileSync(metadataPath, "utf8"));
-    assert.deepEqual(meta.skipped, expected);
-    assert.equal(meta.task.result.rigged_character_fbx_url, result.rigged_character_fbx_url, "meta.json keeps every URL for meshy download");
+    const outDir = join(tmp(), "rig");
+    const { files, skipped } = await downloadTaskAssets(task({ id: "r2", type: "rig", result }), outDir, RIGGING);
+    assert.deepEqual(readdirSync(outDir).sort(), ["meta.json", "rigged_character.glb"]);
+    assert.deepEqual(files.map((f) => f.key), ["result.rigged_character_glb_url"]);
+    assert.deepEqual(skipped, [
+      { key: "result.rigged_character_fbx_url", reason: "alternate_format" },
+      { key: "result.basic_animations.walking_glb_url", reason: "bundled_animation" },
+      { key: "result.basic_animations.walking_armature_glb_url", reason: "bundled_animation" },
+    ]);
   } finally {
     restore();
   }
 });
 
-test("downloadArtifacts — allAssets saves every artifact (the 0.5.0 set) and refuses a file path", async () => {
+test("a file path picks the asset of that format: `make -o car.glb` → the model, `-o hero.fbx` on a rig → the FBX copy", async () => {
+  const base = "https://cdn.example.com/p/";
+  const restore = installFetch({
+    [`${base}m.glb`]: { body: GLB("-car"), contentType: "model/gltf-binary" },
+    [`${base}rig.fbx`]: { body: "Kaydara FBX Binary", contentType: "application/octet-stream" },
+  });
+  try {
+    const dir = tmp();
+    const car = await downloadTaskAssets(
+      task({ id: "t3", type: "text-to-3d", model_urls: { glb: `${base}m.glb` }, thumbnail_url: `${base}t.png`, texture_urls: [{ base_color: `${base}bc.png` }] }),
+      join(dir, "car.glb"),
+      IMAGE_TO_3D,
+    );
+    assert.deepEqual(paths(car.files), [join(dir, "car.glb")]);
+    assert.equal(readFileSync(join(dir, "car.glb"), "utf8"), GLB("-car"));
+    assert.deepEqual(readdirSync(dir).sort(), ["car.glb", "car_meta.json"]);
+    assert.deepEqual(car.skipped, [
+      { key: "thumbnail.primary", reason: "not_selected" },
+      { key: "texture.0.base_color", reason: "embedded_textures" },
+    ]);
+    const hero = await downloadTaskAssets(
+      task({ id: "r1", type: "rig", result: { rigged_character_glb_url: `${base}rig.glb`, rigged_character_fbx_url: `${base}rig.fbx` } }),
+      join(dir, "hero.fbx"),
+      RIGGING,
+    );
+    assert.equal(readFileSync(join(dir, "hero.fbx"), "utf8"), "Kaydara FBX Binary");
+    assert.deepEqual(hero.skipped, [{ key: "result.rigged_character_glb_url", reason: "not_selected" }]);
+  } finally {
+    restore();
+  }
+});
+
+test("a file path that names none of the files, or a model format change, is refused before anything is written", async () => {
+  const dir = tmp();
+  const t = task({ id: "t3", type: "image-to-3d", model_urls: { glb: "https://cdn.example.com/m.glb" }, thumbnail_url: "https://cdn.example.com/t.png" });
+  await assert.rejects(() => downloadTaskAssets(t, join(dir, "robot.obj"), IMAGE_TO_3D), /it has model\.glb, thumbnail\.png.*pass a directory path/);
+  const glbOnly = task({ id: "t4", type: "image-to-3d", model_urls: { glb: "https://cdn.example.com/m.glb" } });
+  await assert.rejects(() => downloadTaskAssets(glbOnly, join(dir, "robot.fbx"), IMAGE_TO_3D), /does not name exactly one file/);
+  assert.deepEqual(readdirSync(dir), [], "nothing is written");
+});
+
+test("allAssets saves every asset of the task and needs a directory", async () => {
   const base = "https://cdn.example.com/a/";
   const t = task({ id: "a1", type: "image-to-3d", model_urls: { glb: `${base}m.glb` }, thumbnail_url: `${base}t.png`, texture_urls: [{ base_color: `${base}bc.png` }] });
+  const png = await tinyPngBytes();
   const restore = installFetch({
-    [`${base}m.glb`]: { body: "GLB", contentType: "model/gltf-binary" },
-    [`${base}t.png`]: { body: "T", contentType: "image/png" },
-    [`${base}bc.png`]: { body: "BC", contentType: "image/png" },
+    [`${base}m.glb`]: { body: GLB("-all"), contentType: "model/gltf-binary" },
+    [`${base}t.png`]: { body: png, contentType: "image/png" },
+    [`${base}bc.png`]: { body: png, contentType: "image/png" },
   });
   try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const { skipped } = await downloadArtifacts(t, join(dir, "all"), "image-to-3d", { allAssets: true });
+    const dir = tmp();
+    const { skipped } = await downloadTaskAssets(t, join(dir, "all"), IMAGE_TO_3D, { allAssets: true });
     assert.deepEqual(readdirSync(join(dir, "all")).sort(), ["meta.json", "model.glb", "texture_0_base_color.png", "thumbnail.png"]);
     assert.deepEqual(skipped, []);
-    await assert.rejects(() => downloadArtifacts(t, join(dir, "x.glb"), "image-to-3d", { allAssets: true }), /--all-assets saves all 3 files.*needs a directory/);
+    await assert.rejects(() => downloadTaskAssets(t, join(dir, "x.glb"), IMAGE_TO_3D, { allAssets: true }), /--all-assets saves all 3 files.*needs a directory/);
   } finally {
     restore();
   }
 });
 
-test("downloadArtifacts — 2D image with no extension hint gets content-type extension", async () => {
-  const url = "https://cdn.example.com/a";
-  const png = await tinyPngBytes();
-  const restore = installFetch({ [url]: { body: png, contentType: "image/png" } });
-  try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    // Passing a directory — the image_0 filename has no extension, so the
-    // downloader must append .png from the content-type.
-    const { savedFiles } = await downloadArtifacts(
-      task({ id: "t4", type: "text-to-image", image_urls: [url] }),
-      join(dir, "out"),
-      "text-to-image",
-    );
-    assert.equal(savedFiles.length, 1);
-    assert.match(savedFiles[0]!, /out\/image_0\.png$/);
-  } finally {
-    restore();
-  }
-});
-
-test("downloadArtifacts — refuses to overwrite existing output files", async () => {
+test("an existing target is refused before the network is touched", async () => {
   const url = "https://cdn.example.com/img_0";
-  const png = await tinyPngBytes();
-  const restore = installFetch({
-    [url]: { body: png, contentType: "image/png" },
-  });
+  const restore = installFetch({ [url]: { body: await tinyPngBytes(), contentType: "image/png" } });
   try {
-    const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-    const out = join(dir, "already", "there.png");
-    // First run succeeds.
-    await downloadArtifacts(
-      task({ id: "t1", type: "text-to-image", image_urls: [url] }),
-      out,
-      "text-to-image",
-    );
-    // Second run with the same path aborts before hitting the network.
-    await assert.rejects(
-      () =>
-        downloadArtifacts(
-          task({ id: "t2", type: "text-to-image", image_urls: [url] }),
-          out,
-          "text-to-image",
-        ),
-      /refusing to overwrite existing file/,
-    );
+    const out = join(tmp(), "already", "there.png");
+    await downloadTaskAssets(task({ id: "t1", type: "text-to-image", image_urls: [url] }), out, IMAGE);
+    await assert.rejects(() => downloadTaskAssets(task({ id: "t2", type: "text-to-image", image_urls: [url] }), out, IMAGE), /refusing to overwrite existing file/);
   } finally {
     restore();
   }
 });
 
-test("downloadArtifacts — throws when task has no artifacts", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-  await assert.rejects(
-    () => downloadArtifacts(task({ id: "empty", type: "balance" }), join(dir, "out"), "balance"),
-    /no downloadable artifacts/,
-  );
+test("a task without assets is an error", async () => {
+  await assert.rejects(() => downloadTaskAssets(task({ id: "empty", type: "image-to-3d" }), join(tmp(), "out"), IMAGE_TO_3D), /no downloadable assets/);
 });
 
-test("downloadArtifacts — analyze-printability writes report.json in single-file mode", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-  const out = join(dir, "report.json");
-  const t = task({
-    id: "analyze-1",
-    type: "print-analyze",
-    printability: {
-      status: "warning",
-      issue_count: 2,
-      warning_count: 2,
-      error_count: 0,
-      metrics: { is_watertight: true, holes: 0 },
-    },
-  });
-  const { savedFiles, metadataPath } = await downloadArtifacts(t, out, "analyze-printability");
-  assert.deepEqual(savedFiles, []);
-  assert.equal(metadataPath, out);
-  const written = JSON.parse(readFileSync(out, "utf8"));
-  assert.equal(written.resource, "analyze-printability");
-  assert.equal(written.task.printability.status, "warning");
-});
-
-test("downloadArtifacts — analyze-printability writes meta.json in directory mode", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-  const outDir = join(dir, "analysis");
-  const t = task({
-    id: "analyze-2",
-    type: "print-analyze",
-    printability: { status: "healthy", issue_count: 0 },
-  });
-  const { savedFiles, metadataPath } = await downloadArtifacts(t, outDir, "analyze-printability");
-  assert.deepEqual(savedFiles, []);
-  assert.match(metadataPath, /analysis\/meta\.json$/);
-  const written = JSON.parse(readFileSync(metadataPath, "utf8"));
-  assert.equal(written.task.printability.status, "healthy");
-});
-
-test("downloadArtifacts — analyze-printability rejects non-json single-file extensions", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "meshy-dl-"));
-  const t = task({
-    id: "analyze-3",
-    type: "print-analyze",
-    printability: { status: "healthy" },
-  });
-  await assert.rejects(
-    () => downloadArtifacts(t, join(dir, "report.txt"), "analyze-printability"),
-    /produces a JSON report/,
-  );
+test("analyze-printability: the report is the JSON file, in a directory or under a .json path; other extensions are refused", async () => {
+  const printability = { status: "warning", issue_count: 2, metrics: { is_watertight: true, holes: 0 } };
+  const t = task({ id: "analyze-1", type: "print-analyze", printability });
+  const dir = tmp();
+  const file = await downloadTaskAssets(t, join(dir, "report.json"), ANALYZE);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "report.json"), "utf8")), printability);
+  assert.match(file.metadataPath, /report_meta\.json$/);
+  const inDir = await downloadTaskAssets(t, join(dir, "analysis"), ANALYZE);
+  assert.deepEqual(readdirSync(join(dir, "analysis")).sort(), ["meta.json", "printability.json"]);
+  assert.equal((JSON.parse(readFileSync(inDir.metadataPath, "utf8")) as { task: { printability: { status: string } } }).task.printability.status, "warning");
+  await assert.rejects(() => downloadTaskAssets(t, join(dir, "report.txt"), ANALYZE), /does not name exactly one file/);
 });

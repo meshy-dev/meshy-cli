@@ -336,7 +336,7 @@ function downloadView(body: unknown, paint: Painter): string | null {
   const out = [`${paint("✓", "green")} Saved ${plural(written.length, "file")}`];
   for (const f of files) {
     const failed = f["status"] === "failed";
-    const mark = failed ? paint("✗", "red") : f["status"] === "skipped" ? paint("-", "dim") : " ";
+    const mark = failed ? paint("✗", "red") : " ";
     out.push(`${mark} ${displayPath(String(f["path"] ?? f["key"] ?? ""))}${failed && f["error"] ? `  ${paint(String(f["error"]), "red")}` : ""}`);
   }
   if (str(downloads["metadata_path"])) out.push(paint(`metadata: ${displayPath(downloads["metadata_path"] as string)}`, "dim"));
