@@ -29,9 +29,10 @@ import { TransportError } from "../client/transport.js";
 import type { Task } from "../client/types.js";
 import { emitResult, openCommand, rejectOutputFlag, saveRawJson, type OpenedCommand, type SavedJson } from "./command-helpers.js";
 import { abortSignal, wasInterrupted } from "./context.js";
-import { downloadArtifacts, looksLikeFile } from "./download.js";
+import { downloadArtifacts, type SkippedArtifact } from "./download.js";
 import { classifyError, CliError, UsageError, type Warning } from "./errors.js";
 import { normalizeMediaPayload } from "./file-input.js";
+import { allAssetsOption, outputOption } from "./global-options.js";
 import { logger } from "./logger.js";
 import type { MaterialLinkReport } from "./material-links.js";
 import { mergeNestedObjects, mergePayload, parseJsonFlag } from "./payload.js";
@@ -53,7 +54,7 @@ import {
   type OperationRecord,
 } from "./operation-store.js";
 import { originOf } from "./config.js";
-import { resolveWithinRoot, freezeRoot, type AuthorisedRoot } from "./paths.js";
+import { freezeRoot, looksLikeFile, resolveWithinRoot, type AuthorisedRoot } from "./paths.js";
 import { assertProjectMetadataPresent, indexRootFor, projectRecordCommand, recordTask, saveTaskSnapshot, stageFromTaskType, type RecordInput } from "./project-store.js";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
@@ -99,6 +100,8 @@ export interface ResourceCommandSpec {
 
 const TASK_JSON_OPTIONS = (cmd: Command): Command =>
   cmd
+    .addOption(outputOption())
+    .addOption(allAssetsOption())
     .option("--save-json <file>", "save the full task JSON as received (never overwrites)")
     .option("--include-raw", "include the untouched task response under result.task.raw")
     .option("--project <dir>", "initialised meshy_output project: save task_<id>.json there and record the task in metadata.json")
@@ -108,6 +111,8 @@ export interface DownloadOutcome {
   state: "not_requested" | "not_ready" | "completed" | "partial" | "failed";
   files: Array<{ key?: string; path: string; status: "written" | "failed"; bytes?: number; sha256?: string; error?: string | null }>;
   metadata_path: string | null;
+  /** Artifacts `-o` left on the server (without --all-assets), with the reason; meta.json keeps their URLs. */
+  skipped?: SkippedArtifact[];
   /** OBJ/MTL/texture reference report when the download contained a text OBJ. */
   material_links?: MaterialLinkReport | null;
   /** Set when the transfers landed but a later step (relink | digest | sidecar) failed or was interrupted. */
@@ -908,8 +913,8 @@ async function maybeDownloadV1(
   if (!output) return NOT_REQUESTED();
   if (task.status !== "SUCCEEDED") return { state: "not_ready", files: [], metadata_path: null };
   try {
-    const { files, metadataPath, materialLinks } = await withSpinner(opened.format, "Downloading assets", () =>
-      downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspaceRoot, signal: abortSignal() }),
+    const { files, metadataPath, materialLinks, skipped } = await withSpinner(opened.format, "Downloading assets", () =>
+      downloadArtifacts(task, output, descriptor.id, { root: opened.flags.workspaceRoot, signal: abortSignal(), allAssets: opened.flags.allAssets }),
     );
     if (materialLinks) warnings.push(...materialLinks.warnings);
     return {
@@ -917,6 +922,7 @@ async function maybeDownloadV1(
       files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })),
       metadata_path: metadataPath,
       material_links: materialLinks,
+      skipped,
     };
   } catch (err) {
     // Whatever the downloader already committed stays in the manifest, and the

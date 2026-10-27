@@ -200,3 +200,8 @@ export function safeExtension(ext: string): string {
   const e = ext.replace(/^\./, "").toLowerCase();
   return /^[a-z0-9]{1,8}$/.test(e) ? e : "";
 }
+
+/** Heuristic: does this look like a file path (has an extension) or a dir? */
+export function looksLikeFile(path: string): boolean {
+  return /\.[A-Za-z0-9]{2,6}$/.test(path);
+}

@@ -38,11 +38,12 @@ import { planMake, type MakePlan, type MakeStep } from "../internal/make-plan.js
 import { emitEnvelope } from "../internal/output.js";
 import { emitResult, openCommand, type OpenedCommand } from "../internal/command-helpers.js";
 import { downloadArtifacts } from "../internal/download.js";
+import { allAssetsOption, outputOption } from "../internal/global-options.js";
 import { parseTimeoutSeconds, pollUntilTerminal, type PollResult } from "../internal/poll.js";
 import { createProgress, withSpinner, type Progress } from "../internal/progress.js";
 import { PRICING_DOCS } from "../internal/pricing.js";
 import { okEnvelope, warning, type Warning } from "../internal/result.js";
-import { buildRuntime, type Runtime } from "../internal/runtime.js";
+import { buildRuntime, type GlobalFlags, type Runtime } from "../internal/runtime.js";
 import {
   buildTaskResult,
   preflightOutputPath,
@@ -94,6 +95,8 @@ export const makeCommand = new Command("make")
     ).default(false),
   )
   .addOption(new Option("--timeout <seconds>", "max seconds to poll each step; the task keeps running after it (resume with the printed command)").default("600"))
+  .addOption(outputOption())
+  .addOption(allAssetsOption())
   .action(async (input: string, opts: MakeOptions, thisCmd: Command) => {
     const opened = openCommand(thisCmd, "make");
     if (opts.async && opts.stopAfterFirst) {
@@ -128,7 +131,13 @@ interface ExecutedStep {
   operation_id: string;
 }
 
-function pendingSteps(plan: MakePlan, from: number, parentTaskId: string | null, output: string | undefined): Array<Record<string, unknown>> {
+/** The download flags a printed resume command repeats (` -o <path>` and `--all-assets`), or "". */
+function downloadArgs(flags: Pick<GlobalFlags, "output" | "allAssets">): string {
+  if (!flags.output) return "";
+  return ` -o ${flags.output}${flags.allAssets ? " --all-assets" : ""}`;
+}
+
+function pendingSteps(plan: MakePlan, from: number, parentTaskId: string | null, flags: Pick<GlobalFlags, "output" | "allAssets">): Array<Record<string, unknown>> {
   return plan.steps.slice(from).map((s) => ({
     step: s.index,
     resource: s.resource,
@@ -137,7 +146,7 @@ function pendingSteps(plan: MakePlan, from: number, parentTaskId: string | null,
     requires: `step ${s.index - 1} SUCCEEDED`,
     command:
       s.resource === "text-to-3d" && s.action === "refine"
-        ? `${REFINE_RESUME} ${parentTaskId ?? "<preview-task-id>"}${output ? ` -o ${output}` : ""}`
+        ? `${REFINE_RESUME} ${parentTaskId ?? "<preview-task-id>"}${downloadArgs(flags)}`
         : null,
   }));
 }
@@ -180,7 +189,7 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
 
     if (opts.async) {
       // Exactly one POST, zero polls: the caller owns the rest of the plan.
-      const pending = pendingSteps(plan, step.index, null, runtime.flags.output);
+      const pending = pendingSteps(plan, step.index, null, runtime.flags);
       await emitEnvelope(
         okEnvelope("make", {
           route: plan.route,
@@ -215,7 +224,7 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
         task_id: taskId,
         submission,
         task: null,
-        pending_steps: pendingSteps(plan, step.index, null, runtime.flags.output),
+        pending_steps: pendingSteps(plan, step.index, null, runtime.flags),
         next: taskNextCommands(descriptor, taskId),
       };
       if (wasInterrupted() || abortSignal().aborted) {
@@ -247,7 +256,7 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
           task_id: taskId,
           submission,
           task: task ? buildTaskResult({ task, raw, descriptor, includeRaw: false, submission }).task : null,
-          pending_steps: pendingSteps(plan, step.index, null, runtime.flags.output),
+          pending_steps: pendingSteps(plan, step.index, null, runtime.flags),
           next: taskNextCommands(descriptor, taskId),
         },
       });
@@ -266,7 +275,7 @@ async function runChain(plan: MakePlan, opts: MakeOptions, timeoutSeconds: numbe
     completedTaskId = task.id;
 
     if (opts.stopAfterFirst) {
-      const pending = pendingSteps(plan, step.index, task.id, runtime.flags.output);
+      const pending = pendingSteps(plan, step.index, task.id, runtime.flags);
       await emitEnvelope(
         okEnvelope("make", {
           route: plan.route,
@@ -301,11 +310,11 @@ async function finalOutcome(
   if (runtime.flags.output) {
     try {
       const output = runtime.flags.output;
-      const { files, metadataPath, materialLinks } = await withSpinner(opened.format, "Downloading assets", () =>
-        downloadArtifacts(task, output, step.resource, { root: runtime.flags.workspaceRoot, signal: abortSignal() }),
+      const { files, metadataPath, materialLinks, skipped } = await withSpinner(opened.format, "Downloading assets", () =>
+        downloadArtifacts(task, output, step.resource, { root: runtime.flags.workspaceRoot, signal: abortSignal(), allAssets: runtime.flags.allAssets }),
       );
       if (materialLinks) warnings.push(...materialLinks.warnings);
-      downloads = { state: "completed", files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })), metadata_path: metadataPath, material_links: materialLinks };
+      downloads = { state: "completed", files: files.map((f) => ({ key: f.key, path: f.path, status: f.status, bytes: f.bytes, sha256: f.sha256, error: f.error })), metadata_path: metadataPath, material_links: materialLinks, skipped };
     } catch (err) {
       // Whatever the downloader already committed stays in the manifest; the
       // failure keeps its own class (HTTP status, interrupted, local I/O).
@@ -386,8 +395,7 @@ export function resumeCommand(
   runtime: Runtime,
 ): string | undefined {
   if (plan.route !== "text" || !completedTaskId) return undefined;
-  const output = runtime.flags.output ? ` -o ${runtime.flags.output}` : "";
-  return `${REFINE_RESUME} ${completedTaskId}${output}`;
+  return `${REFINE_RESUME} ${completedTaskId}${downloadArgs(runtime.flags)}`;
 }
 
 function stepFailure(
@@ -410,14 +418,14 @@ function stepFailure(
       code: "timed_out",
       message: `make: ${step.label} did not finish within the timeout — task ${taskId} is still running`,
       recovery: { action: "wait", automatic: false, command: `meshy ${step.resource} wait ${taskId}` },
-      result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, null, runtime.flags.output), resume: resume ?? null, next: taskNextCommands(descriptor, taskId) },
+      result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, null, runtime.flags), resume: resume ?? null, next: taskNextCommands(descriptor, taskId) },
     });
   }
   return new CliError({
     code: "task_failed",
     message: task?.task_error?.message || `make: ${step.label} ended as ${status} — task ${taskId}`,
     recovery: resume ? { action: "resume", automatic: false, command: resume } : null,
-    result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, completedTaskId || null, runtime.flags.output), resume: resume ?? null },
+    result: { route: plan.route, executed, task_id: taskId, task: taskView, pending_steps: pendingSteps(plan, step.index, completedTaskId || null, runtime.flags), resume: resume ?? null },
   });
 }
 

@@ -98,9 +98,16 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   `--idle-timeout` (silence, keep-alives reset it); `-o` downloads the assets
   in every output format, and in `ndjson` the final `outcome` line carries the
   download manifest.
-- `-o` on `get`/`wait`/`stream`/`make` downloads every artifact of a SUCCEEDED
-  task; `result.downloads.files` is a per-file manifest (key, path, bytes,
-  sha256, status). When the second asset fails, the state is `partial`, the files
+- `-o` on `get`/`wait`/`stream`/`make` saves the primary files of a SUCCEEDED
+  task: the model formats it produced, the thumbnail and images, and the rig or
+  animation result in GLB. `result.downloads.files` is a per-file manifest
+  (key, path, bytes, sha256, status). `result.downloads.skipped` lists
+  `{key, reason}` for what stayed on the server: `embedded_textures`,
+  `bundled_animation`, `alternate_format`, `pre_remesh_variant`, and
+  `not_selected` for a file path. `--all-assets` saves everything, but needs a
+  directory. A file path (`-o car.glb`) writes the one asset of that format.
+  Between pipeline steps, pass the task id (`--input-task-id`, `--rig-task-id`)
+  instead of downloading. When the second asset fails, the state is `partial`, the files
   already written stay listed and on disk, and the error keeps the asset host's
   class and HTTP status (a 503 is `network`, exit 7, not a local I/O error). The
   same holds for a failure *after* the transfers — relinking, digesting or

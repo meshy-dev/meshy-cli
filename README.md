@@ -40,7 +40,7 @@ text-to-3D preview then refine; an image runs one textured image-to-3D task:
 
 ```bash
 meshy make "a lovely baby husky"
-meshy make ./cat.png -o out/cat/                # -o downloads the result
+meshy make ./cat.png -o out/cat/                # -o saves model.glb + thumbnail + meta.json
 meshy make "a red sports car" --dry-run         # steps and credit estimate, no spend
 ```
 

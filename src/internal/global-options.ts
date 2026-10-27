@@ -14,6 +14,21 @@ import { Command, Option } from "commander";
 
 type OptionFactory = () => Option;
 
+/** `-o`: global, and shown in the help of the verbs that download (task create/get/wait/stream, make). */
+export function outputOption(): Option {
+  return new Option(
+    "-o, --output <path>",
+    "save the finished task's files: a directory gets the model / images / thumbnail + meta.json, a file path (car.glb) the one file of that format; stdout keeps the envelope and adds result.downloads",
+  );
+}
+
+export function allAssetsOption(): Option {
+  return new Option(
+    "--all-assets",
+    "with -o <dir>: also save texture maps, the rig's bundled walking/running clips, FBX copies and the pre-remesh model (skipped by default, listed in result.downloads.skipped)",
+  );
+}
+
 const FACTORIES: OptionFactory[] = [
   () => new Option("--api-key <key>", "Meshy API key (overrides MESHY_API_KEY)"),
   () => new Option("--base-url-v1 <url>", "override v1 base URL"),
@@ -34,11 +49,8 @@ const FACTORIES: OptionFactory[] = [
   // envelope. Still parsed so the recovery hints and skill examples that carry
   // `--output-schema v1` keep working; `legacy` is refused in runtime.ts.
   () => new Option("--output-schema <schema>", "(deprecated, no-op) only v1 is accepted").hideHelp(),
-  () =>
-    new Option(
-      "-o, --output <path>",
-      "download artifacts + write meta.json; switches stdout to a status report",
-    ),
+  outputOption,
+  allAssetsOption,
   () =>
     new Option(
       "--api-key-file <path>",

@@ -1147,3 +1147,35 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   rides the 0.5.0 bump.
 - Tests that iterated `["legacy", "v1"]` now iterate `["bare", "v1"]` (with and
   without the flag) and assert the same envelope in both arms.
+
+## D-081 `-o` saves the primary files; `--all-assets` saves everything
+
+- `-o <dir>` used to write every URL of the task. On a model → remesh → rig →
+  animate chain that was about 250 MB: each GLB's texture maps were saved again
+  as PNGs, the rig came as FBX and GLB, plus six bundled walking/running clips
+  (downloaded since 0.3.0), and animate added an FBX copy of its clip.
+- Default set: every `model_urls` format the task produced, except
+  `pre_remeshed_glb`; the thumbnail, images, motion and `processed_*` outputs;
+  the `rigged_character_*` / `animation_*` result in GLB (FBX only when no GLB
+  exists); texture maps only when a delivered model does not embed them. GLB,
+  USDZ and the ZIP bundles carry their maps, and STL, 3MF and VOX have none.
+  OBJ, glTF, FBX and blend are not assumed to carry them.
+- What stays on the server is listed as `{key, reason}` under
+  `result.downloads.skipped` and in `meta.json`. `meta.json` keeps the full
+  task, so `meshy download --task-json meta.json --asset <key>` fetches it.
+  `--all-assets` (global, directory only, refused without `-o`) restores the
+  0.5.0 set.
+- A file path now picks the asset of that format: first among the selected
+  files, then the alternate formats. The documented `make "…" -o car.glb` used
+  to bill the chain and then refuse to write, because the refined task has a
+  GLB, a thumbnail and textures. A path that matches nothing or several files
+  is still refused.
+- Classification reads the legacy slot keys (`model_*`, `texture_*`,
+  `basic_animations_*`, `rigged_character_{glb,fbx}_url`, …). They are the
+  stable `downloads.files[].key` contract of `-o`. Switching to the selective
+  downloader's `enumerateAssets` would rename the files `-o` writes.
+- `-o` and `--all-assets` are now listed in the help of the verbs that
+  download (task create/get/wait/stream, `make`). The description no longer
+  claims a "status report" on stdout, which has been the envelope since 0.5.0
+  (D-080).
+

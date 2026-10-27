@@ -4,7 +4,7 @@ description: "Generate 3D models, motion clips, 2D images and Creative Lab print
 license: MIT
 compatibility: Requires meshy-cli on PATH (Node 22.12+, no Python) and a stored credential, MESHY_API_KEY or --api-key-file for API commands; network access to api.meshy.ai. Local helpers work offline.
 metadata:
-  version: "1.3.0"
+  version: "1.4.0"
   cli-help: "meshy --help"
 ---
 
@@ -81,6 +81,13 @@ meshy <resource> list [--page-size <n>]
   `result.task_id` / `result.submission.task_id` and `result.next` from any
   non-zero exit (11 local I/O, 8 timeout, 130 interrupt) before deciding
   anything; never create again because a later step failed.
+- `-o <dir>` saves the primary files of a SUCCEEDED task (model formats it produced,
+  thumbnail, images, the rig/animation result in GLB) plus `meta.json`; `-o <file.ext>`
+  saves the one file of that format (`-o car.glb`, `-o hero.fbx` on a rig). Texture
+  maps a GLB already embeds, the rig's bundled walking/running clips and FBX copies
+  stay on the server, listed in `result.downloads.skipped`; `--all-assets` (directory
+  only) saves them too. Between pipeline steps pass the task id
+  (`--input-task-id`, `--rig-task-id`) instead of downloading.
 - `--save-json <file>` stores the raw API task (use it as the input of `download`,
   `inspect faces` and `project record`); `--include-raw` puts the raw response under
   `result.task.raw`; `--project <dir>` records the task in a project folder.
