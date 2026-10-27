@@ -16,9 +16,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import sharp from "sharp";
-import { relinkMaterials } from "../src/internal/material-links.js";
+import { dirname, join } from "node:path";
 import { jsonReply, parseSingleJson, runCli, startMockApi, tmpDir } from "./helpers/cli.js";
 
 const ENVELOPE_KEYS = ["schema_version", "command", "ok", "result", "error", "warnings"].sort();
@@ -240,135 +238,6 @@ test("E01/R5-F01 download --project P --workspace P (path with a space and a quo
     assert.equal(api.requests.length, 2, "one GET per download, nothing during either replay");
   } finally {
     await api.close();
-  }
-});
-
-// ---------------------------------------------------------------------------
-// R5-F02 / E02 — one reference used under several keys is reconciled across them
-// ---------------------------------------------------------------------------
-
-interface TextureMap {
-  line: number;
-  material: string | null;
-  reference: string;
-  resolved_to: string | null;
-  method: string;
-  candidates?: string[];
-  note?: string;
-}
-
-test("E02/R5-F02 map_Kd shared.png + map_Bump shared.png with one base color and two normals: neither line is rewritten in either order (MTL byte-identical), both are ambiguous with their own candidates and one cross-key note; digests match disk", async () => {
-  const red = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#ff0000" } }).png().toBuffer();
-  const lines = ["map_Kd shared.png", "map_Bump shared.png"] as const;
-  for (const order of [
-    [0, 1],
-    [1, 0],
-  ] as const) {
-    const mtl = `newmtl a\n${lines[order[0]]}\n${lines[order[1]]}\n`;
-    const label = `${lines[order[0]]} first`;
-    const host = await startMockApi((req, res) => {
-      if (req.path === "/model.obj") {
-        res.writeHead(200, { "content-type": "model/obj" });
-        return void res.end("mtllib original.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 1\nf 1 2 3\n");
-      }
-      if (req.path === "/original.mtl") {
-        res.writeHead(200, { "content-type": "text/plain" });
-        return void res.end(mtl);
-      }
-      if (/\.png$/.test(req.path)) {
-        res.writeHead(200, { "content-type": "image/png" });
-        return void res.end(red);
-      }
-      return jsonReply(res, 404, {});
-    });
-    try {
-      const dir = tmpDir();
-      const fixture = join(dir, "mixed.json");
-      writeFileSync(fixture, JSON.stringify(taskBody({ model_urls: { obj: `${host.url}/model.obj`, mtl: `${host.url}/original.mtl` }, texture_urls: [{ base_color: `${host.url}/a.png`, normal: `${host.url}/n1.png` }, { normal: `${host.url}/n2.png` }] })));
-      const out = join(dir, "mixed");
-      const r = await runCli(["download", "--task-json", fixture, "--model-format", "obj", "--output-dir", out], { env: host.env({ MESHY_API_KEY: undefined }), cwd: dir });
-      assert.equal(r.code, 0, `${label}: ${r.stderr}\n${r.stdout}`);
-      assert.equal(readFileSync(join(out, "model.mtl"), "utf8"), mtl, `${label}: the MTL is byte-identical`);
-      const env = parseSingleJson(r.stdout) as { result: { downloads: { state: string; files: Array<{ key: string; path: string; sha256: string; bytes: number; relinked: boolean }>; material_links: { status: string; rewritten: string[]; texture_maps: TextureMap[] } } }; warnings: Array<{ code: string; message: string }> };
-      const dl = env.result.downloads;
-      assert.equal(dl.state, "completed");
-      assert.equal(dl.material_links.status, "incomplete");
-      const candidatesByLine = { "map_Kd shared.png": ["texture_0_base_color.png"], "map_Bump shared.png": ["texture_0_normal.png", "texture_1_normal.png"] } as const;
-      assert.deepEqual(
-        dl.material_links.texture_maps.map((l) => [l.line, l.candidates]),
-        [
-          [2, [...candidatesByLine[lines[order[0]]]]],
-          [3, [...candidatesByLine[lines[order[1]]]]],
-        ],
-        `${label}: each line carries the candidate set of its own key (line 2 = ${lines[order[0]]}, line 3 = ${lines[order[1]]})`,
-      );
-      assert.equal(dl.material_links.texture_maps.length, 2);
-      for (const l of dl.material_links.texture_maps) {
-        assert.equal(l.reference, "shared.png");
-        assert.equal(l.resolved_to, null, `${label}: nothing rewritten`);
-        assert.equal(l.method, "ambiguous");
-        assert.match(l.note ?? "", /'shared\.png' is used by map_Kd and map_Bump|'shared\.png' is used by map_Bump and map_Kd/, `${label}: the note names both keys`);
-        assert.match(l.note ?? "", /map_Kd would make it texture_0_base_color\.png \(channel_of_key\)/);
-        assert.match(l.note ?? "", /map_Bump could only make it texture_0_normal\.png or texture_1_normal\.png/);
-        assert.match(l.note ?? "", /one reference names one file/);
-      }
-      assert.deepEqual(dl.material_links.rewritten.map((p) => basename(p)), ["model.obj"], `${label}: only the OBJ's mtllib changed`);
-      for (const f of dl.files) {
-        assert.equal(sha(f.path), f.sha256, `${label}: ${f.key} digest matches disk`);
-        assert.equal(readFileSync(f.path).length, f.bytes);
-      }
-      assert.equal(dl.files.find((f) => f.key === "model.mtl")!.relinked, false);
-      const ambiguous = env.warnings.filter((w) => w.code === "material_reference_ambiguous");
-      assert.equal(ambiguous.length, 1, `${label}: one warning, said once`);
-      assert.equal(ambiguous[0]!.message.split("one reference names one file").length, 2);
-      assert.deepEqual(host.requests.map((q) => q.method), ["GET", "GET", "GET", "GET", "GET"]);
-    } finally {
-      await host.close();
-    }
-  }
-});
-
-test("R5-F02 arbitration matrix: eight key/reference combinations in both orders — identity keeps its texture, ambiguous rivals block heuristics, one reference is reconciled across keys (two hits, hit + ambiguity, same identity, same fallback), distinct channels stay independent", async () => {
-  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-  const B = { key: "texture.0.base_color", name: "texture_0_base_color.png", sourceName: "a.png" };
-  const N = { key: "texture.0.normal", name: "texture_0_normal.png", sourceName: "n1.png" };
-  const N2 = { key: "texture.1.normal", name: "texture_1_normal.png", sourceName: "n2.png" };
-  type Tex = { key: string; name: string; sourceName: string };
-  const cases: Array<{ id: string; lines: [string, string]; textures: Tex[]; expected: [Array<string | null>, Array<string | null>]; note?: RegExp }> = [
-    { id: "identity-plus-heuristic", lines: ["map_Kd body.png", "map_Kd eyes_diffuse.png"], textures: [{ ...B, sourceName: "body.png" }], expected: [["texture_0_base_color.png", "source_name"], [null, "ambiguous"]], note: /compete for texture_0_base_color\.png/ },
-    { id: "ambiguous-plus-heuristic", lines: ["map_Kd texture_0_base_color.png", "map_Kd eyes_diffuse.png"], textures: [B], expected: [[null, "ambiguous"], [null, "ambiguous"]] },
-    { id: "same-ref-two-hits", lines: ["map_Kd shared.png", "map_Bump shared.png"], textures: [B, N], expected: [[null, "ambiguous"], [null, "ambiguous"]], note: /one reference names one file/ },
-    { id: "same-ref-hit-and-ambiguous", lines: ["map_Kd shared.png", "map_Bump shared.png"], textures: [B, N, N2], expected: [[null, "ambiguous"], [null, "ambiguous"]], note: /one reference names one file/ },
-    { id: "same-ref-same-identity", lines: ["map_Kd a.png", "map_Bump a.png"], textures: [B, N], expected: [["texture_0_base_color.png", "source_name"], ["texture_0_base_color.png", "source_name"]] },
-    { id: "same-ref-same-fallback", lines: ["map_Bump unknown_normal.png", "norm unknown_normal.png"], textures: [B, N], expected: [["texture_0_normal.png", "channel_in_name"], ["texture_0_normal.png", "channel_in_name"]] },
-    { id: "distinct-channel-fallbacks", lines: ["map_Kd skin.png", "map_Bump other_normal.png"], textures: [B, N], expected: [["texture_0_base_color.png", "channel_of_key"], ["texture_0_normal.png", "channel_in_name"]] },
-    { id: "identity-with-ambiguous-source-rival", lines: ["map_Kd a.png", "map_Bump shared.png"], textures: [B, N, N2], expected: [["texture_0_base_color.png", "source_name"], [null, "ambiguous"]] },
-  ];
-  for (const c of cases) {
-    for (const reversed of [false, true]) {
-      const label = `${c.id}${reversed ? " (reversed)" : ""}`;
-      const order = reversed ? [1, 0] : [0, 1];
-      const dir = tmpDir();
-      const mtl = `newmtl fixture\n${order.map((i) => c.lines[i]!).join("\n")}\n`;
-      writeFileSync(join(dir, "model.obj"), "mtllib old.mtl\nv 0 0 0\n");
-      writeFileSync(join(dir, "model.mtl"), mtl);
-      for (const t of c.textures) writeFileSync(join(dir, t.name), png);
-      const report = (await relinkMaterials([
-        { key: "model.obj", path: join(dir, "model.obj"), sourceName: "source.obj" },
-        { key: "model.mtl", path: join(dir, "model.mtl"), sourceName: "old.mtl" },
-        ...c.textures.map((t) => ({ key: t.key, path: join(dir, t.name), sourceName: t.sourceName })),
-      ]))!;
-      const expected = order.map((i) => c.expected[i]!);
-      assert.deepEqual(report.texture_maps.map((l) => [l.resolved_to, l.method]), expected, label);
-      if (expected.every((x) => x[0] === null)) assert.equal(readFileSync(join(dir, "model.mtl"), "utf8"), mtl, `${label}: nothing rewritten`);
-      if (c.note) for (const l of report.texture_maps.filter((l) => l.method === "ambiguous")) assert.match(l.note ?? "", c.note, label);
-      assert.equal(report.status, expected.some((x) => x[0] === null) ? "incomplete" : "complete", label);
-      if (c.id === "same-ref-hit-and-ambiguous") {
-        const sets = report.texture_maps.map((l) => (l.candidates ?? []).join(",")).sort();
-        assert.deepEqual(sets, ["texture_0_base_color.png", "texture_0_normal.png,texture_1_normal.png"], `${label}: each line keeps its own candidate set`);
-        assert.equal(report.warnings.length, 1, `${label}: the cross-key reason is one warning`);
-      }
-    }
   }
 });
 

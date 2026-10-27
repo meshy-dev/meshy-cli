@@ -463,7 +463,7 @@ export function basenameOfUrl(url: string): string | null {
   }
 }
 
-/** After the set landed: point OBJ → MTL → textures at the saved names and re-take the digests of rewritten files. */
+/** After the set landed: point the MTL's texture references at the saved names and re-take the digests of rewritten files. */
 async function relinkWritten(files: DownloadedFile[], warnings: Array<{ code: string; message: string }>, sources: Map<string, string | null>, signal: AbortSignal | undefined): Promise<MaterialLinkReport | null> {
   const written = files.filter((f) => f.status === "written" && f.container_format === null);
   const links = await relinkMaterials(written.map((f) => ({ key: f.key, path: f.path, sourceName: sources.get(f.key) ?? null })), { signal });
