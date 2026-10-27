@@ -51,7 +51,6 @@ test("multi-image-to-3d --geometry-resolution 2k reaches the server as geometry_
     const urls = body["image_urls"] as string[];
     assert.equal(urls.length, 3);
     for (const url of urls) assert.match(url, /^data:image\/png;base64,/);
-    assert.equal(body["should_texture"], false);
     assert.ok(!("ultra_mode" in body), "geometry_resolution is the only Ultra knob sent");
   });
 });

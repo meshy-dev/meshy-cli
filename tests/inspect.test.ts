@@ -1,8 +1,8 @@
 /**
- * inspect faces — verdict logic (T-080, T-081) and the command driven
- * in-process: the file source needs no credential or network, the API source
- * makes exactly one GET against a loopback mock (T-082). The dist/ subprocess
- * variant is present but skipped until root.ts registers the command.
+ * inspect faces — verdict logic (T-080, T-081), counting a local model, and
+ * the command driven in-process: the model and task-JSON sources need no
+ * credential or network, the API source makes exactly one GET against a
+ * loopback mock (T-082). A dist/ subprocess run covers the same end to end.
  */
 
 // Keep envelope rendering hermetic whatever the dev machine's update cache holds.
@@ -19,7 +19,7 @@ import { buildInspectCommand, parseMaxFaces, readTaskJsonFile, type FacesResult 
 import { resetCommandContextForTests } from "../src/internal/context.js";
 import { CliError, UsageError } from "../src/internal/errors.js";
 import { mirrorGlobalOptionsToDescendants, registerRootGlobalOptions, walkCommands } from "../src/internal/global-options.js";
-import { faceCountFromTask, judgeFaceCount, judgeTask, remeshSuggestion, type FaceVerdict } from "../src/internal/inspect.js";
+import { countModelFaces, faceCountFromTask, judgeFaceCount, judgeTask, remeshSuggestion, type FaceVerdict } from "../src/internal/inspect.js";
 import type { V1Envelope } from "../src/internal/result.js";
 import { toTaskView } from "../src/internal/task-view.js";
 import { jsonReply, parseSingleJson, runCli, startMockApi } from "./helpers/cli.js";
@@ -182,21 +182,89 @@ test("T-081 judgeTask: a non-terminal task without face_count is unknown because
 });
 
 test("remeshSuggestion describes an unexecuted remesh and clamps the target to the endpoint range", () => {
-  const s = remeshSuggestion("fixture-rig-1", 249_999);
+  const s = remeshSuggestion({ taskId: "fixture-rig-1" }, 249_999);
   assert.equal(s.executed, false);
   assert.equal(s.command, "meshy remesh create --input-task-id fixture-rig-1 --target-polycount 249999");
   assert.match(s.description, /not executed/);
   assert.ok(s.description.includes(s.command));
-  assert.match(remeshSuggestion("t", 50).command ?? "", /--target-polycount 100$/);
-  assert.match(remeshSuggestion("t", 10_000_000).command ?? "", /--target-polycount 300000$/);
-  // No id, or an id that is not a plain token: no command is fabricated.
-  const none = remeshSuggestion(null, 1000);
+  assert.match(remeshSuggestion({ taskId: "t" }, 50).command ?? "", /--target-polycount 100$/);
+  assert.match(remeshSuggestion({ taskId: "t" }, 10_000_000).command ?? "", /--target-polycount 300000$/);
+  // A local model is remeshed from the file itself.
+  assert.equal(remeshSuggestion({ modelPath: "out/model.glb" }, 1000).command, "meshy remesh create --model-url out/model.glb --target-polycount 1000");
+  // No id, or an id / path that is not a plain token: no command is fabricated.
+  const none = remeshSuggestion({ taskId: null }, 1000);
   assert.equal(none.command, null);
   assert.equal(none.executed, false);
   assert.match(none.description, /task id is unknown/);
-  const unsafe = remeshSuggestion("a b; rm -rf /", 1000);
-  assert.equal(unsafe.command, null);
-  assert.ok(!unsafe.description.includes("rm -rf"));
+  for (const unsafe of [remeshSuggestion({ taskId: "a b; rm -rf /" }, 1000), remeshSuggestion({ modelPath: "x.glb; rm -rf /" }, 1000)]) {
+    assert.equal(unsafe.command, null);
+    assert.ok(!unsafe.description.includes("rm -rf"));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// countModelFaces — the count the API does not report
+// ---------------------------------------------------------------------------
+
+/** A GLB with the given glTF JSON and an empty BIN chunk: counts come from the JSON alone. */
+function glb(json: unknown): Buffer {
+  const text = Buffer.from(JSON.stringify(json), "utf8");
+  const pad = (4 - (text.length % 4)) % 4;
+  const jsonChunk = Buffer.concat([text, Buffer.alloc(pad, 0x20)]);
+  const header = Buffer.alloc(20);
+  header.write("glTF", 0, "ascii");
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(20 + jsonChunk.length, 8);
+  header.writeUInt32LE(jsonChunk.length, 12);
+  header.write("JSON", 16, "ascii");
+  return Buffer.concat([header, jsonChunk]);
+}
+
+const MODEL_JSON = {
+  asset: { version: "2.0" },
+  scene: 0,
+  scenes: [{ nodes: [0, 3] }],
+  nodes: [{ children: [1, 2] }, { mesh: 0 }, { mesh: 0 }, { mesh: 1 }, { mesh: 1 }],
+  meshes: [
+    { primitives: [{ attributes: { POSITION: 0 }, indices: 1 }, { attributes: { POSITION: 0 }, mode: 1 }] },
+    { primitives: [{ attributes: { POSITION: 2 } }, { attributes: { POSITION: 2 }, mode: 5 }] },
+  ],
+  accessors: [{ count: 300 }, { count: 600 }, { count: 30 }],
+};
+
+test("countModelFaces: triangles of every mesh instance in the default scene, from the JSON alone", () => {
+  const dir = tmp();
+  writeFileSync(join(dir, "m.glb"), glb(MODEL_JSON));
+  writeFileSync(join(dir, "m.gltf"), JSON.stringify(MODEL_JSON));
+  // mesh 0 twice (nested under node 0): 600 indices → 200 triangles, the lines add none;
+  // mesh 1 once from the scene (node 4 is not in it): 30 vertices → 10 triangles, the strip 28.
+  for (const [file, format] of [["m.glb", "glb"], ["m.gltf", "gltf"]] as const) {
+    const counted = countModelFaces(join(dir, file));
+    assert.equal(counted.triangles, 200 * 2 + 10 + 28, file);
+    assert.equal(counted.mesh_instances, 3, file);
+    assert.equal(counted.format, format);
+  }
+  // No scene at all: every mesh once.
+  writeFileSync(join(dir, "noscene.glb"), glb({ ...MODEL_JSON, scene: undefined, scenes: undefined }));
+  assert.equal(countModelFaces(join(dir, "noscene.glb")).triangles, 200 + 38);
+});
+
+test("countModelFaces: a file that is not a model, or a malformed one, is a usage error naming it", () => {
+  const dir = tmp();
+  const cases: Array<[string, Buffer | string, RegExp]> = [
+    ["notes.txt", "hello", /is not a \.glb or \.gltf model/],
+    ["v1.glb", Buffer.concat([Buffer.from("glTF"), Buffer.alloc(16)]), /not a glTF 2\.0 binary/],
+    ["dangling.glb", glb({ ...MODEL_JSON, scenes: [{ nodes: [9] }] }), /references node 9/],
+    ["nomesh.glb", glb({ ...MODEL_JSON, nodes: [{ mesh: 7 }], scenes: [{ nodes: [0] }] }), /references mesh 7/],
+    ["noaccessor.glb", glb({ ...MODEL_JSON, accessors: [] }), /without a counted accessor/],
+    ["cycle.glb", glb({ ...MODEL_JSON, nodes: [{ children: [0] }], scenes: [{ nodes: [0] }] }), /reached twice/],
+  ];
+  for (const [name, body, pattern] of cases) {
+    writeFileSync(join(dir, name), body);
+    assert.throws(() => countModelFaces(join(dir, name)), (err: unknown) => err instanceof UsageError && pattern.test(err.message) && err.message.includes(name), name);
+  }
+  assert.throws(() => countModelFaces(join(dir, "missing.glb")), /cannot open/);
+  assert.throws(() => countModelFaces(dir), /not a regular file/);
 });
 
 test("parseMaxFaces accepts plain positive integers only", () => {
@@ -289,6 +357,27 @@ test("T-081 command: missing/null/string face_count and a running task → unkno
   }
 });
 
+test("command --model: a measured count passes (exit 0) or fails (exit 12) with a remesh of the file; a task without a count says how to measure", async () => {
+  const dir = tmp();
+  const model = join(dir, "model.glb");
+  writeFileSync(model, glb(MODEL_JSON));
+  const ok = await runInspect(["--model", model, "--max-faces", "438"]);
+  assert.equal(ok.error, null, String(ok.error));
+  const okResult = envelopeOf(ok).result!;
+  assert.equal(okResult.verdict, "pass");
+  assert.equal(okResult.face_count, 438);
+  assert.deepEqual(okResult.source, { kind: "model", path: model, format: "glb", mesh_instances: 3 });
+  assert.equal(okResult.task_id, null);
+  const fail = await runInspect(["--model", model, "--max-faces", "437"]);
+  const failErr = cliErrorOf(fail);
+  assert.equal(failErr.code, "check_failed");
+  assert.equal(failErr.exitCode, 12);
+  assert.match(String((failErr.result as { suggestion: { command: string } }).suggestion.command), /^meshy remesh create --model-url .*model\.glb --target-polycount 437$/);
+  const unknown = cliErrorOf(await runInspect(["--task-json", writeJson(dir, "task.json", { id: "t", status: "SUCCEEDED" }), "--max-faces", "300000"]));
+  assert.equal(unknown.code, "check_unknown");
+  assert.match(unknown.hint ?? "", /meshy inspect faces --model <file\.glb> --max-faces 300000/);
+});
+
 test("T-082 local: meta.json and v1 envelope shapes yield the same verdict as the API task shape", async () => {
   const dir = tmp();
   const meta = writeJson(dir, "meta.json", { resource: "rigging", endpoint: "/openapi/v1/rigging", task: fixture, saved_files: [] });
@@ -326,7 +415,7 @@ test("T-082 local: meta.json and v1 envelope shapes yield the same verdict as th
   }
 });
 
-test("command: usage errors before any work — sources, --max-faces, schema, -o and --save-json", async () => {
+test("command: usage errors before any work — sources, --max-faces, -o and --save-json", async () => {
   const usage = async (args: string[], pattern: RegExp): Promise<void> => {
     const run = await runInspect(args);
     assert.ok(run.error instanceof UsageError, `${args.join(" ")}: expected UsageError, got ${String(run.error)}`);
@@ -337,14 +426,17 @@ test("command: usage errors before any work — sources, --max-faces, schema, -o
   await usage(["--task-json", FIXTURE_PATH, "--max-faces", "0"], /positive integer/);
   await usage(["--task-json", FIXTURE_PATH, "--max-faces", "3.5"], /positive integer/);
   await usage(["--task-json", FIXTURE_PATH, "--max-faces", "abc"], /positive integer/);
-  await usage(["--max-faces", "300000"], /task source is required/);
+  await usage(["--max-faces", "300000"], /a source is required/);
   await usage(["--task-json", FIXTURE_PATH, "--resource", "rigging", "--task-id", "x", "--max-faces", "300000"], /not both/);
+  await usage(["--model", "m.glb", "--task-json", FIXTURE_PATH, "--max-faces", "300000"], /not both/);
+  await usage(["--model", "m.glb", "--resource", "rigging", "--task-id", "x", "--max-faces", "300000"], /not both/);
   await usage(["--task-json", FIXTURE_PATH, "--task-id", "x", "--max-faces", "300000"], /not both/);
   await usage(["--resource", "rigging", "--max-faces", "300000"], /together with --task-id/);
   await usage(["--task-id", "x", "--max-faces", "300000"], /together with --task-id/);
   await usage(["--resource", "no-such-resource", "--task-id", "x", "--max-faces", "300000"], /unknown --resource 'no-such-resource'.*rigging.*uv-unwrap/);
   await usage(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "-o", "out.glb"], /--save-json/);
   await usage(["--task-json", FIXTURE_PATH, "--max-faces", "300000", "--save-json", "x.json"], /only applies to the API source/);
+  await usage(["--model", "m.glb", "--max-faces", "300000", "--save-json", "x.json"], /only applies to the API source/);
   await usage(["--task-json", join(tmp(), "missing.json"), "--max-faces", "300000"], /cannot open/);
 });
 

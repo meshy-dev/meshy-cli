@@ -126,7 +126,7 @@ meshy download --task-json ./rig.json --asset result.basic_animations.walking_gl
 meshy download --resource image-to-3d --task-id <id> --all --output-dir ./out/
 meshy project init --root ./meshy_output --name "<prompt>" --task-id <id>
 meshy project record --project <dir> --task-id <id> --resource text-to-3d --stage preview --file preview.glb
-meshy inspect faces --task-json ./task.json --max-faces 300000   # exit 0 pass | 12 fail | 13 unknown
+meshy inspect faces --model ./model.glb --max-faces 300000      # exit 0 pass | 12 fail | 13 unknown
 meshy mesh prepare-print ./model.obj --height-mm 75              # writes ./model.print.obj (Y-up → Z-up, grounded)
 meshy slicer detect
 meshy slicer open --slicer OrcaSlicer --file ./model.print.obj  # launch only; not proof of import
@@ -134,9 +134,10 @@ meshy slicer open --slicer OrcaSlicer --file ./model.print.obj  # launch only; n
 
 `download` needs an explicit selector when a task has several assets (it lists
 them and exits 2 otherwise); it never overwrites without `--overwrite`. `inspect
-faces` answers only the face-count question — `unknown` (exit 13) means the task
-carries no usable `face_count`; do not treat it as a pass and do not start a
-remesh unless the user agrees. `prepare-print` never edits the input unless
+faces` answers only the face-count question. The API does not report
+`face_count`, so measure the downloaded model with `--model <file.glb>`; a task
+source answers `unknown` (exit 13) — never treat that as a pass, and do not
+start a remesh unless the user agrees. `prepare-print` never edits the input unless
 `--in-place`.
 
 ## Constraints that will bite
@@ -169,8 +170,9 @@ These are API rules, not preferences — ignoring them produces failed tasks:
 - `multi-image-to-3d` takes 1-4 views of one object; use `image-to-3d` unless
   multi-view input was asked for. Both accept `--input-task-id` of a SUCCEEDED
   `text-to-image` / `image-to-image` task, so a generated image chains to 3D.
-- `image-to-3d` defaults to an untextured draft mesh; `--should-texture true`
-  (what `make` uses) produces a textured model in one task.
+- `image-to-3d` and `multi-image-to-3d` texture by default, like the API (one
+  task, full PBR maps, 4k base color). `--should-texture false` is an untextured
+  draft to confirm first; texture it later with `retexture`.
 - **The default model is `latest` = Meshy 7.1** on all three generators.
   `--geometry-resolution 2k|4k` runs the Ultra geometry pass (+5 credits;
   text-to-3d: preview only; multi-image: `2k` only; not with smart-topology).

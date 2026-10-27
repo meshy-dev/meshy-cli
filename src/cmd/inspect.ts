@@ -1,10 +1,13 @@
 /**
  * inspect faces — the face-count gate.
  *
- * Two mutually exclusive task sources: a saved task JSON (no network, no
- * credential, no config directory) or exactly one GET of a task through the
- * resource registry. The command never downloads a model and never creates a
- * remesh task; a failing verdict only *describes* the remesh that would help.
+ * Three mutually exclusive sources: a local model file whose triangles are
+ * counted (no network, no credential), a saved task JSON, or exactly one GET
+ * of a task through the resource registry. The API does not report
+ * face_count, so the task sources answer `unknown` unless a count is present;
+ * a downloaded model is the source that measures. The command never downloads
+ * a model and never creates a remesh task; a failing verdict only *describes*
+ * the remesh that would help.
  *
  * `--max-faces` is required on purpose: the rigging ceiling (300000) is one
  * consumer's rule and uv-unwrap's is 40000 — there is no limit that belongs
@@ -19,7 +22,7 @@ import { findTaskResource, TASK_RESOURCES } from "../client/resource-registry.js
 import { emitResult, openCommand, rejectOutputFlag, saveRawJson, type SavedJson } from "../internal/command-helpers.js";
 import { abortSignal } from "../internal/context.js";
 import { CliError, UsageError } from "../internal/errors.js";
-import { judgeTask, remeshSuggestion, type RemeshSuggestion } from "../internal/inspect.js";
+import { countModelFaces, judgeFaceCount, judgeTask, remeshSuggestion, type FaceVerdict, type RemeshSuggestion } from "../internal/inspect.js";
 import { buildLocalRuntime, buildRuntime } from "../internal/runtime.js";
 import { extractTaskObject } from "../internal/task-view.js";
 
@@ -35,6 +38,7 @@ export interface LoadedTaskJson {
 }
 
 interface FacesOptions {
+  model?: string;
   taskJson?: string;
   resource?: string;
   taskId?: string;
@@ -42,7 +46,7 @@ interface FacesOptions {
   saveJson?: string;
 }
 
-type TaskSource = { kind: "task-json"; path: string } | { kind: "api"; resource: string; taskId: string };
+type FacesSource = { kind: "model"; path: string } | { kind: "task-json"; path: string } | { kind: "api"; resource: string; taskId: string };
 
 function errnoMessage(err: unknown): string {
   const code = (err as NodeJS.ErrnoException | undefined)?.code;
@@ -112,15 +116,16 @@ export function readTaskJsonFile(path: string, opts: { cwd?: string; maxBytes?: 
   return { path: abs, task: extracted.task, shape: extracted.source };
 }
 
-function resolveSource(opts: FacesOptions): TaskSource {
-  const hasFile = opts.taskJson !== undefined;
+function resolveSource(opts: FacesOptions): FacesSource {
   const hasApi = opts.resource !== undefined || opts.taskId !== undefined;
-  if (hasFile && hasApi) {
-    throw new UsageError("choose one task source: --task-json <file>, or --resource <id> with --task-id <id> — not both");
+  const given = [opts.model !== undefined, opts.taskJson !== undefined, hasApi].filter(Boolean).length;
+  if (given > 1) {
+    throw new UsageError("choose one source: --model <file>, --task-json <file>, or --resource <id> with --task-id <id> — not both");
   }
-  if (hasFile) return { kind: "task-json", path: opts.taskJson! };
+  if (opts.model !== undefined) return { kind: "model", path: opts.model };
+  if (opts.taskJson !== undefined) return { kind: "task-json", path: opts.taskJson };
   if (opts.resource === undefined || opts.taskId === undefined) {
-    throw new UsageError("a task source is required: --task-json <file>, or --resource <id> together with --task-id <id>");
+    throw new UsageError("a source is required: --model <file>, --task-json <file>, or --resource <id> together with --task-id <id>");
   }
   return { kind: "api", resource: opts.resource, taskId: opts.taskId };
 }
@@ -138,6 +143,7 @@ export interface FacesResult {
   verdict: "pass" | "fail" | "unknown";
   reason: string | null;
   source:
+    | { kind: "model"; path: string; format: "glb" | "gltf"; mesh_instances: number }
     | { kind: "task-json"; path: string; shape: TaskJsonShape }
     | { kind: "api"; resource: string; task_id: string; endpoint: string; requests_made: 1 };
   task_id: string | null;
@@ -151,9 +157,11 @@ export interface FacesResult {
 export function buildInspectCommand(): Command {
   const faces = new Command("faces")
     .description(
-      "Face-count gate: pass (exit 0) | fail (exit 12) | unknown (exit 13). Answers only whether face_count <= --max-faces; " +
-        "a missing or malformed count is unknown, never 0. Never downloads a model or submits a remesh",
+      "Face-count gate: pass (exit 0) | fail (exit 12) | unknown (exit 13). Answers only whether the face count <= --max-faces; " +
+        "a missing or malformed count is unknown, never 0. The API does not report face_count, so measure a downloaded model with --model. " +
+        "Never downloads a model or submits a remesh",
     )
+    .option("--model <file>", "local .glb/.gltf: count its triangles (every mesh instance of the scene); no network, no credential")
     .option("--task-json <file>", "saved task JSON (API task, download meta.json or v1 envelope); no network, no credential")
     .option("--resource <id>", "task resource id (see `meshy resources`), fetched once with --task-id")
     .option("--task-id <id>", "task id to fetch once from the API (with --resource)")
@@ -169,47 +177,63 @@ export function buildInspectCommand(): Command {
       }
       const limit = opts.maxFaces;
       const source = resolveSource(opts);
-
-      let task: Record<string, unknown>;
-      let sourceInfo: FacesResult["source"];
-      let savedJson: SavedJson | null = null;
-      if (source.kind === "task-json") {
-        if (opts.saveJson) {
-          throw new UsageError("--save-json only applies to the API source (--resource/--task-id); the task JSON is already a file");
-        }
-        buildLocalRuntime(opened.flags);
-        const loaded = readTaskJsonFile(source.path);
-        task = loaded.task;
-        sourceInfo = { kind: "task-json", path: loaded.path, shape: loaded.shape };
-      } else {
-        const descriptor = findTaskResource(source.resource);
-        if (!descriptor) {
-          throw new UsageError(`unknown --resource '${source.resource}'. Valid ids: ${TASK_RESOURCES.map((d) => d.id).join(", ")}`);
-        }
-        const runtime = await buildRuntime(opened.flags);
-        // Exactly one GET; the verdict is read from the raw JSON, not the Zod-defaulted object.
-        const { raw } = await runtime.client.endpointFor(descriptor).retrieveDetailed(source.taskId, { signal: abortSignal() });
-        const extracted = extractTaskObject(raw);
-        task = extracted?.task ?? (raw as Record<string, unknown>);
-        savedJson = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
-        sourceInfo = { kind: "api", resource: descriptor.id, task_id: source.taskId, endpoint: descriptor.endpoint, requests_made: 1 };
+      if (opts.saveJson && source.kind !== "api") {
+        throw new UsageError("--save-json only applies to the API source (--resource/--task-id)");
       }
 
-      const verdict = judgeTask(task, limit);
-      const taskId = taskIdOf(task, source.kind === "api" ? source.taskId : null);
+      let verdict: FaceVerdict;
+      let sourceInfo: FacesResult["source"];
+      let taskId: string | null = null;
+      let status: string | null = null;
+      let savedJson: SavedJson | null = null;
+      if (source.kind === "model") {
+        buildLocalRuntime(opened.flags);
+        const counted = countModelFaces(source.path);
+        verdict = judgeFaceCount(counted.triangles, limit);
+        sourceInfo = { kind: "model", path: counted.path, format: counted.format, mesh_instances: counted.mesh_instances };
+      } else {
+        let task: Record<string, unknown>;
+        if (source.kind === "task-json") {
+          buildLocalRuntime(opened.flags);
+          const loaded = readTaskJsonFile(source.path);
+          task = loaded.task;
+          sourceInfo = { kind: "task-json", path: loaded.path, shape: loaded.shape };
+        } else {
+          const descriptor = findTaskResource(source.resource);
+          if (!descriptor) {
+            throw new UsageError(`unknown --resource '${source.resource}'. Valid ids: ${TASK_RESOURCES.map((d) => d.id).join(", ")}`);
+          }
+          const runtime = await buildRuntime(opened.flags);
+          // Exactly one GET; the verdict is read from the raw JSON, not the Zod-defaulted object.
+          const { raw } = await runtime.client.endpointFor(descriptor).retrieveDetailed(source.taskId, { signal: abortSignal() });
+          const extracted = extractTaskObject(raw);
+          task = extracted?.task ?? (raw as Record<string, unknown>);
+          savedJson = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
+          sourceInfo = { kind: "api", resource: descriptor.id, task_id: source.taskId, endpoint: descriptor.endpoint, requests_made: 1 };
+        }
+        verdict = judgeTask(task, limit);
+        taskId = taskIdOf(task, source.kind === "api" ? source.taskId : null);
+        status = typeof task["status"] === "string" ? (task["status"] as string) : null;
+      }
+
       const result: FacesResult = {
         ...verdict,
         source: sourceInfo,
         task_id: taskId,
-        status: typeof task["status"] === "string" ? (task["status"] as string) : null,
-        suggestion: verdict.verdict === "fail" ? remeshSuggestion(taskId, limit) : null,
+        status,
+        suggestion: verdict.verdict === "fail" ? remeshSuggestion(source.kind === "model" ? { modelPath: source.path } : { taskId }, limit) : null,
         saved_json: savedJson,
       };
       if (verdict.verdict === "fail") {
         throw new CliError({ code: "check_failed", message: `face count check failed: ${verdict.reason}`, result: { ...result } });
       }
       if (verdict.verdict === "unknown") {
-        throw new CliError({ code: "check_unknown", message: `face count unknown: ${verdict.reason}`, result: { ...result } });
+        throw new CliError({
+          code: "check_unknown",
+          message: `face count unknown: ${verdict.reason}`,
+          hint: `the API does not report face_count; download the model and measure it: meshy inspect faces --model <file.glb> --max-faces ${limit}`,
+          result: { ...result },
+        });
       }
       await emitResult(opened, result);
     });

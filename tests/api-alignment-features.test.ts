@@ -421,7 +421,7 @@ test("multi-image-to-3d --texture-image-urls: local files are inlined, 1-4 views
     const views = body(api)["texture_image_urls"] as string[];
     assert.equal(views.length, 2);
     for (const v of views) assert.match(v, /^data:image\/png;base64,/);
-    for (const extra of [["--texture-image-urls", "front.png"], ["--should-texture", "true", "--texture-image-urls", "front.png", "--texture-prompt", "red"]]) {
+    for (const extra of [["--should-texture", "false", "--texture-image-urls", "front.png"], ["--texture-image-urls", "front.png", "--texture-prompt", "red"]]) {
       const bad = await runCli(["multi-image-to-3d", "create", "--image-urls", "a.png", ...extra, "--async"], { env: api.env(), cwd });
       assert.equal(bad.code, 2, `${extra.join(" ")}: ${bad.stdout}`);
     }
