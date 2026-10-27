@@ -12,10 +12,10 @@
  *   - a lost or malformed response is `submission_unknown` (exit 10), never a
  *     retry and never a "please run it again" hint;
  *   - local targets that would fail after the POST (an existing --save-json
- *     file, an -o path outside the workspace, a missing --project) are checked
- *     before it, so a detectable conflict costs zero requests;
+ *     file, an -o path outside the workspace) are checked before it, so a
+ *     detectable conflict costs zero requests;
  *   - once the server has accepted a task, every later failure — saving JSON,
- *     polling, downloading, recording, a signal — still reports that task id,
+ *     polling, downloading, a signal — still reports that task id,
  *     the submission record and the `get`/`wait` commands that resume it;
  *   - SIGINT stops waiting/streaming (exit 130) and never deletes anything.
  */
@@ -54,10 +54,9 @@ import {
   type OperationRecord,
 } from "./operation-store.js";
 import { originOf } from "./config.js";
-import { freezeRoot, looksLikeFile, resolveWithinRoot, type AuthorisedRoot } from "./paths.js";
-import { assertProjectMetadataPresent, indexRootFor, projectRecordCommand, recordTask, saveTaskSnapshot, stageFromTaskType, type RecordInput } from "./project-store.js";
+import { looksLikeFile, resolveWithinRoot } from "./paths.js";
 import { existsSync } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
 
 export interface CreateSpec {
   description: string;
@@ -110,9 +109,7 @@ const TASK_JSON_OPTIONS = (cmd: Command): Command =>
     .addOption(outputOption())
     .addOption(allAssetsOption())
     .option("--save-json <file>", "save the full task JSON as received (never overwrites)")
-    .option("--include-raw", "include the untouched task response under result.task.raw")
-    .option("--project <dir>", "initialised meshy_output project: save task_<id>.json there and record the task in metadata.json")
-    .option("--stage <name>", "stage label for the project record (default: derived from the task type, e.g. preview | refine | build)");
+    .option("--include-raw", "include the untouched task response under result.task.raw");
 
 export interface DownloadOutcome {
   state: "not_requested" | "not_ready" | "completed" | "partial" | "failed";
@@ -252,159 +249,11 @@ function withTaskContext(err: unknown, ctx: TaskContext): CliError {
   });
 }
 
-interface ProjectAttachment {
-  project_dir: string;
-  snapshot: string | null;
-  stage: string;
-  action: "added" | "merged";
-  index: { updated: boolean; error: string | null };
-}
-
-function parentTaskIdFromPayload(payload: Record<string, unknown> | null): string | null {
-  if (!payload) return null;
-  for (const k of ["preview_task_id", "input_task_id", "rig_task_id"]) {
-    if (typeof payload[k] === "string" && payload[k]) return payload[k] as string;
-  }
-  return null;
-}
-
-/** Resolve --project: an initialised project directory, inside the workspace when one is set. */
-function resolveProjectDir(projectFlag: string, workspace: string | AuthorisedRoot | undefined, cwd = process.cwd()): string {
-  const projectDir = resolvePath(cwd, projectFlag);
-  if (!existsSync(join(projectDir, "metadata.json"))) {
-    throw new CliError({
-      code: "local_io",
-      message: `--project ${projectFlag} is not an initialised project (no metadata.json); run \`meshy project init\` first`,
-    });
-  }
-  if (workspace) resolveWithinRoot(projectDir, workspace, { cwd, label: "--project" });
-  return projectDir;
-}
-
-/**
- * --project: snapshot the task (when a full task is known) and record it.
- * Failures keep the task id in the error result — a bookkeeping problem must
- * never read as "no task was created". The recovery context (task, journal
- * operation, stage, workspace) exists before the project is even looked at, so
- * every failure of this phase — the directory resolving outside the workspace,
- * a metadata.json that vanished or was damaged after the preflight, a lock, a
- * full disk — carries it. Two kinds of failure, two answers: a project that no
- * longer lies inside the write boundary gets no command that would cross it;
- * anything else gets the one `meshy project record …` invocation (with the
- * original `--workspace`) that redoes just the record once the project is
- * restored. Nothing is re-submitted.
- */
-function attachToProject(
-  opts: Record<string, unknown>,
-  opened: OpenedCommand,
-  descriptor: TaskResourceDescriptor,
-  taskId: string,
-  task: Task | null,
-  raw: unknown,
-  extra: { operationId?: string | null; payload?: Record<string, unknown> | null; files?: string[] },
-  warnings: Warning[],
-): ProjectAttachment | null {
-  const projectFlag = opts.project as string | undefined;
-  if (!projectFlag) return null;
-  const projectDir = resolvePath(projectFlag);
-  // The boundary was frozen before the first request (the workspace, or the
-  // project directory itself when no workspace is given); it is never resolved
-  // again from a path that may have been replaced since.
-  const root: AuthorisedRoot = opened.flags.workspaceRoot ?? (opts.__projectRoot as AuthorisedRoot | undefined) ?? freezeRoot(projectDir, { label: "--project" });
-  const workspace = opened.flags.workspaceRoot?.given;
-  const stage = (opts.stage as string | undefined) ?? (typeof extra.payload?.["mode"] === "string" ? (extra.payload["mode"] as string) : descriptor.creativeLab?.stage ?? stageFromTaskType(task?.type, descriptor.id));
-  const input: RecordInput = {
-    taskId,
-    stage,
-    resource: descriptor.id,
-    taskType: task?.type ?? null,
-    endpoint: descriptor.endpoint,
-    parentTaskId: parentTaskIdFromPayload(extra.payload ?? null),
-    status: task?.status ?? null,
-    taskJson: null,
-    operationId: extra.operationId ?? null,
-    files: extra.files ?? [],
-  };
-  // 1. The location. The frozen boundary must still be the directory it was,
-  //    and the project must resolve inside it now — a workspace or project
-  //    replaced by a symlink while the request was in flight, or a project that
-  //    now resolves elsewhere, is a boundary problem: the task exists and is
-  //    journaled, but no recovery command may be handed out that writes across
-  //    that line. What passes is written through its real path.
-  let located: string;
-  try {
-    located = resolveWithinRoot(projectDir, root, { label: "--project" }).path;
-  } catch (err) {
-    throw projectBoundaryFailure(err, taskId, projectFlag, input);
-  }
-  // 2. The record itself, including "is this (still) an initialised project".
-  try {
-    if (opts.__projectInitialised === false && !existsSync(join(located, "metadata.json"))) {
-      throw new CliError({ code: "local_io", message: `--project ${projectFlag} is not an initialised project (no metadata.json); run \`meshy project init\` first` });
-    }
-    assertProjectMetadataPresent(located, projectFlag);
-    const snapshot = task && raw ? saveTaskSnapshot(located, taskId, raw) : null;
-    input.taskJson = snapshot?.relative ?? null;
-    const indexRoot = indexRootFor(located, undefined, opened.flags.workspaceRoot);
-    const rec = recordTask(located, input, { root: indexRoot.root, skipIndex: indexRoot.skipIndex });
-    if (!rec.index.updated) warnings.push(warning("index_dirty", `metadata.json committed but history.json was not updated: ${rec.index.error}; run \`meshy project rebuild-index\``));
-    return { project_dir: projectDir, snapshot: snapshot?.path ?? null, stage, action: rec.action, index: rec.index };
-  } catch (err) {
-    // The task exists and the journal is written; only the project entry is
-    // missing. The recovery redoes that one step under the original boundary.
-    const command = projectRecordCommand(projectDir, input, { workspace });
-    throw new CliError({
-      code: err instanceof CliError ? err.code : "local_io",
-      message: `task ${taskId} exists${input.operationId ? ` (operation ${input.operationId})` : ""} but recording it in ${projectDir} failed: ${err instanceof Error ? err.message : String(err)}; restore the project, then run: ${command}`,
-      httpStatus: err instanceof CliError ? err.httpStatus : null,
-      retryable: err instanceof CliError ? err.retryable : false,
-      recovery: { action: "record_project", automatic: false, command },
-      hint: command,
-      details: err instanceof CliError ? err.details : undefined,
-      cause: err,
-    });
-  }
-}
-
-/**
- * The project directory no longer resolves inside the workspace (or is a
- * symlink). The task is known and journaled; the caller learns that, and that
- * nothing was recorded — but no `meshy project record` command is offered,
- * because the only one that would succeed is one without the boundary.
- */
-function projectBoundaryFailure(err: unknown, taskId: string, projectFlag: string, input: RecordInput): CliError {
-  const reason = err instanceof Error ? err.message : String(err);
-  return new CliError({
-    code: "local_io",
-    message: `task ${taskId} exists${input.operationId ? ` (operation ${input.operationId})` : ""} but --project ${projectFlag} is no longer a target inside the authorised boundary: ${reason}; nothing was recorded (no project lock, snapshot or metadata was written). Restore the project inside the workspace, then record the task with \`meshy project record\` from that workspace`,
-    details: { project: projectFlag, task_id: taskId, operation_id: input.operationId ?? null, stage: input.stage, recorded: false },
-    cause: err,
-  });
-}
-
 /** --save-json inside the task's context: a full disk or a vanished directory never hides the task id. */
 function saveJsonInContext(opts: Record<string, unknown>, opened: OpenedCommand, raw: unknown, ctx: TaskContext): SavedJson | null {
   if (!opts.saveJson) return null;
   try {
-    return saveRawJson(String(opts.saveJson), raw, { workspace: opened.flags.workspaceRoot });
-  } catch (err) {
-    throw withTaskContext(err, ctx);
-  }
-}
-
-function attachInContext(
-  opts: Record<string, unknown>,
-  opened: OpenedCommand,
-  descriptor: TaskResourceDescriptor,
-  taskId: string,
-  task: Task | null,
-  raw: unknown,
-  extra: { operationId?: string | null; payload?: Record<string, unknown> | null; files?: string[] },
-  warnings: Warning[],
-  ctx: TaskContext,
-): ProjectAttachment | null {
-  try {
-    return attachToProject(opts, opened, descriptor, taskId, task, raw, extra, warnings);
+    return saveRawJson(String(opts.saveJson), raw, { workspace: opened.flags.workspace });
   } catch (err) {
     throw withTaskContext(err, ctx);
   }
@@ -416,7 +265,7 @@ function attachInContext(
 // ---------------------------------------------------------------------------
 
 /** `-o` target: inside the workspace (or its own directory), no symlink leaf, not an existing file. */
-export function preflightOutputPath(output: string, workspace: string | AuthorisedRoot | undefined, cwd = process.cwd()): void {
+export function preflightOutputPath(output: string, workspace: string | undefined, cwd = process.cwd()): void {
   const abs = resolvePath(cwd, output);
   resolveWithinRoot(abs, workspace ?? dirname(abs), { cwd, label: "--output" });
   if (looksLikeFile(abs) && existsSync(abs)) {
@@ -429,7 +278,7 @@ export function preflightOutputPath(output: string, workspace: string | Authoris
 }
 
 /** `--save-json` target: inside the workspace (or its own directory), no symlink leaf, not an existing file. */
-export function preflightSaveJsonPath(target: string, workspace: string | AuthorisedRoot | undefined, cwd = process.cwd()): void {
+export function preflightSaveJsonPath(target: string, workspace: string | undefined, cwd = process.cwd()): void {
   const abs = resolvePath(cwd, target);
   const resolved = resolveWithinRoot(abs, workspace ?? dirname(abs), { cwd, label: "--save-json target" });
   if (existsSync(resolved.path)) {
@@ -441,37 +290,9 @@ export function preflightSaveJsonPath(target: string, workspace: string | Author
   }
 }
 
-/**
- * Freeze the project's write boundary before the first request: with a
- * workspace it is the workspace (already frozen with the flags); without one it
- * is the project directory as it is right now. Whether the project was
- * initialised at this moment is remembered too, so a later "no metadata.json"
- * can say which it was. Nothing is refused here for get/wait/stream — a
- * bookkeeping problem stays a bookkeeping problem after the request (one
- * outcome); create's preflight refuses an uninitialised project before its POST.
- */
-function beginProjectContext(opts: Record<string, unknown>, opened: OpenedCommand): void {
-  const projectFlag = opts.project as string | undefined;
-  if (!projectFlag || opts.__projectRoot) return;
-  const projectDir = resolvePath(projectFlag);
-  opts.__projectInitialised = existsSync(join(projectDir, "metadata.json"));
-  opts.__projectRoot = opened.flags.workspaceRoot ?? freezeRoot(projectDir, { label: "--project" });
-}
-
 function preflightLocalTargets(opts: Record<string, unknown>, opened: OpenedCommand): void {
-  if (opts.saveJson) preflightSaveJsonPath(String(opts.saveJson), opened.flags.workspaceRoot);
-  if (opened.flags.output) preflightOutputPath(opened.flags.output, opened.flags.workspaceRoot);
-  if (opts.project) {
-    try {
-      resolveProjectDir(String(opts.project), opened.flags.workspaceRoot);
-      beginProjectContext(opts, opened);
-    } catch (err) {
-      if (err instanceof CliError) {
-        throw new CliError({ code: err.code, message: `${err.message} (nothing was submitted)`, recovery: err.recovery, cause: err });
-      }
-      throw err;
-    }
-  }
+  if (opts.saveJson) preflightSaveJsonPath(String(opts.saveJson), opened.flags.workspace);
+  if (opened.flags.output) preflightOutputPath(opened.flags.output, opened.flags.workspace);
 }
 
 export function buildResourceCommand(spec: ResourceCommandSpec): Command {
@@ -532,7 +353,6 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       if (runAsync) {
         const ctx: TaskContext = { descriptor, taskId, task: null, raw: null, submission, includeRaw };
         const savedJson = saveJsonInContext(opts, opened, createRaw, ctx);
-        const project = attachInContext(opts, opened, descriptor, taskId, null, null, { operationId, payload }, warnings, { ...ctx, savedJson });
         await emitEnvelope(
           okEnvelope(
             opened.command,
@@ -543,7 +363,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
               includeRaw: false,
               submission,
               savedJson,
-              extra: { task_id: taskId, next: nextCommands(descriptor, taskId), project },
+              extra: { task_id: taskId, next: nextCommands(descriptor, taskId) },
             }),
             warnings,
           ),
@@ -553,7 +373,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       }
 
       // 4. Sync: poll the id we just recorded.
-      await waitAndReport(opened, runtime, descriptor, endpoint, taskId, timeoutSeconds, { ...opts, __payload: payload, __operationId: operationId }, submission, warnings);
+      await waitAndReport(opened, runtime, descriptor, endpoint, taskId, timeoutSeconds, opts, submission, warnings);
     });
   cmd.addCommand(createCmd);
 
@@ -561,7 +381,6 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
   TASK_JSON_OPTIONS(cmd.command("get <task-id>").description("Retrieve a single task by id (any status is a successful query)")).action(
     async (taskId: string, opts: Record<string, unknown>, thisCmd: Command) => {
       const opened = openCommand(thisCmd, `${prefix}.get`);
-    beginProjectContext(opts, opened);
       const runtime = await buildRuntime(opened.flags);
       const { task, raw } = await endpointOf(runtime.client).retrieveDetailed(taskId, { signal: abortSignal() });
       const submission: SubmissionInfo = { state: "accepted", operation_id: null };
@@ -569,10 +388,9 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       const warnings: Warning[] = [];
       const ctx: TaskContext = { descriptor, taskId, task, raw, submission, includeRaw };
       const savedJson = saveJsonInContext(opts, opened, raw, ctx);
-      const project = attachInContext(opts, opened, descriptor, taskId, task, raw, {}, warnings, { ...ctx, savedJson });
-      const downloads = await maybeDownloadV1(opened, descriptor, task, raw, submission, warnings, { savedJson, includeRaw, project });
+      const downloads = await maybeDownloadV1(opened, descriptor, task, raw, submission, warnings, { savedJson, includeRaw });
       await emitEnvelope(
-        okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw, submission, downloads, savedJson, extra: project ? { project } : {} }), warnings),
+        okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw, submission, downloads, savedJson }), warnings),
         opened.format,
       );
       return;
@@ -587,7 +405,6 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       .option("--timeout <seconds>", "max seconds to wait (0 = a single query); the task keeps running after it — the API advises allowing up to 60 min", "600"),
   ).action(async (taskId: string, opts: Record<string, unknown>, thisCmd: Command) => {
     const opened = openCommand(thisCmd, `${prefix}.wait`);
-    beginProjectContext(opts, opened);
     const timeoutSeconds = parseTimeoutSeconds(opts.timeout ?? "600");
     const runtime = await buildRuntime(opened.flags);
     const endpoint = endpointOf(runtime.client);
@@ -603,7 +420,6 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       .option("--idle-timeout <seconds>", "abort when no bytes arrive for this long (keep-alives count)", "60"),
   ).action(async (taskId: string, opts: Record<string, unknown>, thisCmd: Command) => {
     const opened = openCommand(thisCmd, `${prefix}.stream`);
-    beginProjectContext(opts, opened);
     if (!descriptor.supports.stream) throw new UsageError(`${spec.name} does not support stream`);
     const timeoutSeconds = parseTimeoutSeconds(opts.timeout ?? "600");
     const idleSeconds = parseTimeoutSeconds(opts.idleTimeout ?? "60", "--idle-timeout");
@@ -655,7 +471,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         if (!Number.isInteger(page.page_num) || page.page_num < 1) throw new UsageError("--page must be a positive integer");
         if (!Number.isInteger(page.page_size) || page.page_size < 1) throw new UsageError("--page-size must be a positive integer");
         const { tasks, raw } = await endpointOf(runtime.client).listDetailed(page, { signal: abortSignal() });
-        const savedJson = opts.saveJson ? saveRawJson(opts.saveJson as string, raw, { workspace: opened.flags.workspaceRoot }) : null;
+        const savedJson = opts.saveJson ? saveRawJson(opts.saveJson as string, raw, { workspace: opened.flags.workspace }) : null;
         const rawItems = Array.isArray(raw) ? raw : [];
         await emitResult(
           opened,
@@ -915,14 +731,14 @@ async function maybeDownloadV1(
   raw: unknown,
   submission: SubmissionInfo,
   warnings: Warning[],
-  ctx: { savedJson?: SavedJson | null; includeRaw?: boolean; project?: ProjectAttachment | null },
+  ctx: { savedJson?: SavedJson | null; includeRaw?: boolean },
 ): Promise<DownloadOutcome> {
   const output = opened.flags.output;
   if (!output) return NOT_REQUESTED();
   if (task.status !== "SUCCEEDED") return { state: "not_ready", files: [], metadata_path: null };
   try {
     const { files, metadataPath, materialLinks, skipped, warnings: transferWarnings } = await withSpinner(opened.format, "Downloading assets", () =>
-      downloadTaskAssets(task, output, descriptor, { root: opened.flags.workspaceRoot, signal: abortSignal(), allAssets: opened.flags.allAssets }),
+      downloadTaskAssets(task, output, descriptor, { root: opened.flags.workspace, signal: abortSignal(), allAssets: opened.flags.allAssets }),
     );
     warnings.push(...transferWarnings.map((w) => warning(w.code, w.message)));
     return {
@@ -961,7 +777,6 @@ async function maybeDownloadV1(
       submission,
       includeRaw: ctx.includeRaw,
       savedJson: ctx.savedJson,
-      extra: ctx.project ? { project: ctx.project } : {},
     });
   }
 }
@@ -1036,25 +851,13 @@ async function waitAndReport(
 
   const ctx: TaskContext = { descriptor, taskId, task, raw, submission, includeRaw, extra: { wait: waitInfo } };
   const savedJson = saveJsonInContext(opts, opened, raw, ctx);
-  const project = attachInContext(
-    opts,
-    opened,
-    descriptor,
-    taskId,
-    task,
-    raw,
-    { operationId: (opts.__operationId as string | undefined) ?? submission.operation_id ?? null, payload: (opts.__payload as Record<string, unknown> | undefined) ?? null },
-    warnings,
-    { ...ctx, savedJson },
-  );
-  const projectExtra = project ? { project } : {};
 
   if (timedOut) {
     throw new CliError({
       code: "timed_out",
       message: `task ${taskId} did not reach a terminal status within ${timeoutSeconds}s (last status: ${task.status}); the server keeps running it`,
       recovery: { action: "wait", automatic: false, command: nextCommands(descriptor, taskId).wait },
-      result: taskResult({ task, raw, descriptor, includeRaw, submission, savedJson, extra: { task_id: taskId, wait: waitInfo, next: nextCommands(descriptor, taskId), ...projectExtra } }),
+      result: taskResult({ task, raw, descriptor, includeRaw, submission, savedJson, extra: { task_id: taskId, wait: waitInfo, next: nextCommands(descriptor, taskId) } }),
       warnings,
     });
   }
@@ -1062,13 +865,13 @@ async function waitAndReport(
     throw new CliError({
       code: "task_failed",
       message: task.task_error?.message ? `task ${taskId} ${task.status}: ${task.task_error.message}` : `task ${taskId} ended as ${task.status}`,
-      result: taskResult({ task, raw, descriptor, includeRaw, submission, savedJson, extra: { task_id: taskId, wait: waitInfo, ...projectExtra } }),
+      result: taskResult({ task, raw, descriptor, includeRaw, submission, savedJson, extra: { task_id: taskId, wait: waitInfo } }),
       warnings,
     });
   }
-  const downloads = await maybeDownloadV1(opened, descriptor, task, raw, submission, warnings, { savedJson, includeRaw, project });
+  const downloads = await maybeDownloadV1(opened, descriptor, task, raw, submission, warnings, { savedJson, includeRaw });
   await emitEnvelope(
-    okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw, submission, downloads, savedJson, extra: { wait: waitInfo, ...projectExtra } }), warnings),
+    okEnvelope(opened.command, taskResult({ task, raw, descriptor, includeRaw, submission, downloads, savedJson, extra: { wait: waitInfo } }), warnings),
     opened.format,
   );
 }
@@ -1095,7 +898,7 @@ function interruptedError(
   let saved = savedJson;
   if (!saved && opts.saveJson && last) {
     try {
-      saved = saveRawJson(opts.saveJson as string, last.raw, { workspace: opened.flags.workspaceRoot });
+      saved = saveRawJson(opts.saveJson as string, last.raw, { workspace: opened.flags.workspace });
     } catch {
       saved = null;
     }
@@ -1151,23 +954,20 @@ async function streamAndReport(
   const streamInfo = { events: outcome.events, ended: outcome.reason, elapsed_seconds: Number((outcome.elapsedMs / 1000).toFixed(2)) };
   const ctx: TaskContext = { descriptor, taskId, task: outcome.task, raw: outcome.raw, submission, includeRaw, extra: { stream: streamInfo, task_id: taskId } };
 
-  // Once the stream has started, every later step — saving JSON, recording the
-  // project, downloading — is part of the same terminal outcome: one `outcome`
-  // event (ndjson) or one envelope (json/pretty), never a bare error after it.
+  // Once the stream has started, every later step — saving JSON, downloading —
+  // is part of the same terminal outcome: one `outcome` event (ndjson) or one
+  // envelope (json/pretty), never a bare error after it.
   let savedJson: SavedJson | null = null;
-  let project: ProjectAttachment | null = null;
   let bookkeepingError: CliError | null = null;
   try {
     savedJson = opts.saveJson && outcome.raw ? saveJsonInContext(opts, opened, outcome.raw, ctx) : null;
-    project = outcome.task ? attachInContext(opts, opened, descriptor, taskId, outcome.task, outcome.raw, {}, warnings, { ...ctx, savedJson }) : null;
   } catch (err) {
     bookkeepingError = err instanceof CliError ? err : withTaskContext(err, ctx);
   }
-  const projectExtra = project ? { project } : {};
 
   let finalError: CliError | null = null;
   const resultWith = (downloads?: DownloadOutcome): Record<string, unknown> =>
-    taskResult({ task: outcome.task, raw: outcome.raw, descriptor, includeRaw, submission, downloads, savedJson, extra: { stream: streamInfo, task_id: taskId, next: nextCommands(descriptor, taskId), ...projectExtra } });
+    taskResult({ task: outcome.task, raw: outcome.raw, descriptor, includeRaw, submission, downloads, savedJson, extra: { stream: streamInfo, task_id: taskId, next: nextCommands(descriptor, taskId) } });
   let result = resultWith();
   switch (outcome.reason) {
     case "terminal":
@@ -1210,7 +1010,7 @@ async function streamAndReport(
   // format: `-o` means "put the assets on disk", not "only when printing JSON".
   if (!finalError && outcome.task && outcome.task.status === "SUCCEEDED") {
     try {
-      const downloads = await maybeDownloadV1(opened, descriptor, outcome.task, outcome.raw, submission, warnings, { savedJson, includeRaw, project });
+      const downloads = await maybeDownloadV1(opened, descriptor, outcome.task, outcome.raw, submission, warnings, { savedJson, includeRaw });
       result = resultWith(downloads);
     } catch (err) {
       finalError = err instanceof CliError ? err : withTaskContext(err, ctx);

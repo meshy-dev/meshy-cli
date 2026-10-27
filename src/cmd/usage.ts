@@ -57,7 +57,7 @@ const tasksCommand = new Command("tasks")
         status: filters.status ?? undefined,
       }, { signal: abortSignal() });
       const items = listItems(raw, USAGE_TASKS_PATH);
-      const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
+      const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspace }) : null;
       await emitResult(opened, { items, count: items.length, page, filters, saved_json: saved });
     },
   );

@@ -132,7 +132,7 @@ test("balance, delete and dry-run plans", () => {
 });
 
 test("fallback: v1 shows only the result, times are local, URLs lose their signatures", () => {
-  const out = renderView("project.show", okEnvelope("project.show", { created_at: 1_790_083_721_925, url: SIGNED }), plain);
+  const out = renderView("operations.show", okEnvelope("operations.show", { created_at: 1_790_083_721_925, url: SIGNED }), plain);
   assert.doesNotMatch(out, /schema_version|^ok:|warnings:/m, "the envelope is for machines");
   assert.match(out, /^created_at: \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
   assert.match(out, /^url: https:\/\/assets\.meshy\.ai\/u\/tasks\/abc\/output\/model\.glb$/m);

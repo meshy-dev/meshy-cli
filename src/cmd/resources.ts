@@ -46,7 +46,6 @@ export const RESOURCES: ResourceEntry[] = [
   { name: "animation-catalog", summary: "animation library (action ids for animate); free, server-side search" },
   { name: "showcases", summary: "Enterprise community showcases (every request is billed)" },
   { name: "download", summary: "download selected assets of a task (saved task JSON, URL, or API)" },
-  { name: "project", summary: "meshy_output project folders: init | record | show | list | rebuild-index" },
   { name: "inspect", summary: "local checks: faces (face-count gate pass | fail | unknown)" },
   { name: "mesh", summary: "prepare-print: OBJ Y-up → Z-up, scale to height, centre, ground at Z=0" },
   { name: "slicer", summary: "detect installed slicers | open a model in one" },

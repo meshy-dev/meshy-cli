@@ -21,7 +21,7 @@ import { humanHint } from "./internal/views.js";
 import { stopActiveProgress } from "./internal/progress.js";
 import { errorEnvelope } from "./internal/result.js";
 import { resolveFormat } from "./internal/runtime.js";
-import { refreshCache, shouldSkip } from "./internal/update-notifier.js";
+import { refreshCache, shouldRunUpdateCheck } from "./internal/update-notifier.js";
 
 async function main(): Promise<number> {
   const argv = process.argv;
@@ -29,7 +29,7 @@ async function main(): Promise<number> {
     // Children (none today, but any future spawn) inherit the opt-out.
     process.env["MESHY_CLI_NO_UPDATE_NOTIFIER"] = "1";
   }
-  if (shouldRunUpdateCheck(argv)) refreshCache(); // fire-and-forget; internally guarded; never throws
+  if (shouldRunUpdateCheck(argv, LOCAL_COMMANDS)) refreshCache(); // fire-and-forget; never throws
 
   installSignalHandlers();
 
@@ -42,24 +42,6 @@ async function main(): Promise<number> {
     if (isCommanderInformational(err)) return err.exitCode;
     return await reportFailure(program, argv, err);
   }
-}
-
-/**
- * The update check never runs for local work: no network, no detached child.
- * Local means the command touches neither the API nor the update state, or
- * the caller said so.
- */
-export function shouldRunUpdateCheck(argv: string[], env: NodeJS.ProcessEnv = process.env): boolean {
-  if (shouldSkip(env)) return false;
-  if (argv.includes("--no-update-check")) return false;
-  const rest = argv.slice(2);
-  if (rest.length === 0) return false;
-  if (rest.some((a) => a === "--help" || a === "-h" || a === "--version" || a === "-V")) return false;
-  const first = rest.find((a) => !a.startsWith("-"));
-  if (!first) return false;
-  if (LOCAL_COMMANDS.has(first)) return false;
-  if (first === "make" && rest.includes("--dry-run")) return false;
-  return true;
 }
 
 /** How long a SIGTERM / SIGHUP waits for the cooperative stop before the process exits anyway. */

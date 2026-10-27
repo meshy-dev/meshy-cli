@@ -356,162 +356,71 @@ test("F01 make: a polling failure after step 1 was accepted keeps executed steps
 // F09 / R07 — downloaded OBJ/MTL reference the files actually saved
 // ---------------------------------------------------------------------------
 
-test("R07/F09 download: mtllib and map_* references are rewritten to the saved names; manifest digests describe the rewritten files", async () => {
+test("R07/F09 download: the MTL's texture references point at the saved names, by the name each texture was served under; the OBJ is untouched; an unmatched map stays and is reported", async () => {
   const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#336699" } }).png().toBuffer();
-  const obj = "# meshy\nmtllib box.mtl\nv 0 0 0\nv 1 1 0\nv 0 1 1\nusemtl sample\nf 1 2 3\n";
-  const mtl = "newmtl sample\nKd 0.8 0.8 0.8\nmap_Kd texture.png\nmap_Bump -bm 0.5 normal_map.png\n";
+  // What Meshy delivers: `mtllib model.mtl`, and the MTL names the base color by its served file name.
+  const obj = "# Blender\nmtllib model.mtl\nv 0 0 0\nv 1 1 0\nv 0 1 1\nusemtl sample\nf 1 2 3\n";
+  const mtl = "newmtl sample\nKd 0.8 0.8 0.8\nmap_Kd texture_0.png\nmap_Bump -bm 0.5 texture_0_normal.png\nmap_Ks specular.png\n";
   const host = await startMockApi((req, res) => {
     const bodies: Record<string, { body: Buffer | string; type: string }> = {
-      "/box.obj": { body: obj, type: "model/obj" },
-      "/box.mtl": { body: mtl, type: "text/plain" },
-      "/bc.png": { body: png, type: "image/png" },
-      "/n.png": { body: png, type: "image/png" },
+      "/model.obj": { body: obj, type: "model/obj" },
+      "/model.mtl": { body: mtl, type: "text/plain" },
+      "/texture_0.png": { body: png, type: "image/png" },
+      "/texture_0_normal.png": { body: png, type: "image/png" },
     };
     const entry = bodies[req.path];
     if (!entry) return jsonReply(res, 404, {});
     res.writeHead(200, { "content-type": entry.type });
     res.end(entry.body);
   });
+  const task = taskBody({ model_urls: { obj: `${host.url}/model.obj`, mtl: `${host.url}/model.mtl` }, texture_urls: [{ base_color: `${host.url}/texture_0.png`, normal: `${host.url}/texture_0_normal.png` }] });
   try {
     const dir = tmpDir();
     const taskJson = join(dir, "obj-task.json");
-    writeFileSync(taskJson, JSON.stringify(taskBody({ model_urls: { obj: `${host.url}/box.obj`, mtl: `${host.url}/box.mtl` }, texture_urls: [{ base_color: `${host.url}/bc.png`, normal: `${host.url}/n.png` }] })));
+    writeFileSync(taskJson, JSON.stringify(task));
     const out = join(dir, "obj-download");
     const r = await runCli(["download", "--task-json", taskJson, "--model-format", "obj", "--output-dir", out], { env: host.env({ MESHY_API_KEY: undefined }), cwd: dir });
     assert.equal(r.code, 0, `${r.stderr}\n${r.stdout}`);
     assert.deepEqual(readdirSync(out).sort(), ["model.mtl", "model.obj", "texture_0_base_color.png", "texture_0_normal.png"]);
-    const savedObj = readFileSync(join(out, "model.obj"), "utf8");
-    assert.match(savedObj, /^mtllib model\.mtl$/m);
-    assert.ok(!savedObj.includes("box.mtl"));
-    assert.ok(savedObj.includes("usemtl sample") && savedObj.includes("f 1 2 3"), "everything else is verbatim");
+    assert.equal(readFileSync(join(out, "model.obj"), "utf8"), obj, "the OBJ is never rewritten");
     const savedMtl = readFileSync(join(out, "model.mtl"), "utf8");
     assert.match(savedMtl, /^map_Kd texture_0_base_color\.png$/m);
-    assert.match(savedMtl, /^map_Bump -bm 0\.5 texture_0_normal\.png$/m);
-    for (const ref of savedMtl.match(/^map_\w+ (?:-\S+ \S+ )?(\S+)$/gm)!.map((l) => l.split(" ").at(-1)!)) {
-      assert.ok(existsSync(join(out, ref)), `${ref} exists next to the MTL`);
-    }
-    const env = parseSingleJson(r.stdout) as { result: { downloads: { files: Array<{ key: string; path: string; sha256: string; relinked: boolean }>; material_links: { rewritten: string[]; mtllib: Array<{ resolved_to: string }>; texture_maps: Array<{ reference: string; resolved_to: string | null; method: string }> } } }; warnings: Array<{ code: string }> };
+    assert.match(savedMtl, /^map_Bump -bm 0\.5 texture_0_normal\.png$/m, "options are kept");
+    assert.match(savedMtl, /^map_Ks specular\.png$/m, "a map no texture was served as stays as written");
+    const env = parseSingleJson(r.stdout) as { result: { downloads: { files: Array<{ key: string; path: string; sha256: string; relinked: boolean }>; material_links: { status: string; rewritten: string[]; mtllib: Array<{ resolved_to: string | null }>; texture_maps: Array<{ reference: string; resolved_to: string | null }> } } }; warnings: Array<{ code: string; message: string }> };
     const files = Object.fromEntries(env.result.downloads.files.map((f) => [f.key, f]));
-    assert.equal(files["model.obj"]!.relinked, true);
+    assert.equal(files["model.obj"]!.relinked, false);
     assert.equal(files["model.mtl"]!.relinked, true);
-    assert.equal(files["texture.0.base_color"]!.relinked, false);
     for (const f of env.result.downloads.files) assert.equal(f.sha256, sha(f.path), `${f.key}: manifest digest matches the file on disk`);
-    assert.equal(env.result.downloads.material_links.rewritten.length, 2);
-    assert.deepEqual(env.result.downloads.material_links.mtllib.map((l) => l.resolved_to), ["model.mtl"]);
-    assert.deepEqual(env.result.downloads.material_links.texture_maps.map((l) => [l.reference, l.resolved_to, l.method]), [
-      ["texture.png", "texture_0_base_color.png", "channel_of_key"],
-      ["normal_map.png", "texture_0_normal.png", "channel_in_name"],
+    const links = env.result.downloads.material_links;
+    assert.deepEqual(links.mtllib.map((l) => l.resolved_to), ["model.mtl"]);
+    assert.deepEqual(links.texture_maps.map((l) => [l.reference, l.resolved_to]), [
+      ["texture_0.png", "texture_0_base_color.png"],
+      ["texture_0_normal.png", "texture_0_normal.png"],
+      ["specular.png", null],
     ]);
-    assert.ok(!env.warnings.some((w) => w.code === "material_reference_unresolved"));
+    assert.equal(links.status, "incomplete");
+    assert.ok(env.warnings.some((w) => w.code === "material_reference_unresolved" && w.message.includes("specular.png")));
 
-    // A task's `-o` delivers the OBJ with its maps and relinks it too.
-    const api = await startMockApi((req, res) => {
-      if (req.path.startsWith("/openapi/")) return jsonReply(res, 200, taskBody({ model_urls: { obj: `${host.url}/box.obj`, mtl: `${host.url}/box.mtl` }, texture_urls: [{ base_color: `${host.url}/bc.png`, normal: `${host.url}/n.png` }] }));
-      return jsonReply(res, 404, {});
-    });
+    // A task's `-o` relinks the same way.
+    const api = await startMockApi((req, res) => (req.path.startsWith("/openapi/") ? jsonReply(res, 200, task) : jsonReply(res, 404, {})));
     try {
       const taskOut = join(dir, "task-o");
       const viaTask = await runCli(["text-to-3d", "get", "review-task", "-o", taskOut], { env: api.env(), cwd: dir });
       assert.equal(viaTask.code, 0, viaTask.stderr);
-      assert.match(readFileSync(join(taskOut, "model.obj"), "utf8"), /^mtllib model\.mtl$/m);
       assert.match(readFileSync(join(taskOut, "model.mtl"), "utf8"), /^map_Kd texture_0_base_color\.png$/m);
     } finally {
       await api.close();
     }
 
-    // Geometry only: the OBJ keeps its reference and the result says so.
+    // Geometry only: no MTL is saved, and the result says the OBJ's mtllib has nothing to point at.
     const geo = await runCli(["download", "--task-json", taskJson, "--asset", "model.obj", "--geometry-only", "--output-dir", join(dir, "geo")], { env: host.env({ MESHY_API_KEY: undefined }), cwd: dir });
     assert.equal(geo.code, 0, geo.stderr);
-    assert.match(readFileSync(join(dir, "geo", "model.obj"), "utf8"), /^mtllib box\.mtl$/m);
     const gw = parseSingleJson(geo.stdout) as { warnings: Array<{ code: string }> };
     assert.ok(gw.warnings.some((w) => w.code === "geometry_only"));
     assert.ok(gw.warnings.some((w) => w.code === "material_reference_unresolved"));
   } finally {
     await host.close();
-  }
-});
-
-test("F09 an MTL map that matches no downloaded texture stays as written and is reported, never silently dropped", async () => {
-  const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#336699" } }).png().toBuffer();
-  const host = await startMockApi((req, res) => {
-    if (req.path === "/m.obj") {
-      res.writeHead(200, { "content-type": "model/obj" });
-      {
-      res.end("mtllib m.mtl\nv 0 0 0\n");
-      return;
-    }
-    }
-    if (req.path === "/m.mtl") {
-      res.writeHead(200, { "content-type": "text/plain" });
-      {
-      res.end("newmtl a\nmap_Kd albedo.png\nmap_Ks specular_only.png\n");
-      return;
-    }
-    }
-    if (req.path === "/bc.png") {
-      res.writeHead(200, { "content-type": "image/png" });
-      {
-      res.end(png);
-      return;
-    }
-    }
-    return jsonReply(res, 404, {});
-  });
-  try {
-    const dir = tmpDir();
-    const taskJson = join(dir, "t.json");
-    writeFileSync(taskJson, JSON.stringify(taskBody({ model_urls: { obj: `${host.url}/m.obj`, mtl: `${host.url}/m.mtl` }, texture_urls: [{ base_color: `${host.url}/bc.png` }] })));
-    const r = await runCli(["download", "--task-json", taskJson, "--asset", "model.obj", "--output-dir", join(dir, "out")], { env: host.env({ MESHY_API_KEY: undefined }), cwd: dir });
-    assert.equal(r.code, 0, r.stderr);
-    const savedMtl = readFileSync(join(dir, "out", "model.mtl"), "utf8");
-    assert.match(savedMtl, /^map_Kd texture_0_base_color\.png$/m, "albedo → base color by channel word");
-    assert.match(savedMtl, /^map_Ks specular_only\.png$/m, "unresolved reference untouched");
-    const env = parseSingleJson(r.stdout) as { warnings: Array<{ code: string; message: string }>; result: { downloads: { material_links: { texture_maps: Array<{ reference: string; resolved_to: string | null }> } } } };
-    assert.ok(env.warnings.some((w) => w.code === "material_reference_unresolved" && w.message.includes("specular_only.png")));
-    assert.deepEqual(env.result.downloads.material_links.texture_maps.map((l) => [l.reference, l.resolved_to]), [["albedo.png", "texture_0_base_color.png"], ["specular_only.png", null]]);
-  } finally {
-    await host.close();
-  }
-});
-
-// ---------------------------------------------------------------------------
-// F03 / R08, R09 — --workspace confines every write path
-// ---------------------------------------------------------------------------
-
-test("R08/F03 project init/record/rebuild-index refuse roots and projects outside --workspace before writing", async () => {
-  const dir = tmpDir();
-  const workspace = join(dir, "workspace");
-  const outside = join(dir, "outside");
-  mkdirSync(workspace);
-  mkdirSync(outside);
-  const env = { PATH: process.env["PATH"], HOME: process.env["HOME"], MESHY_CLI_NO_UPDATE_NOTIFIER: "1", MESHY_CONFIG_DIR: tmpDir("cfg-") };
-  const init = await runCli(["project", "init", "--workspace", workspace, "--root", join(outside, "projects"), "--name", "review"], { cwd: dir, env });
-  assert.equal(init.code, 11, `${init.stderr}\n${init.stdout}`);
-  assert.equal((parseSingleJson(init.stdout) as { error: { code: string } }).error.code, "local_io");
-  assert.deepEqual(readdirSync(outside), [], "nothing was created outside the workspace");
-
-  const inside = await runCli(["project", "init", "--workspace", workspace, "--root", join(workspace, "projects"), "--name", "review"], { cwd: dir, env });
-  assert.equal(inside.code, 0, inside.stderr);
-  const projectDir = (parseSingleJson(inside.stdout) as { result: { project_dir: string } }).result.project_dir;
-  assert.ok(existsSync(join(projectDir, "metadata.json")));
-
-  // A project that lives outside the workspace cannot be written to.
-  const foreign = await runCli(["project", "init", "--root", join(outside, "projects"), "--name", "foreign"], { cwd: dir, env });
-  assert.equal(foreign.code, 0, foreign.stderr);
-  const foreignDir = (parseSingleJson(foreign.stdout) as { result: { project_dir: string } }).result.project_dir;
-  const rec = await runCli(["project", "record", "--workspace", workspace, "--project", foreignDir, "--task-id", "t", "--stage", "preview"], { cwd: dir, env });
-  assert.equal(rec.code, 11, rec.stderr);
-  assert.equal((JSON.parse(readFileSync(join(foreignDir, "metadata.json"), "utf8")) as { tasks: unknown[] }).tasks.length, 0);
-  const rebuild = await runCli(["project", "rebuild-index", "--workspace", workspace, "--root", join(outside, "projects")], { cwd: dir, env });
-  assert.equal(rebuild.code, 11, rebuild.stderr);
-  // Task verbs: --project outside the workspace is refused before the POST.
-  const api = await startMockApi((req, res) => (req.method === "POST" ? jsonReply(res, 200, { result: "never" }) : jsonReply(res, 404, {})));
-  try {
-    const create = await runCli([...CREATE, "--workspace", workspace, "--project", foreignDir], { cwd: dir, env: api.env() });
-    assert.equal(create.code, 11, create.stderr);
-    assert.equal(api.requests.length, 0);
-  } finally {
-    await api.close();
   }
 });
 

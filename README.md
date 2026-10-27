@@ -93,7 +93,7 @@ the create/wait/stream semantics and the full exit-code table are in
 ## Documentation
 
 - [Using meshy-cli](https://github.com/meshy-dev/meshy-cli/blob/main/docs/usage.md)
-  — auth in depth, `make`, every resource, downloads, projects, printing
+  — auth in depth, `make`, every resource, downloads, printing
   helpers, media inputs, what the terminal shows, global flags, environment
   variables
 - [Scripts and agents](https://github.com/meshy-dev/meshy-cli/blob/main/docs/scripting.md)

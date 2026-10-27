@@ -37,7 +37,6 @@ import { meshCommand } from "./cmd/mesh.js";
 import { multiColorPrintCommand } from "./cmd/multi-color-print.js";
 import { multiImageTo3dCommand } from "./cmd/multi-image-to-3d.js";
 import { operationsCommand } from "./cmd/operations.js";
-import { projectCommand } from "./cmd/project.js";
 import { remeshCommand } from "./cmd/remesh.js";
 import { repairPrintabilityCommand } from "./cmd/repair-printability.js";
 import { resizeCommand } from "./cmd/resize.js";
@@ -58,7 +57,6 @@ import { uvUnwrapCommand } from "./cmd/uv-unwrap.js";
  */
 export const LOCAL_COMMANDS: ReadonlySet<string> = new Set([
   "resources",
-  "project",
   "operations",
   "inspect",
   "mesh",
@@ -188,7 +186,6 @@ export function buildRootCommand(): Command {
     animationCatalogCommand,
     showcasesCommand,
     downloadCommand,
-    projectCommand,
     operationsCommand,
     inspectCommand,
     meshCommand,

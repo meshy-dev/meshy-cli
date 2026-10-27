@@ -11,11 +11,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import sharp from "sharp";
 import { credentialBinding } from "../src/internal/operation-store.js";
-import { jsonReply, parseNdjson, parseSingleJson, runCli, startMockApi, tmpDir, type MockApi } from "./helpers/cli.js";
+import { jsonReply, parseNdjson, parseSingleJson, runCli, startMockApi, tmpDir } from "./helpers/cli.js";
 
 const CREATE = ["text-to-3d", "create", "--mode", "preview", "--prompt", "round two", "--async"];
 
@@ -41,10 +40,6 @@ function sha(path: string): string {
 /** Directory snapshot (names only) — used to prove nothing appeared outside a boundary. */
 function listing(dir: string): string[] {
   return existsSync(dir) ? readdirSync(dir).sort() : ["<absent>"];
-}
-
-async function pngBytes(color: string): Promise<Buffer> {
-  return sharp({ create: { width: 2, height: 2, channels: 3, background: color } }).png().toBuffer();
 }
 
 // ---------------------------------------------------------------------------
@@ -105,67 +100,6 @@ test("N01/R2-F01 analyze-printability get/wait/stream -o: outside targets are re
 });
 
 // ---------------------------------------------------------------------------
-// R2-F01 / N02 — the implicit history root is confined too
-// ---------------------------------------------------------------------------
-
-test("N02/R2-F01 --workspace equal to the project dir: metadata is recorded, the parent's index/lock/temp files are never touched (record, task --project, download --project)", async () => {
-  const api = await startMockApi((req, res) => {
-    if (req.path === "/asset.glb") {
-      res.writeHead(200, { "content-type": "model/gltf-binary" });
-      return void res.end(glb());
-    }
-    return jsonReply(res, 200, taskBody({ model_urls: { glb: `${api.url}/asset.glb` } }));
-  });
-  try {
-    const dir = tmpDir();
-    const root = join(dir, "project-root");
-    const env = api.env();
-    const init = await runCli(["project", "init", "--root", root, "--name", "review"], { env, cwd: dir });
-    assert.equal(init.code, 0, init.stderr);
-    const projectDir = (parseSingleJson(init.stdout) as { result: { project_dir: string } }).result.project_dir;
-    unlinkSync(join(root, "history.json"));
-    const rootBefore = listing(root);
-
-    const rec = await runCli(["project", "record", "--project", projectDir, "--workspace", projectDir, "--task-id", "round2-task", "--stage", "preview"], { env, cwd: dir });
-    assert.equal(rec.code, 0, `${rec.stderr}\n${rec.stdout}`);
-    const ro = parseSingleJson(rec.stdout) as { result: { index: { updated: boolean; error: string }; task_count: number }; warnings: Array<{ code: string }> };
-    assert.equal(ro.result.index.updated, false);
-    assert.match(ro.result.index.error, /outside --workspace/);
-    assert.equal(ro.result.task_count, 1, "metadata inside the workspace was recorded");
-    assert.ok(ro.warnings.some((w) => w.code === "index_dirty"));
-    assert.deepEqual(listing(root), rootBefore, "no history.json, lock or temp file appeared in the parent");
-
-    const get = await runCli(["text-to-3d", "get", "round2-task", "--project", projectDir, "--workspace", projectDir], { env, cwd: dir });
-    assert.equal(get.code, 0, `${get.stderr}\n${get.stdout}`);
-    const go = parseSingleJson(get.stdout) as { result: { project: { index: { updated: boolean } } }; warnings: Array<{ code: string }> };
-    assert.equal(go.result.project.index.updated, false);
-    assert.ok(go.warnings.some((w) => w.code === "index_dirty"));
-    assert.deepEqual(listing(root), rootBefore);
-
-    const taskJson = join(projectDir, "t.json");
-    writeFileSync(taskJson, JSON.stringify(taskBody({ model_urls: { glb: `${api.url}/asset.glb` } })));
-    const dl = await runCli(["download", "--task-json", taskJson, "--asset", "model.glb", "--project", projectDir, "--workspace", projectDir], { env, cwd: dir });
-    assert.equal(dl.code, 0, `${dl.stderr}\n${dl.stdout}`);
-    assert.ok((parseSingleJson(dl.stdout) as { warnings: Array<{ code: string }> }).warnings.some((w) => w.code === "index_dirty"));
-    assert.ok(existsSync(join(projectDir, "model.glb")));
-    assert.deepEqual(listing(root), rootBefore);
-
-    // An explicit --root outside the workspace stays a refusal before any write.
-    const outsideRoot = join(dir, "elsewhere");
-    const explicit = await runCli(["project", "record", "--project", projectDir, "--workspace", projectDir, "--root", outsideRoot, "--task-id", "t2", "--stage", "preview"], { env, cwd: dir });
-    assert.equal(explicit.code, 11, explicit.stderr);
-    assert.ok(!existsSync(outsideRoot));
-    // Workspace containing both project and root: the index is written normally.
-    const normal = await runCli(["project", "record", "--project", projectDir, "--workspace", root, "--task-id", "t3", "--stage", "preview"], { env, cwd: dir });
-    assert.equal(normal.code, 0, normal.stderr);
-    assert.equal((parseSingleJson(normal.stdout) as { result: { index: { updated: boolean } } }).result.index.updated, true);
-    assert.ok(existsSync(join(root, "history.json")));
-  } finally {
-    await api.close();
-  }
-});
-
-// ---------------------------------------------------------------------------
 // R2-F01 / N03 — a refused download creates no directory
 // ---------------------------------------------------------------------------
 
@@ -202,135 +136,10 @@ test("N03/R2-F01 download: a target outside --workspace is refused before mkdir 
 });
 
 // ---------------------------------------------------------------------------
-// R2-F02 / N04 — multi-material texture mapping
-// ---------------------------------------------------------------------------
-
-async function materialHost(files: Record<string, { body: Buffer | string; type: string }>): Promise<MockApi> {
-  return startMockApi((req, res) => {
-    const entry = files[req.path];
-    if (!entry) return jsonReply(res, 404, {});
-    res.writeHead(200, { "content-type": entry.type });
-    res.end(entry.body);
-  });
-}
-
-test("N04/R2-F02 two material groups keep distinct textures: source names decide, never the first candidate; case/dir/extension variants resolve", async () => {
-  const red = await pngBytes("#ff0000");
-  const green = await pngBytes("#00ff00");
-  const obj = "mtllib character.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 1\nusemtl body\nf 1 2 3\nusemtl eyes\nf 3 2 1\n";
-  const mtl = "newmtl body\nmap_Kd body.png\nmap_Bump -bm 0.5 textures/Body_N.PNG\nnewmtl eyes\nmap_Kd eyes.jpeg\nmap_Bump eyes_n.png\n";
-  const host = await materialHost({
-    "/character.obj": { body: obj, type: "model/obj" },
-    "/character.mtl": { body: mtl, type: "text/plain" },
-    "/assets/body.png": { body: red, type: "image/png" },
-    "/assets/body_n.png": { body: red, type: "image/png" },
-    "/assets/eyes.jpg": { body: green, type: "image/png" },
-    "/assets/eyes_n.png": { body: green, type: "image/png" },
-  });
-  try {
-    const dir = tmpDir();
-    const fixture = join(dir, "multi.json");
-    writeFileSync(
-      fixture,
-      JSON.stringify(
-        taskBody({
-          model_urls: { obj: `${host.url}/character.obj`, mtl: `${host.url}/character.mtl` },
-          texture_urls: [
-            { base_color: `${host.url}/assets/body.png?sig=1`, normal: `${host.url}/assets/body_n.png?sig=2` },
-            { base_color: `${host.url}/assets/eyes.jpg?sig=3`, normal: `${host.url}/assets/eyes_n.png?sig=4` },
-          ],
-        }),
-      ),
-    );
-    const out = join(dir, "materials");
-    const r = await runCli(["download", "--task-json", fixture, "--model-format", "obj", "--output-dir", out], { env: host.env({ MESHY_API_KEY: undefined }), cwd: dir });
-    assert.equal(r.code, 0, `${r.stderr}\n${r.stdout}`);
-    const savedMtl = readFileSync(join(out, "model.mtl"), "utf8");
-    const lines = savedMtl.split("\n");
-    const body = lines.indexOf("newmtl body");
-    const eyes = lines.indexOf("newmtl eyes");
-    assert.equal(lines[body + 1], "map_Kd texture_0_base_color.png", "body base color → set 0 (source name body.png)");
-    assert.equal(lines[body + 2], "map_Bump -bm 0.5 texture_0_normal.png", "body normal → set 0 (source name, directory and case ignored)");
-    assert.equal(lines[eyes + 1], "map_Kd texture_1_base_color.png", "eyes base color → set 1 (source stem eyes, .jpeg vs .jpg)");
-    assert.equal(lines[eyes + 2], "map_Bump texture_1_normal.png", "eyes normal → set 1");
-    for (const ref of ["texture_0_base_color.png", "texture_0_normal.png", "texture_1_base_color.png", "texture_1_normal.png"]) assert.ok(existsSync(join(out, ref)));
-    assert.ok(readFileSync(join(out, "texture_1_base_color.png")).equals(green), "set 1 really is the second texture");
-    const env = parseSingleJson(r.stdout) as { warnings: Array<{ code: string }>; result: { downloads: { material_links: { status: string; texture_maps: Array<{ material: string; reference: string; resolved_to: string; method: string }> } } } };
-    assert.equal(env.result.downloads.material_links.status, "complete");
-    assert.deepEqual(
-      env.result.downloads.material_links.texture_maps.map((l) => [l.material, l.reference, l.resolved_to, l.method]),
-      [
-        ["body", "body.png", "texture_0_base_color.png", "source_name"],
-        ["body", "textures/Body_N.PNG", "texture_0_normal.png", "source_name"],
-        ["eyes", "eyes.jpeg", "texture_1_base_color.png", "source_stem"],
-        ["eyes", "eyes_n.png", "texture_1_normal.png", "source_name"],
-      ],
-    );
-    assert.ok(!env.warnings.some((w) => w.code.startsWith("material_reference")));
-
-    // A task's `-o` uses the same mapping.
-    const api = await startMockApi((req, res) => {
-      if (req.path.startsWith("/openapi/")) {
-        return jsonReply(res, 200, taskBody({ model_urls: { obj: `${host.url}/character.obj`, mtl: `${host.url}/character.mtl` }, texture_urls: [{ base_color: `${host.url}/assets/body.png` }, { base_color: `${host.url}/assets/eyes.jpg` }] }));
-      }
-      return jsonReply(res, 404, {});
-    });
-    try {
-      const taskOut = join(dir, "task-o");
-      const viaTask = await runCli(["text-to-3d", "get", "round2-task", "-o", taskOut], { env: api.env(), cwd: dir });
-      assert.equal(viaTask.code, 0, viaTask.stderr);
-      const lm = readFileSync(join(taskOut, "model.mtl"), "utf8");
-      assert.match(lm, /^map_Kd texture_0_base_color\.png$/m);
-      assert.match(lm, /^map_Kd texture_1_base_color\.png$/m);
-    } finally {
-      await api.close();
-    }
-  } finally {
-    await host.close();
-  }
-});
-
-test("N04/R2-F02 ambiguous references stay as written and are reported: two base-color candidates, no source match → no guess", async () => {
-  const red = await pngBytes("#ff0000");
-  const green = await pngBytes("#00ff00");
-  const mtl = "newmtl body\nmap_Kd skin.png\nnewmtl eyes\nmap_Kd face.png\n";
-  const host = await materialHost({
-    "/c.obj": { body: "mtllib c.mtl\nv 0 0 0\n", type: "model/obj" },
-    "/c.mtl": { body: mtl, type: "text/plain" },
-    "/a.png": { body: red, type: "image/png" },
-    "/b.png": { body: green, type: "image/png" },
-  });
-  try {
-    const dir = tmpDir();
-    const fixture = join(dir, "ambiguous.json");
-    writeFileSync(fixture, JSON.stringify(taskBody({ model_urls: { obj: `${host.url}/c.obj`, mtl: `${host.url}/c.mtl` }, texture_urls: [{ base_color: `${host.url}/a.png` }, { base_color: `${host.url}/b.png` }] })));
-    const out = join(dir, "amb");
-    const r = await runCli(["download", "--task-json", fixture, "--model-format", "obj", "--output-dir", out], { env: host.env({ MESHY_API_KEY: undefined }), cwd: dir });
-    assert.equal(r.code, 0, `${r.stderr}\n${r.stdout}`);
-    const savedMtl = readFileSync(join(out, "model.mtl"), "utf8");
-    assert.match(savedMtl, /^map_Kd skin\.png$/m, "kept as written");
-    assert.match(savedMtl, /^map_Kd face\.png$/m, "kept as written");
-    assert.ok(!savedMtl.includes("texture_0_base_color.png"), "the first candidate was not picked");
-    const env = parseSingleJson(r.stdout) as { warnings: Array<{ code: string; message: string }>; result: { downloads: { state: string; material_links: { status: string; texture_maps: Array<{ reference: string; resolved_to: string | null; method: string; candidates?: string[] }> } } } };
-    assert.equal(env.result.downloads.state, "completed", "every file landed");
-    assert.equal(env.result.downloads.material_links.status, "incomplete");
-    assert.deepEqual(env.result.downloads.material_links.texture_maps.map((l) => [l.reference, l.resolved_to, l.method, l.candidates]), [
-      ["skin.png", null, "ambiguous", ["texture_0_base_color.png", "texture_1_base_color.png"]],
-      ["face.png", null, "ambiguous", ["texture_0_base_color.png", "texture_1_base_color.png"]],
-    ]);
-    const warn = env.warnings.find((w) => w.code === "material_reference_ambiguous");
-    assert.ok(warn, "ambiguity is warned");
-    assert.match(warn!.message, /skin\.png.*texture_0_base_color\.png or texture_1_base_color\.png/);
-  } finally {
-    await host.close();
-  }
-});
-
-// ---------------------------------------------------------------------------
 // R2-F03 / N05 — every post-stream failure ends in one outcome event
 // ---------------------------------------------------------------------------
 
-test("N05/R2-F03 stream: save-json conflict, project failure and download failure each end in exactly one outcome with the next sequence", async () => {
+test("N05/R2-F03 stream: a save-json conflict and a download failure each end in exactly one outcome with the next sequence", async () => {
   const api = await startMockApi((req, res) => {
     if (req.path.endsWith("/stream")) {
       res.writeHead(200, { "content-type": "text/event-stream" });
@@ -345,7 +154,6 @@ test("N05/R2-F03 stream: save-json conflict, project failure and download failur
     writeFileSync(occupied, "do not overwrite");
     const cases: Array<[string, string[], number, string]> = [
       ["save-json conflict", ["--save-json", occupied], 11, "local_io"],
-      ["project not initialised", ["--project", join(dir, "nope")], 11, "local_io"],
       ["asset 404", ["-o", join(dir, "asset.glb")], 5, "not_found"],
     ];
     for (const [label, extra, exitCode, code] of cases) {

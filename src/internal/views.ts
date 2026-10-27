@@ -202,7 +202,7 @@ function downloadTip(resource: string, taskId: string, dir: string, where: strin
 function taskListView(body: unknown, paint: Painter): string | null {
   if (!isObj(body) || !Array.isArray(body["items"])) return null;
   const tasks = (body["items"] as unknown[]).map((i) => taskFrom({ task: i }));
-  if (tasks.some((t) => t === null)) return null; // not a task list (showcases, projects, …)
+  if (tasks.some((t) => t === null)) return null; // not a task list (showcases, …)
   // Only a task list has a `page`; an empty showcase list is not "No tasks".
   if (tasks.length === 0) return isObj(body["page"]) ? paint("No tasks.", "dim") : null;
   const rows = (tasks as TaskView[]).map((t) => [

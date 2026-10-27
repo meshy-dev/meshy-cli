@@ -129,6 +129,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-014 Update-check policy
 
+*Partly superseded by D-085: the local commands are those in `LOCAL_COMMANDS` (`resources`, `operations`, `inspect`, `mesh`, `slicer`, `doctor`, `download`).*
+
 - The background npm check is skipped when `--no-update-check` is given, when the
   existing `MESHY_CLI_NO_UPDATE_NOTIFIER` / CI variables are set, for local commands
   (`resources`, `project`, `inspect`, `mesh`, `slicer`, `doctor`, `download` from a
@@ -183,7 +185,7 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-021 Project store
 
-*Partly superseded by D-082: files without `schema_version: 2` are refused, not migrated.*
+*Superseded by D-085: the project store is gone.*
 
 - `metadata.json` gains `schema_version: 2` plus `resource`, `endpoint`,
   `parent_task_id`, `status`, `task_json`, `operation_id` per task; legacy files
@@ -249,6 +251,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-027 `--project` bookkeeping on task verbs and download
 
+*Superseded by D-085: `--project` is gone.*
+
 - `create/get/wait/stream --project <dir>` record the task in `metadata.json`
   (stage from `--stage`, else the payload `mode`, else the Creative Lab stage, else
   the task type suffix preview/refine/prototype/build, else the resource id) and
@@ -304,6 +308,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-032 `--workspace` is the root of every write, checked before the POST
 
+*Partly superseded by D-085: no project or history root is left to confine.*
+
 - Review F03: the v1 `-o` path handed the legacy downloader the output directory
   as its own root, `project` ignored the flag, and `make` never looked at it.
   `downloadArtifacts` now takes the workspace as root (directory, every planned
@@ -318,6 +324,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   requests.
 
 ## D-033 Dependency copies are proven inside the write root on real paths
+
+*Partly superseded by D-085: copies are proven once, before any directory is created.*
 
 - Review F04: `copyDependency` only lstat'ed the leaf, so `<target>/materials`
   being a symlink to another directory let `materials/a.mtl` land outside the
@@ -352,6 +360,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-036 Downloaded OBJ sets are relinked, not renamed
 
+*Partly superseded by D-085: only MTL `map_*` lines that name a served texture are rewritten; the OBJ is never rewritten.*
+
 - Review F09: the downloader saved `model.obj`/`model.mtl`/`texture_<n>_<channel>.png`
   while the OBJ still said `mtllib box.mtl` and the MTL named the server's texture
   files, so a complete download did not load. After a set has landed the CLI
@@ -376,6 +386,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-038 The write root also covers report-only tasks and the implicit history root
 
+*Partly superseded by D-085: the history root is gone.*
+
 - Codex review round 2 (R2-F01): `-o` on a report-only task (analyze-printability)
   returned through `saveReportOnly` before the workspace check; `project record`
   with `--workspace` equal to the project directory wrote `history.json` into the
@@ -392,6 +404,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-039 Material relinking resolves by source name and never guesses between groups
 
+*Superseded by D-085: a reference resolves by the served name alone.*
+
 - R2-F02: `byChannel` kept the first texture per channel, so two `newmtl` groups'
   `map_Kd` lines both pointed at `texture_0_base_color.png`. Every downloaded
   texture now carries the name the server served it under (`basenameOfUrl`), and a
@@ -405,6 +419,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   every map is recorded. The legacy `-o` layout uses the same resolver.
 
 ## D-040 Bookkeeping failures after a stream are part of its terminal outcome
+
+*Partly superseded by D-085: `--save-json` is the only bookkeeping left.*
 
 - R2-F03: a `--save-json` conflict or `--project` failure after the SSE stream had
   emitted task events surfaced as a bare error envelope without `event`/`sequence`.
@@ -501,6 +517,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-047 Source identity beats a generated file name
 
+*Superseded by D-085: a reference resolves by the served name alone.*
+
 - R3-F03: a saved-name match ran before the source-name match, so an MTL that
   referenced `texture_1_base_color.png` — the *server's* name for the image the
   CLI saved as `texture_0_base_color.png` — kept pointing at the wrong file and
@@ -538,6 +556,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-050 Project file records are computed in the real-path frame
 
+*Superseded by D-085: `--project` is gone.*
+
 - R3-F06: `download --project` compared the downloader's real paths with the
   project directory as given, so a project reached through an alias (a symlinked
   parent, macOS `/var` → `/private/var`) produced `../…` relative paths that were
@@ -548,6 +568,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   result are unchanged. Files genuinely outside the project are still not recorded.
 
 ## D-051 Material heuristics compete on the texture they actually reach
+
+*Superseded by D-085: there are no material heuristics.*
 
 - R4-F01: channel competition was computed on the channel each reference
   *declared* (a channel word in its name, else the MTL key's channel), while
@@ -571,6 +593,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   material groups. The order of the references is irrelevant.
 
 ## D-052 A project-record failure keeps the download result and says how to redo the record alone
+
+*Superseded by D-085: `--project` is gone.*
 
 - R4-F02: in `meshy download --project` the realpath / `indexRootFor` /
   `recordTask` phase ran after the download's try/catch, so a refused
@@ -607,6 +631,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 
 ## D-054 A recovery command carries the original write boundary
 
+*Superseded by D-085: no recovery command records a project.*
+
 - R5-F01: `projectRecordCommand` emitted `meshy project record …` without the
   invocation's `--workspace`. Replayed after a repair, the command wrote where
   the original could not: with a workspace equal to the project, the original
@@ -622,6 +648,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   with a space and a quote character.
 
 ## D-055 One reference is one file: keys are reconciled before textures compete
+
+*Superseded by D-085: there are no material heuristics.*
 
 - R5-F02: the same reference under two MTL keys — `map_Kd shared.png`
   (heuristic hit on the only base color) and `map_Bump shared.png` (ambiguous
@@ -642,6 +670,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   repository test; D01, C05, N04 and the round-1 relink cases are unchanged.
 
 ## D-056 The task verbs check the project inside the recovery context
+
+*Superseded by D-085: `--project` is gone.*
 
 - R5-F03: `attachToProject` resolved `--project` (metadata present, inside the
   workspace) before its try block, so a project whose metadata.json vanished
@@ -666,6 +696,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   `not_found`.
 
 ## D-057 The write boundary is frozen before the first request
+
+*Superseded by D-085: the root is checked on real paths, not frozen.*
 
 - R6-F02: every containment check re-resolved the root (`--workspace`) with
   realpath at check time. A workspace directory swapped for a symlink to another
@@ -692,6 +724,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   carries the workspace as the user named it.
 
 ## D-058 The download command re-validates the project inside the frozen boundary
+
+*Superseded by D-085: `--project` is gone.*
 
 - R6-F01: `download --project` only checked that `metadata.json` behind the
   project path was a regular file, so a project directory (or its parent)
@@ -1289,3 +1323,41 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   `pose_mode` sent through `--data` (image-to-image has no flag for it) warns
   too.
 
+
+## D-085 Less machinery: no project store, a plain write root, one relink rule, a small notifier
+
+- The CLI is 0.x with few users, and three subsystems had grown to defend cases
+  nobody hits. They are cut back to what a caller sees.
+- `meshy project` (`init | record | show | list | rebuild-index`) and
+  `--project`/`--stage` on the task verbs and `download` are gone. With them go
+  `metadata.json`, `history.json`, the `task_<id>.json` snapshots, the
+  `record_project` recovery and the journal's `project` field. The layout came
+  from the retired Python skill. `-o` (with `meta.json`) and `--save-json`
+  already keep what a task produced, and the Meshy account keeps the history.
+- `--workspace` is a plain directory. Every write target is resolved on real
+  paths against it before anything is created: the deepest existing ancestor is
+  realpath'd and a symlink leaf is refused. For a create this happens before the
+  POST. The frozen root (`AuthorisedRoot`, `freezeRoot`, `assertRootIntact`:
+  device/inode captured at start and re-proven after the request) is gone. It
+  only guarded a workspace swapped for a symlink while a request was in flight,
+  and the local user can write there anyway. `mesh prepare-print` proves its
+  dependency copies once, before any directory is created.
+- OBJ material links follow what Meshy delivers. A live remesh to OBJ gives
+  `mtllib model.mtl` (the name the CLI saves) and `map_Kd texture_0.png` (the
+  served name of the image the CLI saves as `texture_0_base_color.png`). A map
+  line is pointed at the saved texture when exactly one texture was served under
+  that name. Anything else stays as written and is warned
+  (`material_reference_unresolved`). The OBJ is never rewritten; an `mtllib`
+  that names no saved MTL is reported. The channel, stem and only-texture
+  heuristics and their arbitration are gone, along with the `method` and
+  `candidates` report fields.
+- The update notifier keeps its contract: a cache file, a detached child that
+  asks npm at most once a day, and one stderr line for a person at a terminal.
+  Nothing goes to stdout or the envelope. Versions compare as plain `x.y.z`.
+  `shouldRunUpdateCheck` lives beside the notifier and takes the local commands,
+  so it is testable without starting the CLI.
+- Sizes: `update-notifier.ts` 440 → 134 lines, `material-links.ts` 639 → 141,
+  `paths.ts` 207 → 109; `project-store.ts` (552) and `cmd/project.ts` (146) are
+  deleted. The tests that only exercised the removed paths are deleted: the
+  project store, the boundary swaps (review rounds 5 and 6) and the relink
+  arbitration.

@@ -8,7 +8,7 @@
  * hard size cap enforced while streaming, sha256 computed on the way. The
  * temp file lives in the target directory and is published exclusively
  * (`link`), or replaced atomically with --overwrite; the final path — after
- * any MIME-driven extension change — is checked against the authorised root.
+ * any MIME-driven extension change — is checked against the output root.
  *
  * Two entry points share the core:
  *   downloadAssets     — writes a list of enumerated assets (artifacts.ts):
@@ -30,7 +30,7 @@ import type { TaskResourceDescriptor } from "../client/resource-registry.js";
 import type { Task } from "../client/types.js";
 import { publishTempFile, tempPathFor, writeJsonFile } from "./atomic-file.js";
 import { CliError, UsageError } from "./errors.js";
-import { freezeRoot, isInside, looksLikeFile, resolveWithinRoot, safeExtension, type AuthorisedRoot } from "./paths.js";
+import { isInside, looksLikeFile, resolveWithinRoot, safeExtension } from "./paths.js";
 import { USER_AGENT } from "./user-agent.js";
 import { enumerateAssets, selectDefaultAssets, type Asset, type DefaultSelection, type SkipReason } from "./artifacts.js";
 import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";
@@ -314,8 +314,8 @@ export interface DownloadAssetsOptions extends FetchOptions {
   /** Single-file mode (exactly one asset). */
   targetFile?: string;
   overwrite?: boolean;
-  /** Authorised root every final path must stay inside — frozen before the first transfer (a string is frozen here). */
-  root: string | AuthorisedRoot;
+  /** Root every final path must stay inside: --workspace, or the output directory. */
+  root: string;
   /** Validate magic/content-type for models (default on). */
   validateContent?: boolean;
   /** Bounded URL refresh hook (API source): returns fresh URLs by key or null. */
@@ -350,16 +350,12 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
   const files: DownloadedFile[] = [];
   const warnings: Array<{ code: string; message: string }> = [];
   const dir = opts.targetFile ? dirname(resolvePath(opts.targetFile)) : resolvePath(opts.targetDir!);
-  // The root is frozen once: its real path and directory identity now, re-proven
-  // at every later check, so a boundary replaced during a transfer is refused.
-  const root: AuthorisedRoot = typeof opts.root === "string" ? freezeRoot(opts.root, { label: "output root" }) : opts.root;
-  const rootReal = root.real;
   // The directory and every planned leaf must be inside the root (and no
   // symlink) before anything at all is created — a refused target must not
   // leave a directory behind; the check repeats after any MIME-driven rename.
-  resolveWithinRoot(dir, root, { label: "output directory" });
+  const rootReal = resolveWithinRoot(dir, opts.root, { label: "output directory" }).root;
   for (const asset of assets) {
-    resolveWithinRoot(join(dir, plannedName(asset, opts.targetFile)), root, { label: "planned download path" });
+    resolveWithinRoot(join(dir, plannedName(asset, opts.targetFile)), opts.root, { label: "planned download path" });
   }
   mkdirSync(dir, { recursive: true });
 
@@ -369,7 +365,7 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
     let entry: DownloadedFile;
     try {
       if (asset.kind === "report") {
-        const target = resolveWithinRoot(planned.endsWith(".json") ? planned : `${planned}.json`, root, { label: "report path" }).path;
+        const target = resolveWithinRoot(planned.endsWith(".json") ? planned : `${planned}.json`, opts.root, { label: "report path" }).path;
         const res = writeJsonFile(target, asset.report, { overwrite: opts.overwrite ?? false });
         const bytes = statSync(target).size;
         entry = { key: asset.key, path: target, relative_path: rel(rootReal, target), bytes, sha256: createHash("sha256").update(readFileSync(target)).digest("hex"), content_type: "application/json", format: "json", container_format: null, extracted: null, status: "written", error: null, publish_method: res.method, relinked: false };
@@ -391,7 +387,7 @@ export async function downloadAssets(assets: readonly Asset[], opts: DownloadAss
             } else throw err;
           } else throw err;
         }
-        entry = await placeFetched(asset, fetched, planned, root, opts, warnings);
+        entry = await placeFetched(asset, fetched, planned, opts, warnings);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -463,7 +459,7 @@ export function basenameOfUrl(url: string): string | null {
   }
 }
 
-/** After the set landed: point OBJ → MTL → textures at the saved names and re-take the digests of rewritten files. */
+/** After the set landed: point the MTL's texture references at the saved names and re-take the digests of rewritten files. */
 async function relinkWritten(files: DownloadedFile[], warnings: Array<{ code: string; message: string }>, sources: Map<string, string | null>, signal: AbortSignal | undefined): Promise<MaterialLinkReport | null> {
   const written = files.filter((f) => f.status === "written" && f.container_format === null);
   const links = await relinkMaterials(written.map((f) => ({ key: f.key, path: f.path, sourceName: sources.get(f.key) ?? null })), { signal });
@@ -490,11 +486,9 @@ async function placeFetched(
   asset: Asset,
   fetched: FetchedFile,
   planned: string,
-  root: AuthorisedRoot,
   opts: DownloadAssetsOptions,
   warnings: Array<{ code: string; message: string }>,
 ): Promise<DownloadedFile> {
-  const rootReal = root.real;
   const actualExt = extFromContentType(fetched.contentType);
   const requestedExt = safeExtension(extname(planned));
   let finalPath = planned;
@@ -534,18 +528,19 @@ async function placeFetched(
 
   // The final path — possibly renamed — must still be inside the root, and
   // must not be a symlink or an existing file (unless --overwrite).
-  let resolved: string;
+  let target: ReturnType<typeof resolveWithinRoot>;
   try {
-    resolved = resolveWithinRoot(finalPath, root, { label: "final download path" }).path;
+    target = resolveWithinRoot(finalPath, opts.root, { label: "final download path" });
   } catch (err) {
     removeQuietly(tmp);
     throw err;
   }
+  const resolved = target.path;
   const res = publishTempFile(tmp, resolved, { overwrite: opts.overwrite ?? false });
   return {
     key: asset.key,
     path: resolved,
-    relative_path: rel(rootReal, resolved),
+    relative_path: rel(target.root, resolved),
     bytes,
     sha256: sha,
     content_type: fetched.contentType,
@@ -603,8 +598,8 @@ export interface SkippedAsset {
 }
 
 export interface TaskDownloadOptions {
-  /** The --workspace frozen with the flags; every directory and file must resolve inside it. Default: the output directory. */
-  root?: AuthorisedRoot;
+  /** --workspace: every directory and file must resolve inside it. Default: the output directory. */
+  root?: string;
   /** Cooperative cancellation (SIGINT): aborts the in-flight transfer and everything after it. */
   signal?: AbortSignal;
   /** --all-assets: every asset of the task (directory only) instead of the default selection. */
@@ -672,12 +667,10 @@ export async function downloadTaskAssets(task: Task, outputPath: string, descrip
   if (existing.length > 0) {
     throw new UsageError(`refusing to overwrite existing file(s):\n  ${existing.join("\n  ")}\n(delete them or choose a different --output path to rerun)`);
   }
-  if (opts.root) {
-    resolveWithinRoot(targetDir, opts.root, { label: "output directory" });
-    for (const p of [...planned, metadataPath]) resolveWithinRoot(p, opts.root, { label: "planned download path" });
-  }
+  const root = opts.root ?? targetDir;
+  resolveWithinRoot(targetDir, root, { label: "output directory" });
+  for (const p of [...planned, metadataPath]) resolveWithinRoot(p, root, { label: "planned download path" });
   mkdirSync(targetDir, { recursive: true });
-  const root = opts.root ?? freezeRoot(targetDir, { label: "output directory" });
 
   const result = await downloadAssets(selection.selected, {
     ...(singleFile ? { targetFile: resolvePath(outputPath) } : { targetDir }),
@@ -713,11 +706,10 @@ function sidecarFailure(err: unknown, files: DownloadedFile[], signal: AbortSign
 /**
  * The sidecar (`meta.json` / `<stem>_meta.json`): the full task — every URL,
  * so `meshy download --task-json` can fetch a skipped asset later — the saved
- * paths and what was skipped. Published under the root re-proven at
- * publication time (a symlink or file that appeared since the preflight is
- * refused, never followed or truncated); the write is exclusive and atomic.
+ * paths and what was skipped. The write is exclusive and atomic, and a
+ * symlink at the sidecar path is refused, never followed.
  */
-function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], skipped: SkippedAsset[], root: AuthorisedRoot): void {
+function writeMeta(task: Task, resource: string, path: string, savedFiles: string[], skipped: SkippedAsset[], root: string): void {
   const meta = { resource, task, saved_files: savedFiles, skipped, downloaded_at: new Date().toISOString() };
   const resolved = resolveWithinRoot(path, root, { label: "sidecar path" }).path;
   writeJsonFile(resolved, meta, { overwrite: false, mode: 0o644 });

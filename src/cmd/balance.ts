@@ -15,7 +15,7 @@ export const balanceCommand = new Command("balance")
     rejectOutputFlag(opened, opts.saveJson);
     const runtime = await buildRuntime(opened.flags);
     const { balance, raw } = await runtime.client.balance.getWithRaw();
-    const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspaceRoot }) : null;
+    const saved = opts.saveJson ? saveRawJson(opts.saveJson, raw, { workspace: opened.flags.workspace }) : null;
     await emitResult(opened, {
         balance: balance.balance,
         monthly_credits: balance.monthly_credits ?? null,
