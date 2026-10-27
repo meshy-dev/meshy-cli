@@ -11,8 +11,10 @@ import {
   GPT_IMAGE_MODELS,
   IMAGE_MODELS,
   isGptImageModel,
+  poseAspectRatioWarnings,
 } from "../src/internal/image-models.js";
 import { UsageError } from "../src/internal/errors.js";
+import { jsonReply, parseSingleJson, runCli, startMockApi } from "./helpers/cli.js";
 
 const NANO_BANANA_MODELS = [
   "nano-banana-2-1",
@@ -91,3 +93,32 @@ test("the model list includes current nano-banana models and no longer offers th
   // the API still accepts it, so --data '{"ai_model":"nano-banana"}' remains the escape hatch.
   assert.ok(!(IMAGE_MODELS as readonly string[]).includes("nano-banana"));
 });
+
+test("poseAspectRatioWarnings — a pose on a nano-banana model says the image comes back 3:4; GPT Image and an explicit 3:4 say nothing", () => {
+  for (const model of NANO_BANANA_MODELS) {
+    const [w] = poseAspectRatioWarnings({ ai_model: model, pose_mode: "t-pose", aspect_ratio: "16:9" });
+    assert.equal(w?.code, "pose_aspect_ratio", model);
+    assert.match(w!.message, new RegExp(`^${model} renders a t-pose image at 3:4, so --aspect-ratio 16:9 is not used`));
+  }
+  assert.match(poseAspectRatioWarnings({ ai_model: "nano-banana-2", pose_mode: "a-pose" })[0]!.message, /the image will not be 1:1/);
+  assert.deepEqual(poseAspectRatioWarnings({ ai_model: "nano-banana-2", pose_mode: "t-pose", aspect_ratio: "3:4" }), []);
+  assert.deepEqual(poseAspectRatioWarnings({ ai_model: "nano-banana-2", aspect_ratio: "16:9" }), []);
+  for (const model of GPT_IMAGE_MODELS) assert.deepEqual(poseAspectRatioWarnings({ ai_model: model, pose_mode: "t-pose", aspect_ratio: "16:9" }), [], model);
+  assert.deepEqual(poseAspectRatioWarnings({ pose_mode: "t-pose" }), [], "no model is the GPT default");
+});
+
+test("text-to-image / image-to-image: the pose warning rides in the envelope and the request still goes out", async () => {
+  const api = await startMockApi((req, res) => (req.method === "POST" ? jsonReply(res, 200, { result: "img-1" }) : jsonReply(res, 404, {})));
+  try {
+    const t2i = await runCli(["text-to-image", "create", "--ai-model", "nano-banana-2", "--pose-mode", "t-pose", "--aspect-ratio", "16:9", "--prompt", "a knight", "--async"], { env: api.env() });
+    assert.equal(t2i.code, 0, t2i.stderr);
+    assert.deepEqual((parseSingleJson(t2i.stdout) as { warnings: Array<{ code: string }> }).warnings.map((w) => w.code), ["pose_aspect_ratio"]);
+    const i2i = await runCli(["image-to-image", "create", "--ai-model", "nano-banana-pro", "--prompt", "pose it", "--input-task-id", "img-src", "--data", '{"pose_mode":"a-pose"}', "--async"], { env: api.env() });
+    assert.equal(i2i.code, 0, i2i.stderr);
+    assert.deepEqual((parseSingleJson(i2i.stdout) as { warnings: Array<{ code: string }> }).warnings.map((w) => w.code), ["pose_aspect_ratio"]);
+    assert.equal(api.requests.filter((q) => q.method === "POST").length, 2, "both requests were sent");
+  } finally {
+    await api.close();
+  }
+});
+

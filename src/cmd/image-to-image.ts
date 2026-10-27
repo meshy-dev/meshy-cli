@@ -12,6 +12,7 @@ import {
   IMAGE_MODELS,
   IMAGE_MODEL_HELP,
   checkImageCombo,
+  poseAspectRatioWarnings,
 } from "../internal/image-models.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
 
@@ -80,6 +81,7 @@ const spec: ResourceCommandSpec = {
     toDefaults() {
       return { ai_model: DEFAULT_IMAGE_MODEL };
     },
+    warnPayload: poseAspectRatioWarnings,
   },
   endpointOf: (c) => c.imageToImage,
 };

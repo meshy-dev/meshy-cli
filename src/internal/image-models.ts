@@ -6,7 +6,8 @@
  * accepts all seven ratios; the nano-banana family rejects 3:2 and 2:3.
  */
 
-import { UsageError } from "./errors.js";
+import { UsageError, type Warning } from "./errors.js";
+import { warning } from "./result.js";
 
 export const IMAGE_MODELS = [
   "gpt-image-2",
@@ -65,4 +66,17 @@ export function checkImageCombo(opts: {
       `--aspect-ratio ${ratio} is only supported by the GPT Image models (${GPT_IMAGE_MODELS.join(", ")})`,
     );
   }
+}
+
+/**
+ * The API renders an A/T pose on a nano-banana model at 3:4 whatever aspect
+ * ratio was asked, without saying so (GPT Image models keep the ratio). The
+ * request still goes out; the envelope says what will come back.
+ */
+export function poseAspectRatioWarnings(payload: Record<string, unknown>): Warning[] {
+  const model = typeof payload["ai_model"] === "string" ? payload["ai_model"] : DEFAULT_IMAGE_MODEL;
+  const pose = payload["pose_mode"];
+  if (typeof pose !== "string" || isGptImageModel(model) || payload["aspect_ratio"] === "3:4") return [];
+  const asked = typeof payload["aspect_ratio"] === "string" ? `--aspect-ratio ${payload["aspect_ratio"]} is not used` : "the image will not be 1:1";
+  return [warning("pose_aspect_ratio", `${model} renders a ${pose} image at 3:4, so ${asked}; the GPT Image models keep the ratio`)];
 }

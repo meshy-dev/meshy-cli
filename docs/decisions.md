@@ -1273,3 +1273,19 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   `--model`. A failing model suggests `remesh --model-url <file>`. D-009 still
   holds: a missing count is never 0.
 
+## D-084 A pose on a nano-banana model warns that the ratio is not used
+
+- meshyd renders an A/T pose on every non-GPT image model at 3:4
+  (`api_image_generation_handlers.go`, since the endpoint's first version). It
+  overrides `aspect_ratio` without an error or a warning. GPT Image models keep
+  the ratio. Measured live with `--aspect-ratio 16:9`:
+  - nano-banana-2 with t-pose came back 896×1200;
+  - gpt-image-2 with t-pose came back 1536×864;
+  - nano-banana-2 without a pose came back 1376×768.
+- The request is still sent; the envelope carries a `pose_aspect_ratio` warning
+  whenever a pose meets a nano-banana model and the ratio is not 3:4. That
+  includes the 1:1 default. `--pose-mode` help says the same.
+- `CreateSpec.warnPayload` is the hook. It reads the merged payload, so a
+  `pose_mode` sent through `--data` (image-to-image has no flag for it) warns
+  too.
+

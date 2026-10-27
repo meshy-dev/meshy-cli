@@ -185,7 +185,9 @@ These are API rules, not preferences — ignoring them produces failed tasks:
   fdm|sla|full_color` and one `--intended-print-height-mm` /
   `--intended-print-longest-side-mm`; `multi-color-print` takes `--style
   realistic|cartoon` and `--printer-brand`. `text-to-image` / `image-to-image`
-  take `--remove-background true` (transparent PNG).
+  take `--remove-background true` (transparent PNG). With `--pose-mode`, the
+  nano-banana models return 3:4 whatever `--aspect-ratio` says (a
+  `pose_aspect_ratio` warning says so); the GPT Image models keep the ratio.
 - **A standalone refine defaults to 2k textures**: 4k/8k and `--remove-lighting`
   are refused for a meshy-6-lite preview, so pass `--texture-resolution 4k` only
   for a meshy-6 / meshy-7.1 / latest preview (`make` does).
