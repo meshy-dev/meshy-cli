@@ -103,8 +103,11 @@ meshy-cli balance
 meshy-cli text-to-3d create --mode preview --prompt "a red sports car"
 meshy-cli text-to-3d create --mode refine  --preview-task-id <id> --texture-resolution 4k
 
-# image → 3D; --geometry-resolution 2k|4k runs the Ultra geometry pass (billed on top)
+# image → 3D, textured by default like the API (full PBR maps, 4k base color);
+# --should-texture false is the untextured draft (texture it later with retexture);
+# --geometry-resolution 2k|4k runs the Ultra geometry pass (billed on top)
 meshy-cli image-to-3d create --image-url https://example.com/cat.png --geometry-resolution 2k
+meshy-cli image-to-3d create --image-url cat.png --should-texture false
 
 # text → standalone motion clip (Prime/FBX by default; Swift produces BVH)
 meshy-cli text-to-motion create --prompt "a character waving" --duration 3
@@ -153,7 +156,7 @@ meshy showcases list --search car --page-size 3 --model-format glb
 # local helpers (no key, no network)
 meshy download --task-json ./task.json --asset result.basic_animations.walking_glb_url --output walking.glb
 meshy project init --root ./meshy_output --name demo
-meshy inspect faces --task-json ./task.json --max-faces 300000
+meshy inspect faces --model ./model.glb --max-faces 300000
 meshy mesh prepare-print ./model.obj --height-mm 75
 meshy slicer detect
 meshy doctor
@@ -418,16 +421,20 @@ index. A repeat `(task_id, stage)` merges instead of duplicating.
 ## Printing helpers
 
 ```bash
-meshy inspect faces --task-json ./task.json --max-faces 300000    # pass (0) | fail (12) | unknown (13)
+meshy inspect faces --model ./model.glb --max-faces 300000       # pass (0) | fail (12) | unknown (13)
 meshy mesh prepare-print ./model.obj --height-mm 75                # writes ./model.print.obj
 meshy mesh prepare-print ./model.obj --height-mm 80 --in-place
 meshy slicer detect
 meshy slicer open --slicer OrcaSlicer --file ./model.print.obj
 ```
 
-`inspect faces` answers only whether the task's `face_count` is within the
-limit you pass (`--max-faces` is required); a missing count is `unknown`, never
-0, and a failing verdict only *describes* a remesh. `prepare-print` rotates a
+`inspect faces` answers only whether a face count is within the limit you pass
+(`--max-faces` is required). `--model` counts the triangles of a local
+`.glb`/`.gltf` (every mesh instance in the scene, from the glTF JSON; compressed
+files count too). The Meshy API does not report `face_count`, so the task
+sources (`--task-json`, `--resource --task-id`) answer `unknown` unless a count
+is present; a missing count is never 0. A failing verdict only *describes* a
+remesh. `prepare-print` rotates a
 Y-up OBJ to Z-up, scales it to the target height, centres it on XY and rests it
 on Z=0, preserving faces, UVs, normals (rotated only) and material references;
 it never overwrites without `--in-place`, and the MTL/texture copies it makes

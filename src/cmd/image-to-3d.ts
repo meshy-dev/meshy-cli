@@ -18,13 +18,14 @@ import { parseBool, parseCsv, parseInt10 } from "../internal/flags.js";
 import { UsageError } from "../internal/errors.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
 import { prepareSmartTopologyPayload, SMART_TOPOLOGY_MODELS } from "../internal/smart-topology.js";
+import { refuseTextureSettingsWithoutTexture, texturingDefaults } from "../internal/texturing.js";
 
 const spec: ResourceCommandSpec = {
   name: "image-to-3d",
   description:
     "Generate a 3D model from a single reference image (clean backgrounds and clear edges " +
-    "give the best results). Outputs an untextured draft mesh by default — texture the " +
-    "confirmed mesh with `retexture`, or pass --should-texture true for one-shot. " +
+    "give the best results). Textured by default, as the API (full PBR map set, 4k base color); " +
+    "--should-texture false gives an untextured draft mesh to confirm before `retexture`. " +
     "Topology/polycount are not tunable in standard mode — chain `remesh` afterwards; " +
     "smart-topology mode has a native polycount and costs less",
   create: {
@@ -61,7 +62,7 @@ const spec: ResourceCommandSpec = {
         )
         .option(
           "--should-texture <bool>",
-          "generate textures (default: false — draft white mesh, the preview stage; texture later with retexture)",
+          "generate textures (default: true; false gives an untextured draft mesh — texture it later with retexture)",
           parseBool,
         )
         .option(
@@ -107,20 +108,6 @@ const spec: ResourceCommandSpec = {
       if (smart && opts.geometryResolution !== undefined && opts.geometryResolution !== "standard") {
         throw new UsageError("--geometry-resolution 2k/4k applies to --model-type standard only (it needs meshy-7.1)");
       }
-      // The API rejects texture knobs on untextured runs; catch it before the wire.
-      if (opts.shouldTexture !== true && !opts.data) {
-        for (const [flag, value] of [
-          ["--enable-pbr", opts.enablePbr],
-          ["--texture-resolution", opts.textureResolution],
-          ["--texture-prompt", opts.texturePrompt],
-        ] as const) {
-          if (value !== undefined) {
-            throw new UsageError(
-              `${flag} requires --should-texture true (the default output is an untextured draft mesh)`,
-            );
-          }
-        }
-      }
       return {
         image_url: opts.imageUrl,
         input_task_id: opts.inputTaskId,
@@ -138,26 +125,17 @@ const spec: ResourceCommandSpec = {
         target_formats: opts.targetFormats,
       };
     },
-    toDefaults(opts) {
-      // Draft-first: the default output is an untextured white mesh (the
-      // preview stage of the prompt → image → mesh → texture pipeline);
-      // texturing is its own step, and the API rejects texture knobs on
-      // untextured runs, so they ride only when texturing is on — then the
-      // game-ready defaults apply: full PBR map set, 4k base color. The
-      // standard follows the server's meshy-7.1 default. Smart Topology's
-      // model and polycount defaults are applied after payload merging.
-      // The Ultra pass stays off
-      // unless asked for: it bills extra. GLB-only output — omitting target_formats
-      // makes the API produce every format.
-      const texturing = opts.shouldTexture === true;
-      return {
-        should_texture: false,
-        enable_pbr: texturing ? true : undefined,
-        texture_resolution: texturing ? "4k" : undefined,
-        target_formats: ["glb"],
-      };
+    toDefaults(opts, data) {
+      // Textured like the API, with the game-ready texture settings (see
+      // texturing.ts). The standard follows the server's meshy-7.1 default;
+      // Smart Topology's model and polycount defaults are applied after
+      // payload merging. The Ultra pass stays off unless asked for: it bills
+      // extra. GLB-only output — omitting target_formats makes the API
+      // produce every format.
+      return { ...texturingDefaults(opts, data), target_formats: ["glb"] };
     },
     validatePayload(payload) {
+      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt"]);
       prepareSmartTopologyPayload(payload);
       // Smart topology has neither knob; v1 answers 400 for either (it does not ignore them).
       if (payload.model_type === "smart-topology") {

@@ -1248,3 +1248,28 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   tests that only checked 0.2.0 shapes, legacy key aliases or the
   `endpoint-contracts.json` mirror are deleted.
 
+## D-083 Image generators texture by default; `inspect faces` measures a local model
+
+- meshyd defaults `should_texture` to true on image-to-3d and multi-image-to-3d
+  (v1 and v2). The CLI's draft-first `should_texture: false` default was a
+  CLI-only divergence: an agent that forgot the flag paid for a white mesh, and
+  `make` disagreed with the command it runs. Both commands now leave
+  `should_texture` to the API. The game-ready texture settings (PBR maps, 4k)
+  ride unless the flag or `--data` turns texturing off; `toDefaults` receives
+  the parsed `--data` for that. Texture settings on an untextured run are
+  refused after merging (`texturing.ts`), so `--data` and flags meet the same
+  rule. `--should-texture false` is the draft.
+- The public task response has no `face_count`. meshyd stores it, and the
+  rigging ceiling reads it, but it is not exposed. So the task sources of
+  `inspect faces` could only answer `unknown`.
+- `--model <file>` counts the triangles of a local `.glb`/`.gltf` from the glTF
+  JSON:
+  - every mesh instance of the default scene counts;
+  - strips and fans count `n - 2`; points and lines count nothing;
+  - accessor counts are read without decoding, so compressed files count too.
+
+  The count matches the outputs it was checked on: 982,320 for an image-to-3d
+  model, 15,500 after remesh. A task source that answers `unknown` now hints at
+  `--model`. A failing model suggests `remesh --model-url <file>`. D-009 still
+  holds: a missing count is never 0.
+

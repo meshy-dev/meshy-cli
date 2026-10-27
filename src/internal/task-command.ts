@@ -67,10 +67,11 @@ export interface CreateSpec {
   toPayload(opts: Record<string, unknown>): Record<string, unknown>;
   /**
    * Pinned CLI defaults — the weakest payload layer, overridable by --data
-   * and by explicit flags. Computed defaults may read other options but must
-   * not throw (validation belongs in toPayload).
+   * and by explicit flags. Computed defaults may read the options and the
+   * parsed --data but must not throw (validation belongs in toPayload or
+   * validatePayload).
    */
-  toDefaults?(opts: Record<string, unknown>): Record<string, unknown>;
+  toDefaults?(opts: Record<string, unknown>, data: Record<string, unknown>): Record<string, unknown>;
   /**
    * Payload keys holding nested option objects that must merge field by field
    * across defaults < --data < flags (e.g. Creative Lab `options`, `output`).
@@ -502,7 +503,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
       // 1. Build and validate the payload — every local failure happens here, before the journal and the POST.
       const data = parseJsonFlag(opts.data as string | undefined, "--data");
       const flagPayload = spec.create.toPayload(opts);
-      const defaults = spec.create.toDefaults?.(opts) ?? {};
+      const defaults = spec.create.toDefaults?.(opts, data) ?? {};
       const layers = [defaults, data, flagPayload];
       let merged = mergePayload(...layers);
       if (spec.create.nestedObjectKeys && spec.create.nestedObjectKeys.length > 0) {

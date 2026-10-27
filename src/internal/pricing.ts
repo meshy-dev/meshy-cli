@@ -17,7 +17,7 @@ export const CREDIT_ESTIMATES = {
   "text-to-3d:preview": 20,
   /** text-to-3d --mode refine: textures the preview it came from. */
   "text-to-3d:refine": 10,
-  /** image-to-3d --should-texture true: geometry and textures in one task. */
+  /** image-to-3d, textured (the default): geometry and textures in one task. */
   "image-to-3d:textured": 30,
 } as const;
 

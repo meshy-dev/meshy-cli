@@ -12,6 +12,7 @@ import { Option } from "commander";
 import { parseBool, parseCsv } from "../internal/flags.js";
 import { UsageError } from "../internal/errors.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
+import { refuseTextureSettingsWithoutTexture, texturingDefaults } from "../internal/texturing.js";
 
 const spec: ResourceCommandSpec = {
   name: "multi-image-to-3d",
@@ -42,7 +43,7 @@ const spec: ResourceCommandSpec = {
         )
         .option(
           "--should-texture <bool>",
-          "generate textures (default: false — draft white mesh; texture later with retexture)",
+          "generate textures (default: true; false gives an untextured draft mesh — texture it later with retexture)",
           parseBool,
         )
         .option(
@@ -74,21 +75,6 @@ const spec: ResourceCommandSpec = {
       if (!opts.inputTaskId && (!urls || urls.length < 1 || urls.length > 4) && !opts.data) {
         throw new UsageError("provide --image-urls (CSV of 1-4) or --input-task-id");
       }
-      // The API rejects texture knobs on untextured runs; catch it before the wire.
-      if (opts.shouldTexture !== true && !opts.data) {
-        for (const [flag, value] of [
-          ["--enable-pbr", opts.enablePbr],
-          ["--texture-resolution", opts.textureResolution],
-          ["--texture-prompt", opts.texturePrompt],
-          ["--texture-image-urls", opts.textureImageUrls],
-        ] as const) {
-          if (value !== undefined) {
-            throw new UsageError(
-              `${flag} requires --should-texture true (the default output is an untextured draft mesh)`,
-            );
-          }
-        }
-      }
       const textureViews = opts.textureImageUrls as string[] | undefined;
       if (textureViews && (textureViews.length < 1 || textureViews.length > 4)) {
         throw new UsageError("--texture-image-urls takes 1-4 images of the same object");
@@ -109,19 +95,14 @@ const spec: ResourceCommandSpec = {
         target_formats: opts.targetFormats,
       };
     },
-    toDefaults(opts) {
-      // Draft-first, matching image-to-3d: white mesh by default, texturing
-      // is its own step; texture knobs ride only when texturing is on (the
-      // API rejects them otherwise), then game-ready values apply. No model
+    toDefaults(opts, data) {
+      // Textured like the API, as image-to-3d (see texturing.ts). No model
       // choice and no geometry default: the server's standard pass applies,
       // and Ultra (2k) rides only when asked for — it bills extra.
-      const texturing = opts.shouldTexture === true;
-      return {
-        should_texture: false,
-        enable_pbr: texturing ? true : undefined,
-        texture_resolution: texturing ? "4k" : undefined,
-        target_formats: ["glb"],
-      };
+      return { ...texturingDefaults(opts, data), target_formats: ["glb"] };
+    },
+    validatePayload(payload) {
+      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt", "texture_image_urls"]);
     },
   },
   endpointOf: (c) => c.multiImageTo3d,

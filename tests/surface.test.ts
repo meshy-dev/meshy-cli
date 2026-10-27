@@ -129,11 +129,11 @@ test("multi-view retexture pins ai_model meshy-7 — the endpoint rejects 'lates
   // AND for "latest". Dropping this pin is a guaranteed 400, so it is a wire
   // contract rather than the usual leave-it-to-the-server default.
   const defaults = retextureSpec.create.toDefaults!;
-  assert.equal(defaults({ multiviewImageUrls: ["a.png"] }).ai_model, "meshy-7");
+  assert.equal(defaults({ multiviewImageUrls: ["a.png"] }, {}).ai_model, "meshy-7");
   // Every other style input keeps the no-model-choice contract.
-  assert.equal(defaults({ textStylePrompt: "gold" }).ai_model, undefined);
-  assert.equal(defaults({ multiviewImageUrls: [] }).ai_model, undefined);
-  assert.equal(defaults({}).ai_model, undefined);
+  assert.equal(defaults({ textStylePrompt: "gold" }, {}).ai_model, undefined);
+  assert.equal(defaults({ multiviewImageUrls: [] }, {}).ai_model, undefined);
+  assert.equal(defaults({}, {}).ai_model, undefined);
 });
 
 test("2D image commands default to gpt-image-2 and share the aspect-ratio surface", () => {
@@ -190,14 +190,12 @@ test("descriptions and flag help stay lean: no credit prices in the command surf
   walk(root);
 });
 
-test("image-driven 3D commands default to a draft white mesh", () => {
-  // The pipeline is prompt → image → draft mesh → texture: texturing is its
-  // own step, so should_texture defaults false (advertised in the help).
+test("image-driven 3D commands texture by default, as the API; the help says so", () => {
   for (const resource of ["image-to-3d", "multi-image-to-3d"]) {
     const create = sub(sub(root, resource), "create");
     const flag = create.options.find((o) => o.long === "--should-texture");
     assert.ok(flag, `${resource} is missing --should-texture`);
-    assert.match(flag?.description ?? "", /default: false/, resource);
+    assert.match(flag?.description ?? "", /default: true/, resource);
   }
 });
 
