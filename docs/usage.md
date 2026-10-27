@@ -347,6 +347,7 @@ for a directory instead of renaming anything.
 meshy-cli text-to-image create --ai-model nano-banana-2-1 --aspect-ratio 16:9 --prompt "a leaf" -o assets/leaf-wide.jpeg
 meshy-cli text-to-image create --ai-model nano-banana-2-lite --prompt "a leaf" -o assets/leaf.jpeg
 meshy-cli text-to-image create --ai-model gpt-image-2-5-sunburst --aspect-ratio 3:2 --prompt "a leaf" -o assets/leaf-wide.png
+meshy-cli text-to-image create --ai-model nano-banana-2 --pose-mode t-pose --prompt "a knight" -o knight.png   # 3:4: nano-banana renders a pose at 3:4 (warning pose_aspect_ratio)
 meshy-cli image-to-3d wait <id> -o out/robot/            # model.glb + thumbnail.png + meta.json
 meshy-cli rigging create --input-task-id <id> -o hero.glb  # the rigged character only
 meshy-cli rigging get <id> -o out/rig/ --all-assets        # + FBX copy and the walking/running clips

@@ -12,6 +12,7 @@ import {
   IMAGE_MODELS,
   IMAGE_MODEL_HELP,
   checkImageCombo,
+  poseAspectRatioWarnings,
 } from "../internal/image-models.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
 
@@ -32,7 +33,7 @@ const spec: ResourceCommandSpec = {
           parseBool,
         )
         .addOption(
-          new Option("--pose-mode <pose>", "a-pose | t-pose character pose preset").choices([
+          new Option("--pose-mode <pose>", "a-pose | t-pose character pose preset (nano-banana models render it at 3:4, whatever --aspect-ratio says)").choices([
             "a-pose",
             "t-pose",
           ]),
@@ -64,6 +65,7 @@ const spec: ResourceCommandSpec = {
     toDefaults() {
       return { ai_model: DEFAULT_IMAGE_MODEL };
     },
+    warnPayload: poseAspectRatioWarnings,
   },
   endpointOf: (c) => c.textToImage,
 };

@@ -83,6 +83,12 @@ export interface CreateSpec {
    * normalised and before anything is sent. Throw UsageError / CliError.
    */
   validatePayload?(payload: Record<string, unknown>, opts: Record<string, unknown>): void;
+  /**
+   * Notes about the merged payload that do not stop the request — something
+   * the API will do differently from what was asked. They ride in the
+   * envelope's warnings.
+   */
+  warnPayload?(payload: Record<string, unknown>): Warning[];
 }
 
 export interface ResourceCommandSpec {
@@ -510,6 +516,7 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
         merged = mergeNestedObjects(merged, layers, spec.create.nestedObjectKeys);
       }
       spec.create.validatePayload?.(merged, opts);
+      const payloadWarnings = spec.create.warnPayload?.(merged) ?? [];
       const { payload } = await normalizeMediaPayload(merged, descriptor.mediaFields, { signal: abortSignal() });
       logger.debug("create payload", redactForLog(payload));
 
@@ -518,7 +525,8 @@ export function buildResourceCommand(spec: ResourceCommandSpec): Command {
 
       // 3. Journal, then exactly one POST.
       const submitted = await submitCreate(runtime, descriptor, endpoint, payload, (opts.operationId as string | undefined) ?? null);
-      const { taskId, raw: createRaw, operationId, warnings } = submitted;
+      const { taskId, raw: createRaw, operationId } = submitted;
+      const warnings = [...payloadWarnings, ...submitted.warnings];
       const submission: SubmissionInfo = { state: "accepted", operation_id: operationId, task_id: taskId, request_id: submitted.requestId };
 
       if (runAsync) {
