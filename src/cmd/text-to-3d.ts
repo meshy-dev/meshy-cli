@@ -6,7 +6,7 @@
  *
  * The flag surface is deliberately minimal: topology and polycount are
  * remesh's job (except smart topology's native polycount), resizing is
- * resize's job, deprecated parameters (symmetry_mode, lowpoly, ultra_mode)
+ * resize's job, parameters the API deprecated (symmetry_mode, lowpoly, ultra_mode)
  * are gone, and the mode picks the model: standard runs the server default
  * "latest" (Meshy 7.1), smart-topology runs meshy-t2.5, or meshy-t2 with
  * --ai-model. The `--data` escape hatch still reaches anything the API accepts.

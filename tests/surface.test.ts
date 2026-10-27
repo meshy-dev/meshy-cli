@@ -101,12 +101,10 @@ test("the mode picks the model: --ai-model on 3D generation offers the Smart Top
   }
 });
 
-test("the Meshy 7 surface: ultra-mode is single-image only, multi-view is retexture only", () => {
-  // --ultra-mode stays on image-to-3d alone. multi-image-to-3d takes the
-  // geometry_resolution enum instead (it supersedes the ultra_mode boolean
-  // server-side), limited to standard/2k because the server refuses 4k there.
-  assert.ok(createFlags("image-to-3d").has("--ultra-mode"), "image-to-3d is missing --ultra-mode");
-  for (const resource of ["text-to-3d", "multi-image-to-3d", "retexture"]) {
+test("the Meshy 7 surface: no --ultra-mode anywhere, multi-view is retexture only", () => {
+  // The Ultra pass is the geometry_resolution enum; multi-image-to-3d limits it
+  // to standard/2k because the server refuses 4k there.
+  for (const resource of ["image-to-3d", "text-to-3d", "multi-image-to-3d", "retexture"]) {
     assert.ok(!createFlags(resource).has("--ultra-mode"), `${resource} should not have --ultra-mode`);
   }
   const geometry = sub(sub(root, "multi-image-to-3d"), "create").options.find((o) => o.long === "--geometry-resolution");

@@ -292,7 +292,7 @@ test("balance: monthly / permanent credits and the reset time are reported", asy
   });
 });
 
-test("generation: --geometry-resolution on text-to-3d preview and image-to-3d; text-to-3d smart topology; --ultra-mode still works", async () => {
+test("generation: --geometry-resolution on text-to-3d preview and image-to-3d; text-to-3d smart topology", async () => {
   await withApi(accept, async (api) => {
     const t = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "a robot", "--geometry-resolution", "4k", "--async"], { env: api.env() });
     assert.equal(t.code, 0, t.stderr);
@@ -309,23 +309,21 @@ test("generation: --geometry-resolution on text-to-3d preview and image-to-3d; t
       ["text-to-3d", "create", "--mode", "preview", "--prompt", "x", "--target-polycount", "500"],
       ["text-to-3d", "create", "--mode", "preview", "--prompt", "x", "--model-type", "smart-topology", "--target-polycount", "30001"],
       ["text-to-3d", "create", "--mode", "refine", "--preview-task-id", "p", "--geometry-resolution", "2k"],
-      ["image-to-3d", "create", "--input-task-id", "img", "--ultra-mode", "true", "--geometry-resolution", "2k"],
       ["image-to-3d", "create", "--input-task-id", "img", "--model-type", "smart-topology", "--geometry-resolution", "4k"],
     ]) {
       const r = await runCli([...args, "--async"], { env: api.env() });
       assert.equal(r.code, 2, `${args.join(" ")}: ${r.stdout}`);
     }
-    const legacyUltra = await runCli(["image-to-3d", "create", "--input-task-id", "img", "--ultra-mode", "true", "--async"], { env: api.env() });
-    assert.equal(legacyUltra.code, 0, legacyUltra.stderr);
-    assert.equal(body(api, 2)["ultra_mode"], true);
     const geo = await runCli(["image-to-3d", "create", "--input-task-id", "img", "--geometry-resolution", "2k", "--async"], { env: api.env() });
     assert.equal(geo.code, 0, geo.stderr);
-    assert.equal(body(api, 3)["geometry_resolution"], "2k");
+    assert.equal(body(api, 2)["geometry_resolution"], "2k");
+    const removed = await runCli(["image-to-3d", "create", "--input-task-id", "img", "--ultra-mode", "true", "--async"], { env: api.env() });
+    assert.equal(removed.code, 2, "--ultra-mode is gone; --geometry-resolution 2k is the Ultra pass");
     // Smart topology defaults to T2.5 and leaves its 15k polycount to the API.
     const stDefault = await runCli(["text-to-3d", "create", "--mode", "preview", "--prompt", "a robot", "--model-type", "smart-topology", "--async"], { env: api.env() });
     assert.equal(stDefault.code, 0, stDefault.stderr);
-    assert.equal(body(api, 4)["ai_model"], "meshy-t2.5");
-    assert.ok(!("target_polycount" in body(api, 4)));
+    assert.equal(body(api, 3)["ai_model"], "meshy-t2.5");
+    assert.ok(!("target_polycount" in body(api, 3)));
   });
 });
 

@@ -2,10 +2,9 @@
  * multi-image-to-3d's geometry pass, asserted on the wire: a loopback API
  * records the create POST, so the test checks what the server receives.
  *
- * geometry_resolution "2k" (or the deprecated ultra_mode boolean) runs the
- * Ultra pass on the default Meshy 7.1. "4k" is refused by the API for this
- * endpoint (single-image only). The CLI exposes the enum; ai_model and
- * ultra_mode ride --data.
+ * geometry_resolution "2k" runs the Ultra pass on the default Meshy 7.1. "4k"
+ * is refused by the API for this endpoint (single-image only). The CLI exposes
+ * the enum; ai_model and any other API field ride --data.
  */
 
 import test from "node:test";
@@ -75,7 +74,7 @@ test("multi-image-to-3d refuses --geometry-resolution 4k before the wire", async
   });
 });
 
-test("multi-image-to-3d leaves the Ultra model and the legacy ultra_mode to --data, untouched", async () => {
+test("multi-image-to-3d leaves the Ultra model and other API fields to --data, untouched", async () => {
   await withApi(async (api) => {
     // Pinning the Ultra model: ai_model rides --data next to the flag.
     const pinned = await create(api, "--geometry-resolution", "2k", "--data", '{"ai_model":"meshy-7.1"}');
@@ -84,13 +83,13 @@ test("multi-image-to-3d leaves the Ultra model and the legacy ultra_mode to --da
     assert.equal(pinnedBody["ai_model"], "meshy-7.1");
     assert.equal(pinnedBody["geometry_resolution"], "2k");
 
-    // A legacy ultra_mode is passed through as sent: the CLI never adds a
+    // A raw API field is passed through as sent: the CLI never adds a
     // geometry_resolution that would override it.
-    const legacy = await create(api, "--data", '{"ultra_mode":true}');
-    assert.equal(legacy.code, 0, legacy.stderr);
-    const legacyBody = api.requests[1]!.json as Record<string, unknown>;
-    assert.equal(legacyBody["ultra_mode"], true);
-    assert.ok(!("geometry_resolution" in legacyBody));
+    const raw = await create(api, "--data", '{"ultra_mode":true}');
+    assert.equal(raw.code, 0, raw.stderr);
+    const rawBody = api.requests[1]!.json as Record<string, unknown>;
+    assert.equal(rawBody["ultra_mode"], true);
+    assert.ok(!("geometry_resolution" in rawBody));
   });
 });
 
