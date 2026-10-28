@@ -141,6 +141,7 @@ ENVIRONMENT:
     MESHY_READ_TIMEOUT_MS              default: 120000
     MESHY_LOG_LEVEL                    default: warn
     MESHY_CLI_NO_UPDATE_NOTIFIER       set to disable update checks
+    MESHY_CLI_CLIENT                   name of the tool running meshy-cli, added to the User-Agent
 
 Docs: https://docs.meshy.ai/`;
 
