@@ -19,7 +19,7 @@ import * as readline from "node:readline";
 import { randomUUID } from "node:crypto";
 import { Command } from "commander";
 import { MeshyClient, MeshyApiError } from "../client/index.js";
-import { loadConfig } from "../internal/config.js";
+import { loadConfig, parseRegion, REGIONS, regionBaseUrls, regionOf, resolveRegion, type Region } from "../internal/config.js";
 import {
   credentialsPath,
   deleteCredentialsFile,
@@ -75,23 +75,21 @@ const MANUAL_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Base URLs matter here only because they select the credentials file. */
 function resolveFile(flags: GlobalFlags): string {
-  const baseUrlV1 =
-    flags.baseUrlV1 ?? process.env["MESHY_BASE_URL_V1"] ?? "https://api.meshy.ai/openapi/v1";
-  return credentialsPath(baseUrlV1.replace(/\/+$/, ""));
+  return credentialsPath(resolveBaseUrlV1(flags));
 }
 
-function resolveBaseUrlV1(flags: GlobalFlags): string {
+function resolveBaseUrlV1(flags: GlobalFlags, region: Region = resolveRegion()): string {
   return (
     flags.baseUrlV1 ??
     process.env["MESHY_BASE_URL_V1"] ??
-    "https://api.meshy.ai/openapi/v1"
+    regionBaseUrls(region).v1
   ).replace(/\/+$/, "");
 }
 
-function clientForKey(flags: GlobalFlags, apiKey: string): MeshyClient {
+function clientForKey(flags: GlobalFlags, apiKey: string, baseUrlV1: string): MeshyClient {
   const config = loadConfig({
     apiKey,
-    baseUrlV1: flags.baseUrlV1,
+    baseUrlV1,
     baseUrlV2: flags.baseUrlV2,
     logLevel: flags.verbose ? "debug" : flags.logLevel,
   });
@@ -118,6 +116,7 @@ function parsePort(raw: string): number {
 async function finishLogin(
   flags: GlobalFlags,
   opts: { profile: string; verify: boolean },
+  baseUrlV1: string,
   tok: {
     access_token: string;
     refresh_token: string;
@@ -136,6 +135,7 @@ async function finishLogin(
     expires_at: Date.now() + tok.expires_in * 1000,
     ...(tok.user_id ? { user_id: tok.user_id } : {}),
     login_id: randomUUID(),
+    ...(regionOf(baseUrlV1) ? { region: "cn" as const } : {}),
   };
   const credState = saveProfile(file, opts.profile, profileData);
 
@@ -144,7 +144,7 @@ async function finishLogin(
   let verifyHint: string | undefined;
   if (opts.verify) {
     try {
-      balance = await clientForKey(flags, tok.access_token).balance.get();
+      balance = await clientForKey(flags, tok.access_token, baseUrlV1).balance.get();
       verifyOutcome = true;
     } catch {
       verifyOutcome = false;
@@ -177,6 +177,7 @@ const loginCommand = new Command("login")
   .option("--with-key <key>", "store an existing API key (msy_...)")
   .option("--port <n>", "loopback port for the OAuth callback (default 8765)", "8765")
   .option("--profile <name>", "profile to write", DEFAULT_PROFILE)
+  .option("--region <region>", "global or cn (China site); remembered for later commands (default: MESHY_REGION, else the stored one)")
   .option("--no-verify", "skip the balance call that proves the credential works")
   .option("--manual", "manual PKCE flow: print URL, prompt for code (no loopback server)")
   .option("--device", "device authorization flow (RFC 8628)")
@@ -189,6 +190,7 @@ const loginCommand = new Command("login")
         withKey?: string;
         port: string;
         profile: string;
+        region?: string;
         verify: boolean;
         manual?: boolean;
         device?: boolean;
@@ -210,15 +212,22 @@ const loginCommand = new Command("login")
         );
       }
 
+      const region = opts.region === undefined ? resolveRegion() : parseRegion(opts.region, "--region");
+      const baseUrlV1 = resolveBaseUrlV1(flags, region);
+
       const key = opts.withKey?.trim();
       if (key) {
         let balance: unknown;
         if (opts.verify) {
-          balance = await clientForKey(flags, key).balance.get();
+          balance = await clientForKey(flags, key, baseUrlV1).balance.get();
         }
 
         const file = resolveFile(flags);
-        const state = saveProfile(file, opts.profile, { kind: "api_key", api_key: key });
+        const state = saveProfile(file, opts.profile, {
+          kind: "api_key",
+          api_key: key,
+          ...(regionOf(baseUrlV1) ? { region: "cn" as const } : {}),
+        });
 
         await emitAuth(flags, {
           status: "logged_in",
@@ -240,9 +249,8 @@ const loginCommand = new Command("login")
       const _validatedPort = parsePort(opts.port);
       void _validatedPort;
 
-      const baseUrlV1 = resolveBaseUrlV1(flags);
       const authorizeBase =
-        process.env["MESHY_OAUTH_AUTHORIZE_URL"] ?? "https://www.meshy.ai/oauth/authorize";
+        process.env["MESHY_OAUTH_AUTHORIZE_URL"] ?? `${REGIONS[region].web}/oauth/authorize`;
 
       // Resolve login mode.
       const mode = resolveLoginMode({
@@ -327,7 +335,7 @@ const loginCommand = new Command("login")
           deleteDeviceFlow(cachedEntry.flow_id, flowsFile);
         }
 
-        await finishLogin(flags, { profile: opts.profile, verify: opts.verify }, tok);
+        await finishLogin(flags, { profile: opts.profile, verify: opts.verify }, resumeBaseUrlV1, tok);
         return;
       }
 
@@ -414,7 +422,7 @@ const loginCommand = new Command("login")
         );
 
         ensureRequestedScopesGranted("", tok.scope);
-        await finishLogin(flags, { profile: opts.profile, verify: opts.verify }, tok);
+        await finishLogin(flags, { profile: opts.profile, verify: opts.verify }, baseUrlV1, tok);
         return;
       }
 
@@ -452,7 +460,7 @@ const loginCommand = new Command("login")
           redirectUri: OOB_REDIRECT_URI,
         });
 
-        await finishLogin(flags, { profile: opts.profile, verify: opts.verify }, tok);
+        await finishLogin(flags, { profile: opts.profile, verify: opts.verify }, baseUrlV1, tok);
         return;
       }
 
@@ -603,7 +611,7 @@ async function runLoopbackFlow(
       redirectUri,
     });
 
-    await finishLogin(flags, { profile: opts.profile, verify: opts.verify }, tok);
+    await finishLogin(flags, { profile: opts.profile, verify: opts.verify }, baseUrlV1, tok);
   } finally {
     server.close();
   }

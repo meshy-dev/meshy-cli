@@ -8,7 +8,8 @@
  *
  * Non-production hosts get their own file — credentials.dev.json — so pointing
  * MESHY_BASE_URL_V1 at staging cannot overwrite the production login, and
- * logging out of one leaves the other alone.
+ * logging out of one leaves the other alone. The global and China API hosts
+ * are both production: one Meshy account works on either.
  *
  * Every mutation runs under a cross-process lock and lands via a temp file +
  * rename, because several agents driving this CLI in parallel is the normal
@@ -34,7 +35,8 @@ import { dirname, join } from "node:path";
 
 export const AUTH_VERSION = 1;
 export const DEFAULT_PROFILE = "default";
-export const PROD_API_HOST = "api.meshy.ai";
+/** The global and China API hosts; they share accounts and this file. */
+export const PROD_API_HOSTS = ["api.meshy.ai", "api.meshy.cn"];
 
 const LOCK_TIMEOUT_MS = 30_000;
 /** A lock older than this is assumed to be a crashed process's leftover. */
@@ -59,6 +61,8 @@ export interface CredentialProfile {
    * reports no user_id.
    */
   login_id?: string;
+  /** Set by `meshy auth login --region cn`: later commands default to the China endpoint. */
+  region?: "cn";
   created_at?: number;
 }
 
@@ -97,7 +101,7 @@ export function configDir(env: NodeJS.ProcessEnv = process.env): string {
 export function isNonProdBaseUrl(baseUrlV1: string | undefined): boolean {
   if (!baseUrlV1) return false;
   try {
-    return new URL(baseUrlV1).host !== PROD_API_HOST;
+    return !PROD_API_HOSTS.includes(new URL(baseUrlV1).host);
   } catch {
     return true;
   }

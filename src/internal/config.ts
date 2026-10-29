@@ -20,15 +20,49 @@
  * it attached, not just a complaint.
  */
 
-import { credentialsPath, resolveStoredCredential, type CredentialKind } from "./credentials.js";
+import { credentialsPath, readCredentials, resolveStoredCredential, type CredentialKind } from "./credentials.js";
 import { loadEnvFile } from "./env-file.js";
-import { authRequiredError, CliError } from "./errors.js";
+import { authRequiredError, CliError, UsageError } from "./errors.js";
 import { setLogLevel, type LogLevel } from "./logger.js";
 
 const PLACEHOLDER_KEYS = new Set(["", "YOUR_MESHY_API_KEY_HERE"]);
 
-export const DEFAULT_BASE_URL_V1 = "https://api.meshy.ai/openapi/v1";
-export const DEFAULT_BASE_URL_V2 = "https://api.meshy.ai/openapi/v2";
+/** Meshy's two sites share accounts; only the API and sign-in hosts differ. */
+export const REGIONS = {
+  global: { api: "https://api.meshy.ai", web: "https://www.meshy.ai" },
+  cn: { api: "https://api.meshy.cn", web: "https://meshy.cn" },
+} as const;
+export type Region = keyof typeof REGIONS;
+
+export function parseRegion(raw: string, source: string): Region {
+  if (raw === "global" || raw === "cn") return raw;
+  throw new UsageError(`${source} must be global or cn, got '${raw}'`);
+}
+
+/**
+ * MESHY_REGION, else the region the active stored profile logged in to, else
+ * global. An unreadable credentials file is left for loadConfig to report.
+ */
+export function resolveRegion(env: NodeJS.ProcessEnv = process.env): Region {
+  const raw = env["MESHY_REGION"]?.trim();
+  if (raw) return parseRegion(raw, "MESHY_REGION");
+  try {
+    const state = readCredentials(credentialsPath(undefined, env));
+    return state?.profiles[state.active_profile]?.region === "cn" ? "cn" : "global";
+  } catch {
+    return "global";
+  }
+}
+
+/** The v1 / v2 API bases of a region, the defaults under every explicit base URL. */
+export function regionBaseUrls(region: Region): { v1: string; v2: string } {
+  return { v1: `${REGIONS[region].api}/openapi/v1`, v2: `${REGIONS[region].api}/openapi/v2` };
+}
+
+/** The region a v1 base URL is on: cn for the China API host, otherwise none. */
+export function regionOf(baseUrlV1: string): "cn" | undefined {
+  return originOf(baseUrlV1) === REGIONS.cn.api ? "cn" : undefined;
+}
 
 /** Where the credential in use came from — surfaced by `meshy auth status`. */
 export type CredentialSource = "flag" | "env" | "env-file" | "file";
@@ -136,11 +170,12 @@ export function derivePublicWebBase(baseUrlV1: string): string {
 export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
   // Base URLs resolve first: they decide which credentials file applies
   // (production vs. a staging override).
+  const regionBase = regionBaseUrls(resolveRegion());
   const baseUrlV1 = stripTrail(
-    overrides.baseUrlV1 ?? process.env.MESHY_BASE_URL_V1 ?? DEFAULT_BASE_URL_V1,
+    overrides.baseUrlV1 ?? process.env.MESHY_BASE_URL_V1 ?? regionBase.v1,
   );
   const baseUrlV2 = stripTrail(
-    overrides.baseUrlV2 ?? process.env.MESHY_BASE_URL_V2 ?? DEFAULT_BASE_URL_V2,
+    overrides.baseUrlV2 ?? process.env.MESHY_BASE_URL_V2 ?? regionBase.v2,
   );
   const explicitCreativeLab = overrides.baseUrlCreativeLab ?? process.env.MESHY_BASE_URL_CREATIVE_LAB;
   const baseUrlCreativeLab = explicitCreativeLab

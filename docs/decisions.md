@@ -1393,3 +1393,23 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   rerun of `create … -o dir` does not pay for a task and then fail to save it.
 - Not covered: a process killed hard mid-transfer leaves files without a
   sidecar. A rerun then names them, and they have to be deleted first.
+
+## D-087 The China site is a region of the same account; DeepSeek Harness tags itself
+
+- One Meshy account works on both sites; only the hosts differ (`api.meshy.cn`
+  and `meshy.cn` for sign-in). So `api.meshy.cn` is a production host and shares
+  `credentials.json` with `api.meshy.ai`: a login on either site serves both,
+  and the China host never lands in `credentials.dev.json` with staging.
+- `meshy auth login --region cn` (or `MESHY_REGION=cn`) signs in at `meshy.cn`
+  and stores `region: "cn"` on the profile. Every later command resolves its
+  default bases from `MESHY_REGION`, else the active profile's region, else
+  global, so an agent that cannot carry an environment variable from one shell
+  call to the next still reaches the right site. An explicit
+  `--base-url-v1/v2` or `MESHY_BASE_URL_*` wins over the region, as before.
+- A login stores the region of the base it actually used, including a resumed
+  device flow, whose base comes from the cached flow. `--region global` (or a
+  new login without it) drops the stored region.
+- DeepSeek Harness sets `DSH_SHELL=1` on every model shell call but lets a
+  plugin add only `DSH_*` variables, so its Meshy plugin cannot set
+  `MESHY_CLI_CLIENT`. Without that variable, such a call is tagged `dsh` in the
+  User-Agent. An explicit `MESHY_CLI_CLIENT` still wins.
