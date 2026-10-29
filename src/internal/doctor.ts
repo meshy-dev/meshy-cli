@@ -20,11 +20,11 @@ import { accessSync, constants as fsConstants, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { MeshyClient } from "../client/index.js";
 import {
-  DEFAULT_BASE_URL_V1,
-  DEFAULT_BASE_URL_V2,
   deriveCreativeLabBase,
   derivePublicWebBase,
   loadConfig,
+  regionBaseUrls,
+  resolveRegion,
   type MeshyConfig,
 } from "./config.js";
 import { credentialsPath } from "./credentials.js";
@@ -176,8 +176,9 @@ export async function runDoctorDetailed(opts: DoctorOptions): Promise<DoctorOutc
   });
 
   // --- Base URLs (same precedence as config.ts, resolved without a credential) ---
-  const v1 = stripTrail(flags.baseUrlV1 ?? env["MESHY_BASE_URL_V1"] ?? DEFAULT_BASE_URL_V1);
-  const v2 = stripTrail(flags.baseUrlV2 ?? env["MESHY_BASE_URL_V2"] ?? DEFAULT_BASE_URL_V2);
+  const regionBase = regionBaseUrls(resolveRegion(env));
+  const v1 = stripTrail(flags.baseUrlV1 ?? env["MESHY_BASE_URL_V1"] ?? regionBase.v1);
+  const v2 = stripTrail(flags.baseUrlV2 ?? env["MESHY_BASE_URL_V2"] ?? regionBase.v2);
   const explicitCreativeLab = flags.baseUrlCreativeLab ?? env["MESHY_BASE_URL_CREATIVE_LAB"];
   const creativeLab = explicitCreativeLab ? stripTrail(explicitCreativeLab) : deriveCreativeLabBase(v1);
   const publicWeb = derivePublicWebBase(v1);

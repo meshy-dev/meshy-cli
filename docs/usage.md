@@ -19,6 +19,12 @@ browser, starts a loopback server on port 8765 (override with `--port`), and
 waits for the callback. The authorize URL is always printed to **stderr** so you
 can copy-paste it if the browser doesn't open automatically.
 
+**China site:** one Meshy account works on both sites; only the endpoint
+differs. `meshy auth login --region cn` signs in at `https://meshy.cn` and
+remembers the region on the profile, so later commands call
+`https://api.meshy.cn` without any flag. `MESHY_REGION=cn` does the same for a
+single call or for `MESHY_API_KEY`; `--region global` switches back.
+
 In headless or agent contexts where a browser is not available, use
 `--with-key` or set `MESHY_API_KEY` instead. Set `MESHY_CLI_NO_BROWSER=1` to
 suppress the browser-open attempt (the URL is still printed to stderr).
@@ -50,9 +56,10 @@ loads the whole file into the environment before the CLI starts.
 **Where it lives:** `~/.config/meshy/credentials.json`, mode `0600`, on every
 platform (`MESHY_CONFIG_DIR` or `MESHY_CREDENTIALS_PATH` move it). Writes go
 through a cross-process lock and a temp-file rename, because several agents
-driving this CLI at once is the normal case. A non-production `--base-url-v1`
-reads and writes `credentials.dev.json` instead, so staging cannot clobber a
-production login. Stored profiles are only ever sent to the v1/v2 origins they
+driving this CLI at once is the normal case. The global and China API hosts
+(`api.meshy.ai`, `api.meshy.cn`) share this file, since one account works on
+both. A non-production `--base-url-v1` reads and writes `credentials.dev.json`
+instead, so staging cannot clobber a production login. Stored profiles are only ever sent to the v1/v2 origins they
 were resolved for (and to a Creative Lab base on the same origin).
 
 **OAuth token refresh:** when the stored OAuth access token is within 60 seconds
@@ -461,17 +468,18 @@ URI is accepted when its bytes are a GLB.
 | Variable | Default |
 |---|---|
 | `MESHY_API_KEY` | — (required unless a profile is stored or `--api-key-file` is given) |
-| `MESHY_BASE_URL_V1` | `https://api.meshy.ai/openapi/v1` |
-| `MESHY_BASE_URL_V2` | `https://api.meshy.ai/openapi/v2` |
+| `MESHY_REGION` | the stored profile's region, else `global` — `cn` calls the China site (`api.meshy.cn`) |
+| `MESHY_BASE_URL_V1` | `https://api.meshy.ai/openapi/v1` (`https://api.meshy.cn/openapi/v1` for `cn`) |
+| `MESHY_BASE_URL_V2` | `https://api.meshy.ai/openapi/v2` (`https://api.meshy.cn/openapi/v2` for `cn`) |
 | `MESHY_BASE_URL_CREATIVE_LAB` | derived from the v1 origin (`/openapi/creative-lab`) |
-| `MESHY_OAUTH_AUTHORIZE_URL` | `https://www.meshy.ai/oauth/authorize` — override for staging/testing |
+| `MESHY_OAUTH_AUTHORIZE_URL` | `https://www.meshy.ai/oauth/authorize` (`https://meshy.cn/oauth/authorize` for `cn`) — override for staging/testing |
 | `MESHY_CLI_NO_BROWSER` | unset — set to `1` to suppress browser open (URL still printed to stderr) |
 | `MESHY_CONFIG_DIR` | `~/.config/meshy` (credentials, operation journal, update cache) |
 | `MESHY_CONNECT_TIMEOUT_MS` | `10000` (read for compatibility; fetch has no separate connect timeout) |
 | `MESHY_READ_TIMEOUT_MS` | `120000` — covers headers *and* body |
 | `MESHY_POLL_INTERVAL_MS` | `3000` |
 | `MESHY_LOG_LEVEL` | `warn` |
-| `MESHY_CLI_CLIENT` | unset — a tool that runs meshy-cli for its users names itself here (for example `meshy-dcc/0.2.2 (blender)`); appended to the User-Agent of every request |
+| `MESHY_CLI_CLIENT` | unset — a tool that runs meshy-cli for its users names itself here (for example `meshy-dcc/0.2.2 (blender)`); appended to the User-Agent of every request. Inside DeepSeek Harness (`DSH_SHELL=1`) it defaults to `dsh` |
 | `MESHY_CLI_NO_UPDATE_NOTIFIER` | unset — any non-empty value disables update checks; CI envs (`CI`, `GITHUB_ACTIONS`, `BUILD_NUMBER`, `RUN_ID`) auto-skip |
 
 ## Update notifications

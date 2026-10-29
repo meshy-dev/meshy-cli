@@ -77,8 +77,9 @@ test("configDir — MESHY_CONFIG_DIR wins", () => {
   assert.equal(configDir({ MESHY_CONFIG_DIR: "/custom/dir" }), "/custom/dir");
 });
 
-test("isNonProdBaseUrl — production host is the only prod case", () => {
+test("isNonProdBaseUrl — the global and China API hosts are the only prod cases", () => {
   assert.equal(isNonProdBaseUrl("https://api.meshy.ai/openapi/v1"), false);
+  assert.equal(isNonProdBaseUrl("https://api.meshy.cn/openapi/v1"), false);
   assert.equal(isNonProdBaseUrl("https://staging.meshy.ai/openapi/v1"), true);
   assert.equal(isNonProdBaseUrl("http://localhost:8080/v1"), true);
   assert.equal(isNonProdBaseUrl(undefined), false);

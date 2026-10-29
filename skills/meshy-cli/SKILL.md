@@ -18,7 +18,9 @@ a stored profile, which is what CI wants; `--api-key-file ./keys.env` reads only
 `MESHY_API_KEY` from an explicit dotenv-style file (nothing is auto-discovered or
 executed; do not use Node's `--env-file`). Never echo the key back or write it
 into a shell profile. `meshy doctor` checks the environment without touching the
-network; `meshy doctor --check-api` makes one free balance call.
+network; `meshy doctor --check-api` makes one free balance call. In mainland
+China, log in with `meshy auth login --region cn`: the same account, and later
+commands call `api.meshy.cn` on their own.
 
 ## Parse the envelope
 

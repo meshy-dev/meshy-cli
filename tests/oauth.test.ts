@@ -1202,6 +1202,37 @@ test("E2E — --with-key output has no `kind` field (backward-compatible shape)"
   assert.ok("verified" in parsed);
 });
 
+test("E2E — auth login --region cn remembers the China site on the profile", { timeout: 10_000 }, async () => {
+  const dir = makeTmpDir();
+  const credFile = join(dir, "credentials.json");
+  const ambient = { ...process.env };
+  for (const k of ["MESHY_API_KEY", "MESHY_REGION", "MESHY_BASE_URL_V1", "MESHY_BASE_URL_V2"]) delete ambient[k];
+  const run = (args: string[]) =>
+    new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, ["dist/index.js", ...args], {
+        env: { ...ambient, HOME: dir, MESHY_CREDENTIALS_PATH: credFile, MESHY_CLI_NO_UPDATE_NOTIFIER: "1" },
+        cwd: repoRoot,
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+      child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+      child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+      child.on("error", reject);
+    });
+
+  const login = await run(["auth", "login", "--with-key", "msy_testkey123456789", "--region", "cn", "--no-verify"]);
+  assert.equal(login.code, 0, `expected exit 0\nstderr: ${login.stderr}`);
+  const stored = JSON.parse(readFileSync(credFile, "utf8"));
+  assert.equal(stored.profiles.default.region, "cn");
+
+  const doctor = await run(["doctor", "--format", "json"]);
+  assert.match(doctor.stdout, /https:\/\/api\.meshy\.cn\/openapi\/v1/);
+
+  const bad = await run(["auth", "login", "--with-key", "msy_testkey123456789", "--region", "eu", "--no-verify"]);
+  assert.equal(bad.code, 2);
+});
+
 // ---------------------------------------------------------------------------
 // --with-key empty/whitespace → UsageError (exit 2), no browser flow started
 // ---------------------------------------------------------------------------

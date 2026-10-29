@@ -132,8 +132,9 @@ ENVIRONMENT:
     MESHY_API_KEY                      required unless a profile is stored
     MESHY_CONFIG_DIR                   default: ~/.config/meshy
     MESHY_CREDENTIALS_PATH             exact credentials file (wins over the above)
-    MESHY_BASE_URL_V1                  default: https://api.meshy.ai/openapi/v1
-    MESHY_BASE_URL_V2                  default: https://api.meshy.ai/openapi/v2
+    MESHY_REGION                       global | cn (China site); default: the stored login's region
+    MESHY_BASE_URL_V1                  default: https://api.meshy.ai/openapi/v1 (api.meshy.cn for cn)
+    MESHY_BASE_URL_V2                  default: https://api.meshy.ai/openapi/v2 (api.meshy.cn for cn)
     MESHY_BASE_URL_CREATIVE_LAB        default: derived from the v1 origin
     MESHY_OAUTH_AUTHORIZE_URL          override the OAuth authorize page (staging/testing)
     MESHY_CLI_NO_BROWSER               set to 1 to skip browser open (headless/agent use)

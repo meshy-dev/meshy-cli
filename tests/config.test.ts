@@ -4,8 +4,12 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfig } from "../src/internal/config.js";
-import { HintedError } from "../src/internal/errors.js";
+import { saveProfile } from "../src/internal/credentials.js";
+import { HintedError, UsageError } from "../src/internal/errors.js";
 
 function withEnv(env: Record<string, string | undefined>, fn: () => void): void {
   const snapshot: Record<string, string | undefined> = {};
@@ -115,4 +119,35 @@ test("loadConfig — strips trailing slashes from base URLs", () => {
       assert.equal(cfg.baseUrlV2, "https://example.com/v2");
     },
   );
+});
+
+test("loadConfig — region: MESHY_REGION, then the stored profile's region, picks the China API", () => {
+  const credFile = join(mkdtempSync(join(tmpdir(), "meshy-region-")), "credentials.json");
+  const base = { MESHY_CREDENTIALS_PATH: credFile, MESHY_BASE_URL_V1: undefined, MESHY_BASE_URL_V2: undefined };
+
+  withEnv({ ...base, MESHY_API_KEY: "msy_abc", MESHY_REGION: "cn" }, () => {
+    const cfg = loadConfig();
+    assert.equal(cfg.baseUrlV1, "https://api.meshy.cn/openapi/v1");
+    assert.equal(cfg.baseUrlV2, "https://api.meshy.cn/openapi/v2");
+    assert.equal(cfg.baseUrlCreativeLab, "https://api.meshy.cn/openapi/creative-lab");
+  });
+
+  saveProfile(credFile, "default", { kind: "api_key", api_key: "msy_stored", region: "cn" });
+  withEnv({ ...base, MESHY_API_KEY: undefined, MESHY_REGION: undefined }, () => {
+    const cfg = loadConfig();
+    assert.equal(cfg.apiKey, "msy_stored");
+    assert.equal(cfg.baseUrlV1, "https://api.meshy.cn/openapi/v1");
+  });
+  withEnv({ ...base, MESHY_API_KEY: undefined, MESHY_REGION: "global" }, () => {
+    assert.equal(loadConfig().baseUrlV1, "https://api.meshy.ai/openapi/v1");
+  });
+  withEnv({ ...base, MESHY_API_KEY: undefined, MESHY_REGION: undefined, MESHY_BASE_URL_V1: "https://api.staging.meshy.ai/openapi/v1" }, () => {
+    assert.equal(loadConfig({ apiKey: "msy_abc" }).baseUrlV1, "https://api.staging.meshy.ai/openapi/v1");
+  });
+});
+
+test("loadConfig — an unknown MESHY_REGION is a usage error", () => {
+  withEnv({ MESHY_API_KEY: "msy_abc", MESHY_REGION: "eu", MESHY_BASE_URL_V1: undefined }, () => {
+    assert.throws(() => loadConfig(), UsageError);
+  });
 });

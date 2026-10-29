@@ -19,6 +19,12 @@ test("userAgent — the client is appended after the meshy-cli part", () => {
   assert.equal(userAgent({ MESHY_CLI_CLIENT: "meshy-dcc/0.2.2 (blender)" }), `${userAgent({})} meshy-dcc/0.2.2 (blender)`);
 });
 
+test("userAgent — a DeepSeek Harness shell is tagged dsh unless MESHY_CLI_CLIENT names the product", () => {
+  assert.equal(userAgent({ DSH_SHELL: "1" }), `${userAgent({})} dsh`);
+  assert.equal(userAgent({ DSH_SHELL: "1", MESHY_CLI_CLIENT: "meshy-dcc/0.2.2" }), `${userAgent({})} meshy-dcc/0.2.2`);
+  assert.equal(userAgent({ DSH_SHELL: "0" }), userAgent({}));
+});
+
 test("userAgent — control characters and non-ASCII are dropped, length is capped", () => {
   const ua = userAgent({ MESHY_CLI_CLIENT: "meshy-dcc/0.2.2\r\nX-Injected: 1 é" });
   assert.ok(!/[\r\n]/.test(ua));
