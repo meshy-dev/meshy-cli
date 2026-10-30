@@ -193,7 +193,9 @@ export async function fetchToTemp(rawUrl: string, target: string, opts: FetchOpt
       },
     });
     try {
-      await pipeline(source, counter, createWriteStream(tmpPath, { mode: 0o600 }));
+      // Default mode (0o666 less the umask): a delivered model is not a secret, and slicers,
+      // engines and web servers running as other users have to read it.
+      await pipeline(source, counter, createWriteStream(tmpPath));
     } catch (err) {
       removeQuietly(tmpPath);
       if (err instanceof CliError) throw err;

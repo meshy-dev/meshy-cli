@@ -116,7 +116,7 @@ export function publishTempFile(tmp: string, target: string, opts: PublishOption
       // Hard links unavailable on this filesystem: exclusive create + copy.
       let fd: number;
       try {
-        fd = openSync(target, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL, 0o600);
+        fd = openSync(target, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL, lstatSync(tmp).mode & 0o777);
       } catch (openErr) {
         if (errno(openErr) === "EEXIST") throw refuseOverwriteError(target);
         throw openErr;

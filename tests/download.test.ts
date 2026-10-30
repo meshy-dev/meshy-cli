@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, existsSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, existsSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -84,6 +84,8 @@ test("a single image into a file: bytes unchanged, the sidecar is named after th
     assert.equal(files.length, 1);
     assert.match(files[0]!.path, /character\/front\.png$/);
     assert.ok(readFileSync(files[0]!.path).equals(png), "PNG bytes passed through unchanged");
+    const umask = process.umask();
+    assert.equal(statSync(files[0]!.path).mode & 0o777, 0o666 & ~umask, "a delivered file gets the default mode, not 0600");
     assert.match(metadataPath, /character\/front_meta\.json$/);
     assert.ok(existsSync(metadataPath));
   } finally {
