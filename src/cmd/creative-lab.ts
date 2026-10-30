@@ -66,7 +66,8 @@ const reliefOptionsSchema = z
     relief_scale: z.number().gt(0).max(10).optional(),
     depth_threshold: z.number().min(0).max(1).optional(),
     remove_background: z.boolean().optional(),
-    export_resolution: z.number().int().min(64).max(2048).optional(),
+    // 0 means the server default (512); 512 is the depth map's own resolution, so the API refuses more.
+    export_resolution: z.union([z.literal(0), z.number().int().min(64).max(512)]).optional(),
   })
   .passthrough();
 
@@ -186,7 +187,7 @@ const PRODUCTS: Record<CreativeLabProduct, ProductDescriptor> = {
     product: "keychain",
     label: "keychain",
     prototypeMeaning: "styled concept image of the keychain",
-    prototypeExtra: (cmd) => cmd.option("--name-text <text>", `text to engrave, at most ${NAME_TEXT_MAX} characters (the build inherits it; --name only labels the task)`),
+    prototypeExtra: (cmd) => cmd.option("--name-text <text>", `name printed on the face as a flat coloured detail (not raised or cut), at most ${NAME_TEXT_MAX} characters; the build inherits it, --name only labels the task`),
     prototypeExtraPayload: (opts) => ({ name_text: opts.nameText }),
     validatePrototype: (payload) => {
       if (payload.name_text === undefined) return;
@@ -337,7 +338,7 @@ function collapsibleFidgetSpec(): ResourceCommandSpec {
       configure(cmd) {
         return cmd
           .option("--image-url <src>", "photo as http(s) URL, data: URI or local jpg/jpeg/png/webp path (required)")
-          .option("--name <text>", `optional task label, at most ${NAME_MAX} characters (nothing is engraved)`);
+          .option("--name <text>", `optional task label, at most ${NAME_MAX} characters (not printed on the model)`);
       },
       toPayload(opts) {
         return { image_url: opts.imageUrl, name: opts.name };

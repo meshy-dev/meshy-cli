@@ -206,6 +206,20 @@ test("Creative Lab fidget-pixel: prototype needs --type and has no --remove-back
   });
 });
 
+test("Creative Lab relief build: export_resolution is 0 (default) or 64–512", async () => {
+  await withApi(accept, async (api) => {
+    for (const value of [0, 64, 512]) {
+      const r = await runCli(["creative-lab", "keychain", "build", "create", "--input-task-id", "p-1", "--options", `{"export_resolution":${value}}`, "--async"], { env: api.env() });
+      assert.equal(r.code, 0, `${value}: ${r.stderr}`);
+    }
+    for (const value of [32, 513, 2048]) {
+      const r = await runCli(["creative-lab", "fridge-magnet", "build", "create", "--input-task-id", "p-1", "--options", `{"export_resolution":${value}}`, "--async"], { env: api.env() });
+      assert.equal(r.code, 2, `${value}: ${r.stdout}`);
+    }
+    assert.equal(api.requests.length, 3);
+  });
+});
+
 test("Creative Lab fidget-collapsible: one stage on the product root, with the shared verbs", async () => {
   await withApi((req, res) => {
     if (req.method === "POST") return jsonReply(res, 200, { result: "fc-1" });

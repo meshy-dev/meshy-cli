@@ -112,7 +112,7 @@ meshy showcases list --search car --page-size 3                      # Enterpris
 Prototype meanings differ: most yield a concept image, lamp also yields a
 lampshade GLB, keycap yields `candidate_ids` (pass one as the build's
 `--candidate-id`), fidget-pixel needs `--type person|other`; keychain takes
-`--name-text` (≤10 characters, engraved). Build consumes a SUCCEEDED prototype
+`--name-text` (≤10 characters, printed flat on the face, not engraved). Build consumes a SUCCEEDED prototype
 made through this API with the same key (web-app prototypes → 404). Lamp builds
 output `lamp_stl`/`base_stl` or `bundle_zip`; keychain/fridge-magnet `obj` and
 keycap `obj_zip` are ZIP bundles saved as `.zip`; fidget-pixel builds a 3MF.
