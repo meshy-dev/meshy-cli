@@ -300,7 +300,7 @@ as `.zip`; keycap `--candidate-id` (from the prototype's `candidate_ids`) and
 bundle (`model.obj.zip`) at real-world millimetres; fidget-pixel `--options`
 (`shape`, `grid_size` 16|32, `piece_size_mm`, `color_count`, `piece_height_mm`)
 and a 3MF board. The fidget-pixel prototype needs `--type person|other`; the
-keychain prototype takes `--name-text` (up to 10 characters, engraved; the build
+keychain prototype takes `--name-text` (up to 10 characters, printed as a flat coloured detail; the build
 inherits it). The figure-style products have no build options. Prototypes made
 in the web app are rejected by the server (404).
 

@@ -26,7 +26,7 @@ const spec: ResourceCommandSpec = {
         )
         .option(
           "--model-url <src>",
-          "3D model: an http(s) URL (.glb/.gltf/.obj/.fbx/.stl, max 400MB; the output keeps the input format) or a local .glb/.gltf file (max 100MB) — the API takes inline uploads as glTF only, so host .stl/.obj/.fbx at a URL",
+          "3D model: an http(s) URL (.glb/.gltf/.obj/.fbx/.stl, max 400MB; the output keeps the input format) or a local .glb/.gltf file (max 50 MiB) — the API takes inline uploads as glTF only, so host .stl/.obj/.fbx at a URL",
         )
         .option("--alpha-thumbnail <bool>", "also render a transparent-background preview (alpha_thumbnail_url; default: false)", parseBool);
       return printSizeOptions(cmd, "thicken");
