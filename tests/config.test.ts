@@ -35,6 +35,9 @@ test("loadConfig — reads env vars with sensible defaults", () => {
       MESHY_BASE_URL_V1: undefined,
       MESHY_BASE_URL_V2: undefined,
       MESHY_LOG_LEVEL: undefined,
+      // The machine's own stored profile (it may be a China-site login) must not pick the region.
+      MESHY_CREDENTIALS_PATH: NO_STORE,
+      MESHY_REGION: undefined,
     },
     () => {
       const cfg = loadConfig();

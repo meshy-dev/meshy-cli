@@ -470,7 +470,8 @@ test(
       assert.equal(parsed["status"], "device_flow_started");
       assert.ok(typeof parsed["flow_id"] === "string" && (parsed["flow_id"] as string).length > 0);
       assert.ok(typeof parsed["user_code"] === "string");
-      assert.ok(typeof parsed["device_code"] === "string");
+      assert.equal(parsed["device_code"], undefined, "the device_code is a bearer secret and stays in the local flow store");
+      assert.ok(!result.stdout.includes(GOOD_DEVICE_AUTH_RESPONSE.device_code), "stdout must not carry the device_code");
       assert.ok(typeof parsed["verification_url"] === "string");
       assert.ok(typeof parsed["expires_in"] === "number");
       assert.ok(typeof parsed["interval"] === "number");

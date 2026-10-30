@@ -395,17 +395,15 @@ const loginCommand = new Command("login")
             flowsFile,
           );
 
-          // device_code is a bearer secret (valid until expires_in seconds).
-          // It is included here per spec so callers can pass it to
-          // --device-code for a degraded-poll resume. The poll_command
-          // deliberately uses the local flow_id (not device_code) so the
-          // CLI can look up cached metadata (base_url, scope, interval).
+          // device_code is a bearer secret (valid until expires_in seconds), so
+          // it stays in the local flow store and is not printed: an agent that
+          // relays this result to a chat would otherwise leak it. The flow_id
+          // in poll_command resumes from that store.
           await emitAuth(flags, {
             status: "device_flow_started",
             verification_url: deviceResp.verification_uri_complete,
             user_code: deviceResp.user_code,
             flow_id: flowId,
-            device_code: deviceResp.device_code,
             expires_in: deviceResp.expires_in,
             interval: deviceResp.interval,
             poll_command: `meshy auth login --device-flow ${flowId}`,
