@@ -59,6 +59,9 @@ function refuseMeshyN1Conflicts(payload: Record<string, unknown>): void {
   if (payload["enable_pbr"] === true) conflicts.push("--enable-pbr true (it makes a base color texture only)");
   const resolution = payload["texture_resolution"];
   if (resolution === "4k" || resolution === "8k") conflicts.push(`--texture-resolution ${resolution} (it makes 2k only)`);
+  // The API takes an explicit texture_resolution over hd_texture, so
+  // hd_texture true beside "2k" would run at 2k there; refusing it is the
+  // CLI's own rule, since the caller asked for an HD texture N1 cannot make.
   if (payload["hd_texture"] === true) conflicts.push("hd_texture true (that is 4k; it makes 2k only)");
   if (payload["remove_lighting"] !== undefined) conflicts.push("--remove-lighting (the API refuses it with meshy-n1)");
   if (conflicts.length > 0) {

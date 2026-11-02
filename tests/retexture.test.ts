@@ -2,6 +2,9 @@
  * retexture's model choice, asserted on the wire: a loopback API records the
  * create POST (and answers the unauthenticated HEAD preflight of the image
  * URLs), so every test checks what the server would receive. No network.
+ * The loopback API answers every create with 200: these tests prove the
+ * request body and the CLI's own refusals, not what the backend does with a
+ * body it accepts or refuses.
  *
  * Meshy N1 (`ai_model: "meshy-n1"`) makes a 2K base color texture from
  * reference images only: one image, or 1-4 views with the front first. The
@@ -41,7 +44,9 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { jsonReply, runCli, startMockApi, type MockApi, type RunResult } from "./helpers/cli.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { jsonReply, runCli, startMockApi, tmpDir, type MockApi, type RunResult } from "./helpers/cli.js";
 
 async function withApi(fn: (api: MockApi) => Promise<void>): Promise<void> {
   const api = await startMockApi((req, res) => {
@@ -266,4 +271,36 @@ test("--ai-model beats a --data ai_model, and the defaults follow the winner (F1
     assert.equal(lastBody(api)["enable_pbr"], true);
     assert.equal(lastBody(api)["texture_resolution"], "4k");
   });
+});
+
+test("an expired OAuth login is refreshed first, then the meshy-n1 refusal exits before any create", async () => {
+  let refreshes = 0;
+  const api = await startMockApi((req, res) => {
+    if (req.path === "/openapi/v1/oauth/token") {
+      refreshes += 1;
+      return jsonReply(res, 200, { access_token: "refreshed-token", token_type: "Bearer", expires_in: 3600, refresh_token: "fixture-refresh" });
+    }
+    if (req.method === "HEAD" && req.path.startsWith("/views/")) return void res.writeHead(200, { "content-type": "image/png" }).end();
+    return jsonReply(res, 200, { result: "task-new" });
+  });
+  try {
+    const dir = tmpDir();
+    const creds = join(dir, "oauth-credentials.json");
+    writeFileSync(creds, JSON.stringify({ auth_version: 1, active_profile: "default", profiles: { default: {
+      kind: "oauth", access_token: "expired-token", refresh_token: "fixture-refresh", expires_at: Date.now() - 60_000, created_at: 1,
+    } } }));
+    const env: Record<string, string | undefined> = { ...api.env(), MESHY_CREDENTIALS_PATH: creds };
+    delete env["MESHY_API_KEY"];
+
+    const r = await runCli(["retexture", "create", "--input-task-id", "src-1", "--async", "--format", "json",
+      "--ai-model", "meshy-n1", "--image-style-url", view(api, "front"), "--enable-pbr", "true"], { env, cwd: dir });
+    assert.equal(r.code, 2, `${r.stdout}${r.stderr}`);
+    assert.match(r.stdout + r.stderr, /meshy-n1 cannot be used with --enable-pbr true/);
+    assert.equal(refreshes, 1, "the expired login was refreshed once, before the refusal");
+    const saved = JSON.parse(readFileSync(creds, "utf8")) as { profiles: { default: { access_token: string } } };
+    assert.equal(saved.profiles.default.access_token, "refreshed-token", "the refreshed token was saved");
+    assert.equal(api.requests.filter((q) => q.method === "POST" && !q.path.endsWith("/oauth/token")).length, 0, "no create was sent");
+  } finally {
+    await api.close();
+  }
 });
