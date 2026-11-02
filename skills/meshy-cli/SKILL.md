@@ -178,8 +178,16 @@ These are API rules, not preferences — ignoring them produces failed tasks:
   `--model-type smart-topology` (text-to-3d and image-to-3d) has a native
   `--target-polycount`: meshy-t2.5 is the CLI default, 100-30000 (default
   15000); `--ai-model meshy-t2` selects T2, 100-15000 (default 10000). `retexture`'s
-  `--multiview-image-urls` needs Meshy 7 — it takes 1-4 views of **the same
-  object**, not style references.
+  `--multiview-image-urls` runs on Meshy 7 (pinned by default) or Meshy N1 — it
+  takes 1-4 views of **the same object**, front first, not style references.
+- **`retexture --ai-model meshy-n1`** (Meshy N1, 10 credits) makes a 2K base color
+  texture from a reference image only: `--image-style-url` (read as the front view)
+  or 1-4 `--multiview-image-urls` (front first, the rest in any order). No text
+  prompt, no PBR maps, no 4K/8K: the CLI sends `enable_pbr: false` and `2k` for it
+  and refuses `--text-style-prompt`, `--enable-pbr true`, `--texture-resolution
+  4k|8k` and `--remove-lighting`. Models over the Meshy N1 face limit in the
+  API docs are refused; check a local GLB with `meshy inspect faces --model <file>
+  --max-faces <limit>`.
 - Printing: `analyze-`/`repair-printability` take `--printer-type
   fdm|sla|full_color` and one `--intended-print-height-mm` /
   `--intended-print-longest-side-mm`; `multi-color-print` takes `--style

@@ -1413,3 +1413,44 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   plugin add only `DSH_*` variables, so its Meshy plugin cannot set
   `MESHY_CLI_CLIENT`. Without that variable, such a call is tagged `dsh` in the
   User-Agent. An explicit `MESHY_CLI_CLIENT` still wins.
+
+## D-088 Retexture picks Meshy N1 with `--ai-model`; N1 flips the texture defaults (ENG-5144)
+
+- Meshy N1 (`ai_model: "meshy-n1"`) is a retexture model. It makes a 2K base
+  color texture from reference images only: one `image_style_url`, read as the
+  front view, or 1–4 `multiview_image_urls`, the first the front and the rest in
+  any order. It costs 10 credits and takes models within the face limit in the
+  API docs (5,000,000 faces at launch, to be raised). The
+  API answers 400 for N1 with a text prompt and no image, `enable_pbr: true`,
+  `texture_resolution` 4k or 8k, `hd_texture: true` without a resolution, and
+  `remove_lighting` with any value.
+- `--ai-model` is a choice list, like the Smart Topology flag (D-078). It offers
+  `latest`, `meshy-7`, `meshy-6` and `meshy-n1`: the models the CLI's defaults
+  work with. The retired meshy-5 is not offered; the API refuses it.
+  meshy-6-lite stays reachable through `--data` only, as before. It refuses the
+  4k default too, and giving it a 2k default is a separate change.
+- Every other model keeps the game-ready defaults: PBR maps on, a 4k base color,
+  and the meshy-7 pin for multi-view. For N1 the defaults layer sends
+  `enable_pbr: false` and `texture_resolution: "2k"` and pins no model, so N1
+  with multi-view stays N1. The defaults flip per model instead of changing for
+  everyone. They exist so a game-engine import carries the full map set at 4k.
+  Dropping them globally would hand every Meshy 7 caller a 2k base color only,
+  to suit a model that nobody gets by accident: N1 runs only when it is named,
+  so its defaults can follow its name.
+- The defaults read the model where the merged payload takes it from: the
+  flag, else `--data`. Before this change, `--data '{"ai_model":"meshy-n1"}'`
+  reached the API but carried the PBR and 4k defaults, a 400. Now it gets the
+  N1 defaults, so `--data` stays the escape hatch it is documented to be.
+- An explicit ask N1 cannot honour is refused before the POST (exit 2), as in
+  D-076: a text prompt, `enable_pbr: true`, 4k or 8k, `hd_texture: true`,
+  `remove_lighting`. A prompt beside an image in `--data` is refused too: v1
+  would drop it without a word. A request with no reference image says N1 needs
+  one. The checks run on the merged payload, so `--data` meets the same rules
+  (D-078, D-083). Nothing is rewritten to what N1 can make: a quiet downgrade
+  would return something other than what was asked for.
+- `--ai-model latest` or `meshy-6` with `--multiview-image-urls` is refused
+  locally: those values are the flag's own. An `ai_model` in `--data` beside
+  multi-view is left to the server's gate, like the meshy-7 pin it overrides.
+- The face limit is not checked locally. The CLI cannot count a remote model,
+  and the API refuses a known count over the limit before the task starts.
+  `meshy inspect faces --model` measures a local GLB.

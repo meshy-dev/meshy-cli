@@ -136,6 +136,15 @@ meshy-cli multi-color-print create --input-task-id <id> --style cartoon --printe
 # the web app's Ultra 2K geometry setting
 meshy-cli multi-image-to-3d create --image-urls front.png,side.png,back.png --geometry-resolution 2k
 
+# retexture an existing model from a prompt or a reference image (PBR maps, 4k base color).
+# --ai-model meshy-n1 (Meshy N1, 10 credits) makes a 2k base color texture from reference
+# images only — one image, read as the front view, or 1-4 views with the front first —
+# with no text prompt and no PBR maps, on models within the face limit in the API docs; the CLI sends
+# enable_pbr false and 2k for it, and refuses a prompt, PBR, 4k/8k or --remove-lighting.
+meshy-cli retexture create --input-task-id <id> --image-style-url look.png
+meshy-cli retexture create --input-task-id <id> --ai-model meshy-n1 --image-style-url front.png
+meshy-cli retexture create --input-task-id <id> --ai-model meshy-n1 --multiview-image-urls front.png,back.png
+
 # fire-and-forget (--async): exactly one POST, returns the task_id, query later
 TASK=$(meshy-cli text-to-image create --prompt "mountain landscape" --async | jq -r .result.submission.task_id)
 meshy-cli text-to-image get  "$TASK"
