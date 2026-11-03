@@ -1,15 +1,28 @@
 /**
  * Credential store — the on-disk half of `meshy auth`.
  *
- * Layout: ~/.config/meshy/credentials.json, one file holding named profiles so
- * a user can keep several accounts side by side. `~/.config` is used on every
- * platform (including macOS, where the native spot would be Application
+ * Layout: ~/.config/meshy/credentials.v2.json, one file holding named profiles
+ * so a user can keep several accounts side by side. `~/.config` is used on
+ * every platform (including macOS, where the native spot would be Application
  * Support) because the file is meant to be scriptable and dotfile-friendly.
  *
- * Non-production hosts get their own file — credentials.dev.json — so pointing
- * MESHY_BASE_URL_V1 at staging cannot overwrite the production login, and
- * logging out of one leaves the other alone. The global and China API hosts
- * are both production: one Meshy account works on either.
+ * Secrets never reach the disk in the clear: a profile's API key or tokens are
+ * sealed under a master key held by the OS credential store (keyring.ts), and
+ * the file keeps only the ciphertext plus what can be shown without it — kind,
+ * masked hint, expiry, region, account. Profiles are opened on demand, so
+ * listing them or resolving the region never touches the key.
+ *
+ * Releases before 0.8 kept plaintext in credentials.json. That file is still
+ * read while the v2 file does not exist, and the first write moves its
+ * profiles over and deletes it — moves, never copies: two stores holding one
+ * refresh token would each rotate it, and the API revokes a login whose
+ * rotated-out refresh token is presented again. An older CLI that finds the
+ * old file gone signs in separately and keeps its own login there.
+ *
+ * Non-production hosts get their own file — credentials.v2.dev.json — so
+ * pointing MESHY_BASE_URL_V1 at staging cannot overwrite the production login,
+ * and logging out of one leaves the other alone. The global and China API
+ * hosts are both production: one Meshy account works on either.
  *
  * Every mutation runs under a cross-process lock and lands via a temp file +
  * rename, because several agents driving this CLI in parallel is the normal
@@ -30,10 +43,12 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { openSecret, sealSecret } from "./keyring.js";
 
-export const AUTH_VERSION = 1;
+export const AUTH_VERSION = 2;
 export const DEFAULT_PROFILE = "default";
 /** The global and China API hosts; they share accounts and this file. */
 export const PROD_API_HOSTS = ["api.meshy.ai", "api.meshy.cn"];
@@ -44,13 +59,28 @@ const LOCK_STALE_MS = 60_000;
 
 export type CredentialKind = "api_key" | "oauth";
 
+/** Who a login belongs to, as the API's userinfo reports it. */
+export interface CredentialAccount {
+  name?: string;
+  email?: string;
+}
+
 export interface CredentialProfile {
   kind: CredentialKind;
-  /** Present when kind === "api_key". */
+  /**
+   * The secrets, in memory only: `writeCredentials` seals them into `secret`,
+   * and `profileSecrets` opens them again. A pre-0.8 file carries them in the
+   * clear, which reads the same way.
+   */
   api_key?: string;
-  /** Present when kind === "oauth" (CLI-4 writes these; nothing reads them yet). */
   access_token?: string;
   refresh_token?: string;
+  /** On disk: the sealed secrets (keyring.ts). */
+  secret?: string;
+  /** Masked credential, so a profile can be listed without opening it. */
+  hint?: string;
+  /** Set at login when the API reports who signed in. */
+  account?: CredentialAccount;
   /** Unix epoch millis. */
   expires_at?: number;
   user_id?: string;
@@ -119,8 +149,14 @@ export function credentialsPath(
 ): string {
   const explicit = env["MESHY_CREDENTIALS_PATH"]?.trim();
   if (explicit) return explicit;
-  const name = isNonProdBaseUrl(baseUrlV1) ? "credentials.dev.json" : "credentials.json";
+  const name = isNonProdBaseUrl(baseUrlV1) ? "credentials.v2.dev.json" : "credentials.v2.json";
   return join(configDir(env), name);
+}
+
+/** The pre-0.8 plaintext file a default v2 path replaces, or null for any other path. */
+export function legacyCredentialsPath(file: string): string | null {
+  const legacy = ({ "credentials.v2.json": "credentials.json", "credentials.v2.dev.json": "credentials.dev.json" } as Record<string, string>)[basenameOf(file)];
+  return legacy ? join(dirname(file), legacy) : null;
 }
 
 function lockPathFor(file: string): string {
@@ -198,12 +234,18 @@ function emptyFile(): CredentialsFile {
 }
 
 /**
- * Reads the credentials file. Returns null when it does not exist — that is
- * "not logged in", not an error. A file that exists but is unreadable throws
+ * Reads the credentials file — or, while a default v2 file does not exist yet,
+ * the pre-0.8 file it replaces. Returns null when neither exists: that is "not
+ * logged in", not an error. A file that exists but is unreadable throws
  * CredentialsFileError so the user hears about it instead of silently falling
- * back to "no credentials".
+ * back to "no credentials". Profiles come back sealed; see profileSecrets.
  */
 export function readCredentials(file: string): CredentialsFile | null {
+  const legacy = legacyCredentialsPath(file);
+  return readStateFile(file) ?? (legacy ? readStateFile(legacy) : null);
+}
+
+function readStateFile(file: string): CredentialsFile | null {
   let raw: string;
   try {
     raw = readFileSync(file, "utf8");
@@ -234,15 +276,53 @@ export function readCredentials(file: string): CredentialsFile | null {
   };
 }
 
+/** The on-disk form of a profile: any secret it carries in the clear is sealed. */
+function sealProfile(dir: string, profile: CredentialProfile): CredentialProfile {
+  const { api_key, access_token, refresh_token, ...rest } = profile;
+  const secrets = Object.fromEntries(
+    Object.entries({ api_key, access_token, refresh_token }).filter(([, v]) => v),
+  );
+  if (Object.keys(secrets).length === 0) return profile;
+  return { ...rest, secret: sealSecret(dir, JSON.stringify(secrets)), hint: maskSecret(api_key ?? access_token ?? "") };
+}
+
+/**
+ * The secrets of one profile, opened from its sealed form (or read as-is from
+ * a pre-0.8 plaintext profile). Throws an auth error when they cannot be
+ * opened here — a missing or locked key, or a value that does not decrypt.
+ */
+export function profileSecrets(
+  file: string,
+  profile: CredentialProfile,
+): Pick<CredentialProfile, "api_key" | "access_token" | "refresh_token"> {
+  const opened: Record<string, unknown> =
+    profile.secret && !profile.api_key && !profile.access_token
+      ? (JSON.parse(openSecret(dirname(file), profile.secret)) as Record<string, unknown>)
+      : { api_key: profile.api_key, access_token: profile.access_token, refresh_token: profile.refresh_token };
+  const pick = (k: string): string | undefined => (typeof opened[k] === "string" && opened[k] ? (opened[k] as string) : undefined);
+  return {
+    ...(pick("api_key") ? { api_key: pick("api_key") } : {}),
+    ...(pick("access_token") ? { access_token: pick("access_token") } : {}),
+    ...(pick("refresh_token") ? { refresh_token: pick("refresh_token") } : {}),
+  };
+}
+
 /**
  * Writes the file with 0600 via a temp file + rename, so a crash mid-write
- * cannot leave a half-written credentials file behind. Callers that mutate
- * existing state must hold the lock; see updateCredentials.
+ * cannot leave a half-written credentials file behind. Secrets are sealed on
+ * the way out; `state` itself is left as the caller passed it. Callers that
+ * mutate existing state must hold the lock; see updateCredentials.
  */
 export function writeCredentials(state: CredentialsFile, file: string): void {
-  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  const dir = dirname(file);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const onDisk: CredentialsFile = {
+    ...state,
+    auth_version: AUTH_VERSION,
+    profiles: Object.fromEntries(Object.entries(state.profiles).map(([name, p]) => [name, sealProfile(dir, p)])),
+  };
   const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  writeFileSync(tmp, `${JSON.stringify(onDisk, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   try {
     renameSync(tmp, file);
   } catch (err) {
@@ -258,17 +338,56 @@ export function writeCredentials(state: CredentialsFile, file: string): void {
   chmodSync(file, 0o600);
 }
 
-/** Read-modify-write under the lock. The mutator may return a new state or mutate in place. */
+/**
+ * Read-modify-write under the lock. The mutator may return a new state or
+ * mutate in place. The first write to a default v2 path starts from the
+ * pre-0.8 file and then deletes it, so its profiles move rather than copy.
+ */
 export function updateCredentials(
   file: string,
   mutate: (state: CredentialsFile) => CredentialsFile | void,
 ): CredentialsFile {
   return withCredentialsLock(file, () => {
-    const current = readCredentials(file) ?? emptyFile();
+    const own = readStateFile(file);
+    const legacy = own ? null : legacyCredentialsPath(file);
+    const seeded = legacy ? readStateFile(legacy) : null;
+    const current = own ?? seeded ?? emptyFile();
     const next = mutate(current) ?? current;
     writeCredentials(next, file);
+    if (legacy && seeded) unlinkUnderLock(legacy);
     return next;
   });
+}
+
+function unlinkUnderLock(file: string): boolean {
+  return withCredentialsLock(file, () => {
+    try {
+      unlinkSync(file);
+      return true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw err;
+    }
+  });
+}
+
+/**
+ * Whether this process may write the store. A sandboxed agent shell often may
+ * not, and an OAuth refresh it cannot save is worse than none: the API rotates
+ * the refresh token on use, so the stored one would be spent and the next
+ * attempt would end the login. Probed with a real file, because a sandbox or a
+ * Windows ACL is not always visible to access(2).
+ */
+export function storeWritable(file: string): boolean {
+  const probe = join(dirname(file), "locks", `.probe-${process.pid}-${randomBytes(4).toString("hex")}`);
+  try {
+    mkdirSync(dirname(probe), { recursive: true, mode: 0o700 });
+    closeSync(openSync(probe, "wx", 0o600));
+    unlinkSync(probe);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,17 +430,11 @@ export function setActiveProfile(file: string, name: string): void {
   });
 }
 
-/** Deletes the whole file. Returns false when there was nothing to delete. */
+/** Deletes the whole file, and the pre-0.8 one it replaces. Returns false when there was nothing to delete. */
 export function deleteCredentialsFile(file: string): boolean {
-  return withCredentialsLock(file, () => {
-    try {
-      unlinkSync(file);
-      return true;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw err;
-    }
-  });
+  const legacy = legacyCredentialsPath(file);
+  const deleted = unlinkUnderLock(file);
+  return (legacy ? unlinkUnderLock(legacy) : false) || deleted;
 }
 
 export interface ResolvedStoredCredential {
@@ -346,15 +459,16 @@ export function resolveStoredCredential(file: string): ResolvedStoredCredential 
   const name = state.active_profile;
   const profile = state.profiles[name];
   if (!profile) return null;
+  const secrets = profileSecrets(file, profile);
   if (profile.kind === "api_key") {
-    if (!profile.api_key) return null;
-    return { profile: name, kind: "api_key", apiKey: profile.api_key };
+    if (!secrets.api_key) return null;
+    return { profile: name, kind: "api_key", apiKey: secrets.api_key };
   }
-  if (!profile.access_token) return null;
+  if (!secrets.access_token) return null;
   return {
     profile: name,
     kind: "oauth",
-    accessToken: profile.access_token,
+    accessToken: secrets.access_token,
     expiresAt: profile.expires_at,
     ...(profile.user_id ? { userId: profile.user_id } : {}),
     ...(profile.login_id ? { loginId: profile.login_id } : {}),

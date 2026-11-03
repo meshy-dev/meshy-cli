@@ -10,12 +10,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname as pathDirname } from "node:path";
+import { openStoredProfile } from "./helpers/credentials.js";
 
 /** The `result` of the v1 envelope every command prints on stdout. */
 function envelopeResult(stdout: string): Record<string, unknown> {
@@ -385,19 +386,11 @@ test(
       );
 
       // Credentials file must now hold the rotated tokens.
-      const creds = JSON.parse(readFileSync(credFile, "utf8")) as {
-        profiles: Record<string, {
-          access_token: string;
-          refresh_token: string;
-          expires_at: number;
-        }>;
-      };
-      const profile = creds.profiles["default"];
-      assert.ok(profile, "default profile must exist");
+      const profile = openStoredProfile(credFile);
       assert.equal(profile.access_token, "fresh-status-token", "credentials file must hold new access_token");
       assert.equal(profile.refresh_token, "fresh-status-refresh", "credentials file must hold new refresh_token");
       assert.ok(
-        profile.expires_at > Date.now(),
+        (profile.expires_at ?? 0) > Date.now(),
         `expires_at must be in the future, got ${profile.expires_at}`,
       );
     } finally {

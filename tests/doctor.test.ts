@@ -123,7 +123,8 @@ test("T-102 default run: local only — no probe, no detector, no fetch; boolean
     flag: true,
     env: true,
     api_key_file: null,
-    stored_profile: { path: join(env["MESHY_CONFIG_DIR"]!, "credentials.json"), exists: false },
+    host: false,
+    stored_profile: { path: join(env["MESHY_CONFIG_DIR"]!, "credentials.v2.json"), exists: false },
   });
   assert.deepEqual(report.cwd_env_candidates, [".env"]);
   assert.match(check(report, "cwd_env_files").detail, /\.env found .* not read/);
@@ -172,7 +173,7 @@ test("stored profile: the credentials file is stat'ed, never parsed", async () =
   assert.ok(!JSON.stringify(report).includes("msy_stored_secret_value_000"));
   // Non-production v1 base → the dev file is the one that applies.
   const staging = await runDoctor({ flags: flagsOf({ baseUrlV1: "https://staging.example.invalid/openapi/v1/" }), checkApi: false, checkSlicers: false, env: isolatedEnv(), cwd: dir });
-  assert.match(staging.credential_sources.stored_profile.path, /credentials\.dev\.json$/);
+  assert.match(staging.credential_sources.stored_profile.path, /credentials\.v2\.dev\.json$/);
   assert.equal(staging.credential_sources.stored_profile.exists, false);
 });
 

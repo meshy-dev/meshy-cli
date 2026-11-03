@@ -30,6 +30,7 @@ import {
   refreshTokens,
 } from "../src/internal/oauth.js";
 import { USER_AGENT } from "../src/internal/user-agent.js";
+import { openStoredProfile } from "./helpers/credentials.js";
 
 /** The `result` of the v1 envelope every command prints on stdout. */
 function envelopeResult(stdout: string): Record<string, unknown> {
@@ -939,17 +940,7 @@ test(
       );
 
       // Assert credentials file has kind=oauth and correct fields.
-      const creds = JSON.parse(readFileSync(credFile, "utf8")) as {
-        profiles: Record<string, {
-          kind: string;
-          access_token: string;
-          refresh_token: string;
-          expires_at: number;
-          user_id?: string;
-        }>;
-      };
-      const profile = creds.profiles["default"];
-      assert.ok(profile, "default profile should exist");
+      const profile = openStoredProfile(credFile);
       assert.equal(profile.kind, "oauth");
       assert.equal(profile.access_token, "e2e-access-token");
       assert.equal(profile.refresh_token, "e2e-refresh-token");

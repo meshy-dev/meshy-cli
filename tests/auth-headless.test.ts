@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname as pathDirname } from "node:path";
+import { openStoredProfile } from "./helpers/credentials.js";
 
 /** The `result` of the v1 envelope every command prints on stdout. */
 function envelopeResult(stdout: string): Record<string, unknown> {
@@ -176,12 +177,10 @@ test(
 
       // Credentials file should exist with oauth kind.
       assert.ok(existsSync(credFile), "credentials file should exist");
-      const creds = JSON.parse(readFileSync(credFile, "utf8")) as {
-        profiles: Record<string, { kind: string; access_token: string; login_id?: string }>;
-      };
-      assert.equal(creds.profiles["default"]?.kind, "oauth");
-      assert.equal(creds.profiles["default"]?.access_token, "e2e-device-access-token");
-      assert.match(String(creds.profiles["default"]?.login_id), /^[0-9a-f-]{36}$/, "every OAuth login mints a login id (R2-F06)");
+      const stored = openStoredProfile(credFile);
+      assert.equal(stored.kind, "oauth");
+      assert.equal(stored.access_token, "e2e-device-access-token");
+      assert.match(String(stored.login_id), /^[0-9a-f-]{36}$/, "every OAuth login mints a login id (R2-F06)");
     } finally {
       await stub.close();
     }
