@@ -178,13 +178,15 @@ function sleepSync(ms: number): void {
 }
 
 /**
- * Runs `fn` while holding an exclusive lock keyed to `file`.
+ * Takes the exclusive lock keyed to `file` and returns its release. Callers
+ * that hold it across an await (an OAuth refresh) use this directly; the rest
+ * use withCredentialsLock.
  *
  * O_EXCL creation is the atomic primitive here — `flock` is not exposed by
  * Node's fs module. A lock whose mtime is older than LOCK_STALE_MS is treated
  * as abandoned and broken, so a killed process cannot wedge the CLI forever.
  */
-export function withCredentialsLock<T>(file: string, fn: () => T): T {
+export function acquireCredentialsLock(file: string): () => void {
   const lock = lockPathFor(file);
   mkdirSync(dirname(lock), { recursive: true, mode: 0o700 });
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
@@ -213,15 +215,23 @@ export function withCredentialsLock<T>(file: string, fn: () => T): T {
       sleepSync(25);
     }
   }
-  try {
-    return fn();
-  } finally {
+  return () => {
     closeSync(fd);
     try {
       unlinkSync(lock);
     } catch {
       /* already gone */
     }
+  };
+}
+
+/** Runs `fn` while holding the exclusive lock keyed to `file`. */
+export function withCredentialsLock<T>(file: string, fn: () => T): T {
+  const release = acquireCredentialsLock(file);
+  try {
+    return fn();
+  } finally {
+    release();
   }
 }
 
@@ -347,16 +357,22 @@ export function updateCredentials(
   file: string,
   mutate: (state: CredentialsFile) => CredentialsFile | void,
 ): CredentialsFile {
-  return withCredentialsLock(file, () => {
-    const own = readStateFile(file);
-    const legacy = own ? null : legacyCredentialsPath(file);
-    const seeded = legacy ? readStateFile(legacy) : null;
-    const current = own ?? seeded ?? emptyFile();
-    const next = mutate(current) ?? current;
-    writeCredentials(next, file);
-    if (legacy && seeded) unlinkUnderLock(legacy);
-    return next;
-  });
+  return withCredentialsLock(file, () => updateCredentialsHeld(file, mutate));
+}
+
+/** updateCredentials for a caller that already holds the lock (acquireCredentialsLock). */
+export function updateCredentialsHeld(
+  file: string,
+  mutate: (state: CredentialsFile) => CredentialsFile | void,
+): CredentialsFile {
+  const own = readStateFile(file);
+  const legacy = own ? null : legacyCredentialsPath(file);
+  const seeded = legacy ? readStateFile(legacy) : null;
+  const current = own ?? seeded ?? emptyFile();
+  const next = mutate(current) ?? current;
+  writeCredentials(next, file);
+  if (legacy && seeded) unlinkUnderLock(legacy);
+  return next;
 }
 
 function unlinkUnderLock(file: string): boolean {

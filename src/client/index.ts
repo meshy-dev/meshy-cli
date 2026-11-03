@@ -19,7 +19,7 @@ import {
   type TaskResourceDescriptor,
 } from "./resource-registry.js";
 import { createTransport, type Transport } from "./transport.js";
-import { assertCredentialAllowedForOrigin, type MeshyConfig } from "../internal/config.js";
+import { assertCredentialAllowedForOrigin, storedTokenAfterRejection, type MeshyConfig } from "../internal/config.js";
 import { UsageError } from "../internal/errors.js";
 
 
@@ -35,7 +35,12 @@ export class MeshyClient {
 
   constructor(config: MeshyConfig, opts: { fetchImpl?: typeof fetch } = {}) {
     this.config = config;
-    const common = { readTimeoutMs: config.readTimeoutMs, fetchImpl: opts.fetchImpl, credentialKind: config.credentialKind };
+    const common = {
+      readTimeoutMs: config.readTimeoutMs,
+      fetchImpl: opts.fetchImpl,
+      credentialKind: config.credentialKind,
+      renewCredential: (rejected: string) => storedTokenAfterRejection(config, rejected),
+    };
     this.v1 = createTransport({ ...common, baseUrl: config.baseUrlV1, apiKey: config.apiKey });
     this.v2 = createTransport({ ...common, baseUrl: config.baseUrlV2, apiKey: config.apiKey });
     this.balance = new BalanceEndpoint(this.v1);
@@ -67,6 +72,7 @@ export class MeshyClient {
           apiKey: this.config.apiKey,
           credentialKind: this.config.credentialKind,
           readTimeoutMs: this.config.readTimeoutMs,
+          renewCredential: (rejected) => storedTokenAfterRejection(this.config, rejected),
         });
         return this.creativeLabTransport;
       }

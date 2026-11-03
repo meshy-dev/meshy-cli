@@ -13,7 +13,7 @@
 import type { Command } from "commander";
 
 import { buildRootCommand, LOCAL_COMMANDS } from "./root.js";
-import { currentCommand, interruptedBy, markInterrupted, wasInterrupted } from "./internal/context.js";
+import { currentCommand, exitWhenSafe, interruptedBy, markInterrupted, wasInterrupted } from "./internal/context.js";
 import { isCommanderInformational, CliError } from "./internal/errors.js";
 import { painterFor } from "./internal/color.js";
 import { emitEnvelope, printWarnings, type OutputFormat } from "./internal/output.js";
@@ -67,10 +67,10 @@ function installSignalHandlers(): void {
           return;
         }
         process.stderr.write(`\ninterrupted by ${signal} — finishing local bookkeeping\n`);
-        setTimeout(() => process.exit(130), TERMINATE_GRACE_MS).unref();
+        setTimeout(() => exitWhenSafe(130), TERMINATE_GRACE_MS).unref();
         return;
       }
-      process.exit(130);
+      exitWhenSafe(130);
     });
   }
 }

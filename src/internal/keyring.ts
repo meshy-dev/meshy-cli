@@ -33,7 +33,14 @@ export type KeyStore = "keychain" | "dpapi" | "secret-service" | "file";
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
+/** A locked keychain may prompt, and waiting longer on a prompt helps nobody. */
 const STORE_TIMEOUT_MS = 5_000;
+/**
+ * Windows PowerShell can take several seconds to start on a cold or busy
+ * machine (CI runners measured 3–5 s); DPAPI never prompts, so it is waited
+ * for rather than mistaken for an unusable store.
+ */
+const DPAPI_TIMEOUT_MS = 30_000;
 const SEAL_PREFIX = "v1";
 const STORES: readonly KeyStore[] = ["keychain", "dpapi", "secret-service", "file"];
 
@@ -61,11 +68,11 @@ function decodeKey(text: string, where: string): Buffer {
   return key;
 }
 
-function run(cmd: string, args: string[], input?: string): string {
+function run(cmd: string, args: string[], input?: string, timeout = STORE_TIMEOUT_MS): string {
   return execFileSync(cmd, args, {
     encoding: "utf8",
     input,
-    timeout: STORE_TIMEOUT_MS,
+    timeout,
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -117,7 +124,7 @@ function dpapi(direction: "Protect" | "Unprotect", input: string): string {
   ].join("; ");
   const encoded = Buffer.from(script, "utf16le").toString("base64");
   try {
-    return run("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], input);
+    return run("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], input, DPAPI_TIMEOUT_MS);
   } catch (err) {
     if (isMissingBinary(err)) throw new StoreUnavailable("powershell.exe");
     throw err;

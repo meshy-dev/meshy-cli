@@ -193,3 +193,115 @@ test("operationsRoot follows DSH_MESHY_STATE_DIR", () => {
   assert.equal(operationsRoot({ MESHY_CONFIG_DIR: "/cfg" }), join("/cfg", "operations"));
   assert.equal(operationsRoot({ MESHY_CONFIG_DIR: "/cfg", DSH_MESHY_STATE_DIR: "/ws/.meshy" }), join("/ws/.meshy", "operations"));
 });
+
+// ---------------------------------------------------------------------------
+// One process's refresh must not break the others: the API ends the previous
+// access token the moment it issues a new one.
+// ---------------------------------------------------------------------------
+
+const authOf = (r: { headers: Record<string, string | string[] | undefined> }): unknown => r.headers["authorization"];
+
+test("processes that need a refresh at the same time refresh once and all use the new token", async () => {
+  let refreshes = 0;
+  const m = await startMockApi(async (req, res) => {
+    if (req.path.endsWith("/oauth/token")) {
+      refreshes++;
+      await new Promise((r) => setTimeout(r, 500));
+      return jsonReply(res, 200, { access_token: "msy_at_fresh", token_type: "Bearer", expires_in: 3600, refresh_token: "msy_rt_fresh" });
+    }
+    if (req.path.endsWith("/balance")) return jsonReply(res, 200, { balance: 42 });
+    return jsonReply(res, 404, {});
+  });
+  try {
+    const file = oauthStore(Date.now() + 10 * 60_000);
+    const env = m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file });
+    const runs = await Promise.all([1, 2, 3].map(() => runCli(["balance", "--format", "json"], { env })));
+    for (const run of runs) assert.equal(run.code, 0, run.stderr);
+    assert.equal(refreshes, 1, "the refresh token is spent once");
+    assert.deepEqual(m.requests.filter((r) => r.path.endsWith("/balance")).map(authOf), Array(3).fill("Bearer msy_at_fresh"));
+    assert.equal(openStoredProfile(file).refresh_token, "msy_rt_fresh");
+  } finally {
+    await m.close();
+  }
+});
+
+test("Ctrl-C twice during a refresh still saves the new tokens before exiting", { skip: process.platform === "win32" && "no POSIX signals" }, async () => {
+  let child: import("node:child_process").ChildProcess | undefined;
+  const m = await startMockApi(async (req, res) => {
+    if (req.path.endsWith("/oauth/token")) {
+      // The second Ctrl-C forces an exit; it must wait for the save.
+      child?.kill("SIGINT");
+      await new Promise((r) => setTimeout(r, 100));
+      child?.kill("SIGINT");
+      await new Promise((r) => setTimeout(r, 300));
+      return jsonReply(res, 200, { access_token: "msy_at_fresh", token_type: "Bearer", expires_in: 3600, refresh_token: "msy_rt_fresh" });
+    }
+    return jsonReply(res, 200, { balance: 42 });
+  });
+  try {
+    const file = oauthStore(Date.now() - 1_000);
+    const run = await runCli(["balance", "--format", "json"], {
+      env: m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file }),
+      onSpawn: (c) => { child = c; },
+    });
+    assert.equal(run.code, 130, "the forced exit happens once the save is done");
+    assert.equal(openStoredProfile(file).refresh_token, "msy_rt_fresh", "the rotated refresh token was not lost");
+    assert.equal(m.requests.some((r) => r.path.endsWith("/balance")), false, "nothing runs after the forced exit");
+  } finally {
+    await m.close();
+  }
+});
+
+function rejectingApi(valid: string, onFirstRejection?: () => void): Promise<MockApi> {
+  let rejected = false;
+  return startMockApi((req, res) => {
+    if (!req.path.endsWith("/balance")) return jsonReply(res, 404, {});
+    if (authOf(req) === `Bearer ${valid}`) return jsonReply(res, 200, { balance: 42 });
+    if (!rejected) onFirstRejection?.();
+    rejected = true;
+    return jsonReply(res, 401, { message: "Invalid access token" });
+  });
+}
+
+test("a host credential another process replaced is retried once with the stored token of the same login", async () => {
+  const m = await rejectingApi("msy_at_stored_token");
+  try {
+    const file = oauthStore(Date.now() + 3_600_000);
+    const run = await runCli(["balance", "--format", "json"], {
+      env: m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file, DSH_MESHY_CREDENTIAL: "msy_at_replaced", DSH_MESHY_SUBJECT: "login-1" }),
+    });
+    assert.equal(run.code, 0, run.stderr);
+    assert.deepEqual(m.requests.map(authOf), ["Bearer msy_at_replaced", "Bearer msy_at_stored_token"]);
+  } finally {
+    await m.close();
+  }
+});
+
+test("a 401 is not retried with another account's stored token", async () => {
+  const m = await rejectingApi("msy_at_stored_token");
+  try {
+    const file = oauthStore(Date.now() + 3_600_000);
+    const run = await runCli(["balance", "--format", "json"], {
+      env: m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file, DSH_MESHY_CREDENTIAL: "msy_at_replaced", DSH_MESHY_SUBJECT: "someone-else" }),
+    });
+    assert.equal(run.code, 3);
+    assert.equal(m.requests.length, 1);
+  } finally {
+    await m.close();
+  }
+});
+
+test("a running command whose token another process refreshed carries on with the new one", async () => {
+  const file = oauthStore(Date.now() + 3_600_000);
+  // The first request finds its token replaced in the store, as after another process's refresh.
+  const m = await rejectingApi("msy_at_rotated", () =>
+    saveProfile(file, "default", { kind: "oauth", access_token: "msy_at_rotated", refresh_token: "msy_rt_rotated", expires_at: Date.now() + 3_600_000, login_id: "login-1" }),
+  );
+  try {
+    const run = await runCli(["balance", "--format", "json"], { env: m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file }) });
+    assert.equal(run.code, 0, run.stderr);
+    assert.deepEqual(m.requests.map(authOf), ["Bearer msy_at_stored_token", "Bearer msy_at_rotated"]);
+  } finally {
+    await m.close();
+  }
+});

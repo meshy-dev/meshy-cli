@@ -1462,3 +1462,32 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   `account` from the API's userinfo. It is shown, never relied on: a site that
   does not grant the scope, a pre-0.8 login and an API key report `null`, and
   the scope is not part of the granted-scope check.
+
+## D-089 One process's refresh does not break the others
+
+- The API ends the previous access token the moment a refresh issues a new
+  one. With the 30-minute refresh window (D-088), a refresh in one process (a
+  terminal, another agent, the DeepSeek Harness host) broke every other holder
+  of the old token: a running `wait`, or a host-provided credential, until the
+  next read.
+- The refresh now runs entirely under the credentials lock, as lark-cli does:
+  under the lock the CLI re-reads the profile and adopts a token another
+  process already refreshed, so parallel commands spend the refresh token once.
+  The B3 adoption after a failed refresh stays for CLIs before 0.8.1, which
+  refresh outside the lock.
+- From the refresh request to the save, forced exits (a second Ctrl-C, the end
+  of SIGTERM / SIGHUP's grace period) wait (`withExitHeld`). A process killed
+  after the API answered but before the save would leave only a spent refresh
+  token, and the next refresh would end the login.
+- After a 401 with an OAuth token, from the store or from a host, the transport
+  asks for the token stored now for the same login (profile login id; for a
+  host credential the profile whose user id or login id is `DSH_MESHY_SUBJECT`)
+  and retries once when it differs and has not expired. A 401 is answered
+  before the request is acted on, so the retry cannot repeat a create. Bodies
+  that cannot be read twice (none today) are not retried. Another account's
+  token is never used.
+- The Windows key store (DPAPI through Windows PowerShell) waits up to 30 s
+  instead of 5 s. PowerShell took 3–5 s to start on CI runners, so a cold or
+  busy machine could fall back to the key file when sealing, or fail to open a
+  stored login. DPAPI never prompts; the Keychain and the Secret Service keep
+  5 s, since a locked keychain may.

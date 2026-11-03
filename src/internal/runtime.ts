@@ -16,7 +16,8 @@ import { Command } from "commander";
 import { looksLikeFile } from "./paths.js";
 import { MeshyClient } from "../client/index.js";
 import { loadConfig, type ConfigOverrides, type MeshyConfig } from "./config.js";
-import { credentialsPath, profileSecrets, readCredentials, saveProfile, storeWritable } from "./credentials.js";
+import { acquireCredentialsLock, credentialsPath, profileSecrets, readCredentials, storeWritable, updateCredentialsHeld } from "./credentials.js";
+import { withExitHeld } from "./context.js";
 import { authRequiredError, HintedError, UsageError } from "./errors.js";
 import { logger, setLogLevel } from "./logger.js";
 import { refreshTokens } from "./oauth.js";
@@ -126,35 +127,37 @@ export async function refreshOAuthCredentialIfNeeded(
   const originalAccessToken = secrets.access_token;
   const profileName = config.credentialProfile;
 
+  // The whole refresh runs under the store's lock, so concurrent CLI
+  // processes refresh once between them: whoever waited re-reads the store
+  // and finds the new token instead of spending the refresh token again.
+  const release = acquireCredentialsLock(credFile);
   try {
-    const tok = await refreshTokens({
-      baseUrlV1: config.baseUrlV1,
-      refreshToken: secrets.refresh_token,
+    const current = readCredentials(credFile)?.profiles[profileName];
+    const refreshToken = current?.kind === "oauth" ? profileSecrets(credFile, current).refresh_token : undefined;
+    if (current && (current.expires_at ?? 0) - Date.now() >= REFRESH_SKEW_MS) {
+      logger.debug("OAuth token already refreshed by another process");
+    } else if (current && refreshToken) await withExitHeld(async () => {
+      const tok = await refreshTokens({ baseUrlV1: config.baseUrlV1, refreshToken });
+      // Write back: preserve profile name, created_at, region and account.
+      updateCredentialsHeld(credFile, (state) => {
+        state.profiles[profileName] = {
+          kind: "oauth",
+          access_token: tok.access_token,
+          refresh_token: tok.refresh_token,
+          expires_at: Date.now() + tok.expires_in * 1000,
+          user_id: tok.user_id ?? current.user_id,
+          ...(current.login_id ? { login_id: current.login_id } : {}),
+          ...(current.region ? { region: current.region } : {}),
+          ...(current.account ? { account: current.account } : {}),
+          created_at: current.created_at ?? Date.now(),
+        };
+      });
     });
-    // Write back: preserve profile name, created_at and account, update tokens.
-    saveProfile(
-      credFile,
-      profileName,
-      {
-        kind: "oauth",
-        access_token: tok.access_token,
-        refresh_token: tok.refresh_token,
-        expires_at: Date.now() + tok.expires_in * 1000,
-        user_id: tok.user_id ?? profile.user_id,
-        ...(profile.login_id ? { login_id: profile.login_id } : {}),
-        ...(profile.region ? { region: profile.region } : {}),
-        ...(profile.account ? { account: profile.account } : {}),
-        created_at: profile.created_at,
-      },
-      { makeActive: false },
-    );
-    // Re-run loadConfig so the caller carries the fresh token.
-    return loadConfig(overrides);
   } catch (err) {
-    // B3: Read-after-write — another concurrent CLI process may have
-    // already rotated the token (server-side refresh-token rotation).
-    // Re-read the file; if the active profile now holds a DIFFERENT
-    // access token that is comfortably unexpired (>REFRESH_SKEW_MS),
+    // B3: Read-after-write — a CLI before 0.8.1 refreshes outside the lock
+    // and may already have rotated the token (server-side refresh-token
+    // rotation). Re-read the file; if the active profile now holds a
+    // DIFFERENT access token that is comfortably unexpired (>REFRESH_SKEW_MS),
     // adopt it and proceed rather than failing the command.
     const afterFailure = readCredentials(credFile);
     const afterProfile = profileName ? afterFailure?.profiles[profileName] : undefined;
@@ -176,7 +179,11 @@ export async function refreshOAuthCredentialIfNeeded(
       logger.debug("OAuth refresh failed (token still valid, proceeding)", err);
       return config;
     }
+  } finally {
+    release();
   }
+  // Re-run loadConfig so the caller carries the token now in the store.
+  return loadConfig(overrides);
 }
 
 export function configOverridesFrom(flags: GlobalFlags): ConfigOverrides {
