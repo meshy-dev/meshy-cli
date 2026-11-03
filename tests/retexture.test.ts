@@ -48,9 +48,10 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { jsonReply, runCli, startMockApi, tmpDir, type MockApi, type RunResult } from "./helpers/cli.js";
+import { openStoredProfile } from "./helpers/credentials.js";
 
 async function withApi(fn: (api: MockApi) => Promise<void>): Promise<void> {
   const api = await startMockApi((req, res) => {
@@ -301,8 +302,7 @@ test("an expired OAuth login is refreshed first, then the meshy-n1 refusal exits
     assert.equal(r.code, 2, `${r.stdout}${r.stderr}`);
     assert.match(r.stdout + r.stderr, /meshy-n1 cannot be used with --enable-pbr true/);
     assert.equal(refreshes, 1, "the expired login was refreshed once, before the refusal");
-    const saved = JSON.parse(readFileSync(creds, "utf8")) as { profiles: { default: { access_token: string } } };
-    assert.equal(saved.profiles.default.access_token, "refreshed-token", "the refreshed token was saved");
+    assert.equal(String(openStoredProfile(creds).access_token), "refreshed-token", "the refreshed token was saved");
     assert.equal(api.requests.filter((q) => q.method === "POST" && !q.path.endsWith("/oauth/token")).length, 0, "no create was sent");
   } finally {
     await api.close();
