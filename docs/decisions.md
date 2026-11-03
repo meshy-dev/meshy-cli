@@ -1413,3 +1413,52 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   plugin add only `DSH_*` variables, so its Meshy plugin cannot set
   `MESHY_CLI_CLIENT`. Without that variable, such a call is tagged `dsh` in the
   User-Agent. An explicit `MESHY_CLI_CLIENT` still wins.
+
+## D-088 Secrets are sealed under an OS-held key; a store the CLI cannot write is never refreshed; a host can hand over the session
+
+- Stored secrets are AES-256-GCM ciphertext under one 32-byte master key the OS
+  keeps: the login Keychain on macOS (through `/usr/bin/security`, so the
+  item's trusted application does not change when Node does), DPAPI on Windows
+  (through Windows PowerShell), the Secret Service on Linux when a session bus
+  exists. Where that store is missing, locked or refuses the write, the key is
+  a `0600` `master.key` file, and once that file exists it is used for every
+  later seal. Each sealed value names its key store, so a profile stays
+  readable after the store in use changes. The file keeps kind, masked hint,
+  expiry, region and account in the clear, so `auth list` and the region
+  lookup never need the key. No dependency is added.
+- The sealed file is `credentials.v2.json` (`credentials.v2.dev.json`), not the
+  pre-0.8 `credentials.json`. Sealing that file in place would hand older CLIs —
+  still pinned by skills published before this release — a file with no
+  usable credential; they would sign in, write plaintext, and the next 0.8
+  write would seal it again, so the two would take turns forcing a login. 0.8
+  reads the old file until its first write, then moves the profiles over and
+  deletes it. It moves rather than copies: two stores holding one refresh token
+  would each rotate it, and the API ends a login whose rotated-out refresh token
+  is presented again. An older CLI signs in once more and keeps its own login.
+- The API replaces the refresh token on every refresh. A sandboxed agent shell
+  that refreshed, then failed to save the result, spent the stored token, and
+  the next command ended the login — the reason agents in DeepSeek Harness had
+  to sign in again in nearly every session. Before refreshing, the CLI now
+  probes the credentials directory with a real file (a sandbox or a Windows ACL
+  is not always visible to `access(2)`). If it cannot write there it does not
+  refresh: a valid token is used as it is; an expired one is exit 3 saying where
+  to refresh it, with the stored login intact. `auth login` checks the same
+  before any flow starts, so nobody approves a login that cannot be kept.
+- The refresh window grows from 60 seconds to 30 minutes, so every command
+  starts with at least that long left and a long `wait` does not outlive its
+  token. A refresh also keeps the profile's `region` (it used to drop it,
+  moving a China-site login to the global site an hour after sign-in) and
+  `account`.
+- DeepSeek Harness lets a plugin add only `DSH_*` variables to a shell call, and
+  its sandbox cannot write the config directory. Its Meshy plugin keeps the
+  login on the host, refreshes it there, and gives each call
+  `DSH_MESHY_CREDENTIAL` (used as-is, after `--api-key-file` and before the
+  stored profile; never refreshed or stored), `DSH_MESHY_REGION`,
+  `DSH_MESHY_SUBJECT` (journal binding) and `DSH_MESHY_STATE_DIR` (operation
+  journal, which a create cannot proceed without). `auth status --show-token`
+  is how the host reads the credential, the way `gh auth token` serves other
+  tools.
+- Logins ask for `openid profile email`, and `auth status` / `auth list` report
+  `account` from the API's userinfo. It is shown, never relied on: a site that
+  does not grant the scope, a pre-0.8 login and an API key report `null`, and
+  the scope is not part of the granted-scope check.

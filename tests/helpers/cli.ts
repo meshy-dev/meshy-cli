@@ -49,6 +49,8 @@ export function isolatedEnv(extra: Record<string, string | undefined> = {}): Rec
     SystemRoot: process.env["SystemRoot"],
     MESHY_CLI_NO_UPDATE_NOTIFIER: "1",
     MESHY_CLI_NO_BROWSER: "1",
+    // tests/test.env keeps every test off the OS keychain; children inherit it.
+    MESHY_KEYRING: process.env["MESHY_KEYRING"],
     MESHY_CONFIG_DIR: configDir,
     MESHY_API_KEY: undefined,
     MESHY_BASE_URL_V1: undefined,

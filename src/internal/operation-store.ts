@@ -76,8 +76,15 @@ export interface OperationIdentity {
   payloadFingerprint: string;
 }
 
+/**
+ * Under the config directory, unless a host app names a writable one: a
+ * DeepSeek Harness shell cannot write the config directory, and a submission
+ * the journal cannot record is refused, so its Meshy plugin points
+ * DSH_MESHY_STATE_DIR at a directory in the session's workspace.
+ */
 export function operationsRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return join(configDir(env), "operations");
+  const state = env["DSH_MESHY_STATE_DIR"]?.trim();
+  return join(state || configDir(env), "operations");
 }
 
 export function newOperationId(): string {

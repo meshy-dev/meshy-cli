@@ -22,12 +22,14 @@ import { MeshyClient } from "../client/index.js";
 import {
   deriveCreativeLabBase,
   derivePublicWebBase,
+  hostCredential,
   loadConfig,
   regionBaseUrls,
   resolveRegion,
   type MeshyConfig,
 } from "./config.js";
-import { credentialsPath } from "./credentials.js";
+import { credentialsPath, legacyCredentialsPath } from "./credentials.js";
+import { platformKeyStore } from "./keyring.js";
 import { loadEnvFile } from "./env-file.js";
 import { configOverridesFrom, type GlobalFlags } from "./runtime.js";
 import { detectSlicers as detectSlicersImpl, type DetectionEnv, type SlicerDetection } from "./slicers.js";
@@ -53,6 +55,8 @@ export interface DoctorReport {
     env: boolean;
     /** Absolute path of --api-key-file when given (its verdict is a check), else null. */
     api_key_file: string | null;
+    /** DSH_MESHY_CREDENTIAL, handed over by a host app (DeepSeek Harness). */
+    host: boolean;
     stored_profile: { path: string; exists: boolean };
   };
   base_urls: { v1: string; v2: string; creative_lab: string | null; public_web: string };
@@ -223,15 +227,18 @@ export async function runDoctorDetailed(opts: DoctorOptions): Promise<DoctorOutc
     checks.push({ id: "api_key_file", status: "skipped", detail: "--api-key-file not given" });
   }
   const storedPath = credentialsPath(v1, env);
-  const storedExists = isFile(storedPath);
-  const anySource = flagPresent || envPresent || apiKeyFileUsable || storedExists;
+  const legacyPath = legacyCredentialsPath(storedPath);
+  const storedExists = isFile(storedPath) || (legacyPath !== null && isFile(legacyPath));
+  const hostPresent = hostCredential(env) !== "";
+  const anySource = flagPresent || envPresent || apiKeyFileUsable || hostPresent || storedExists;
   checks.push({
     id: "credentials",
     status: anySource ? "ok" : "warn",
     detail:
       `sources present: --api-key=${flagPresent ? "yes" : "no"}, MESHY_API_KEY=${envPresent ? "yes" : "no"}, ` +
       `--api-key-file=${flags.envFile ? (apiKeyFileUsable ? "usable" : "unusable") : "none"}, ` +
-      `stored profile=${storedExists ? "present" : "absent"} (${storedPath}); values are never read by doctor` +
+      `DSH_MESHY_CREDENTIAL=${hostPresent ? "yes" : "no"}, ` +
+      `stored profile=${storedExists ? "present" : "absent"} (${storedPath}; key store ${platformKeyStore(env)}); values are never read by doctor` +
       (anySource ? "" : ". API commands need --api-key, MESHY_API_KEY, --api-key-file <file> or `meshy auth login`"),
   });
 
@@ -285,6 +292,7 @@ export async function runDoctorDetailed(opts: DoctorOptions): Promise<DoctorOutc
       flag: flagPresent,
       env: envPresent,
       api_key_file: apiKeyFilePath,
+      host: hostPresent,
       stored_profile: { path: storedPath, exists: storedExists },
     },
     base_urls: { v1, v2, creative_lab: creativeLab, public_web: publicWeb },

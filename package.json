@@ -48,7 +48,7 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "pretest": "tsc",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --env-file=tests/test.env --test tests/**/*.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "prepare": "test -f dist/index.js || npm run build",
     "prepublishOnly": "npm run clean && npm run build"

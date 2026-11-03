@@ -17,6 +17,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
+import { OAUTH_ACCESS_TOKEN_PREFIX } from "./config.js";
+import type { CredentialAccount } from "./credentials.js";
 import { HintedError } from "./errors.js";
 import { USER_AGENT } from "./user-agent.js";
 import { renderCallbackPage } from "./oauth-page.js";
@@ -44,11 +46,19 @@ export function codeChallengeS256(verifier: string): string {
 // Authorize URL
 // ---------------------------------------------------------------------------
 
+/**
+ * Asked for at every login so `auth status` can say who is signed in. It is a
+ * request, not a requirement: a site that does not grant these still issues
+ * the token, and the account is then simply unknown.
+ */
+export const IDENTITY_SCOPE = "openid profile email";
+
 export interface BuildAuthorizeUrlParams {
   base: string;
   redirectUri: string;
   state: string;
   codeChallenge: string;
+  scope?: string;
 }
 
 /**
@@ -63,7 +73,33 @@ export function buildAuthorizeUrl(params: BuildAuthorizeUrlParams): string {
   url.searchParams.set("state", params.state);
   url.searchParams.set("code_challenge", params.codeChallenge);
   url.searchParams.set("code_challenge_method", "S256");
+  if (params.scope) url.searchParams.set("scope", params.scope);
   return url.toString();
+}
+
+/**
+ * Who an OAuth access token belongs to, from the API's OpenID Connect
+ * userinfo endpoint. Null whenever it cannot say — a token issued without the
+ * identity scope, a site without the endpoint, an API key, a network error —
+ * because the account is shown, never relied on.
+ */
+export async function fetchAccount(baseUrlV1: string, accessToken: string): Promise<CredentialAccount | null> {
+  if (!accessToken.startsWith(OAUTH_ACCESS_TOKEN_PREFIX)) return null;
+  try {
+    const res = await fetch(`${new URL(baseUrlV1).origin}/openapi/oauth/userinfo`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json", "User-Agent": USER_AGENT },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as Record<string, unknown>;
+    const account: CredentialAccount = {
+      ...(typeof body["name"] === "string" && body["name"] ? { name: body["name"] } : {}),
+      ...(typeof body["email"] === "string" && body["email"] ? { email: body["email"] } : {}),
+    };
+    return account.name || account.email ? account : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

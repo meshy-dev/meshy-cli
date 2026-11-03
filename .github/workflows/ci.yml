@@ -121,10 +121,33 @@ jobs:
           test -f "$root/skills/meshy-cli/SKILL.md" \
             || { echo "::error::skills missing from the global install"; exit 1; }
 
+  # The credential store keeps its master key in each OS's own key store, so
+  # sealing is exercised there for real: Keychain on macOS, DPAPI on Windows.
+  # Linux (check) has no session bus on the runner and uses the file key.
+  os-key-store:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm exec tsx --env-file=tests/test.env --test tests/keyring.test.ts tests/host-session.test.ts
+        env:
+          MESHY_TEST_OS_KEYRING: "1"
+
   # Single required context for branch protection.
   ci:
     if: always()
-    needs: [check, smoke]
+    needs: [check, smoke, os-key-store]
     runs-on: ubuntu-latest
     steps:
       - name: All gates passed
@@ -133,3 +156,5 @@ jobs:
             || { echo "::error::check failed (${{ needs.check.result }})"; exit 1; }
           test "${{ needs.smoke.result }}" = "success" \
             || { echo "::error::smoke failed (${{ needs.smoke.result }})"; exit 1; }
+          test "${{ needs.os-key-store.result }}" = "success" \
+            || { echo "::error::os-key-store failed (${{ needs.os-key-store.result }})"; exit 1; }

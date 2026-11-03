@@ -3,8 +3,9 @@
  *   1. CLI flags (--api-key, --base-url-v1, --base-url-v2, --base-url-creative-lab, --verbose)
  *   2. Environment variables (MESHY_*)
  *   3. An explicit --api-key-file (only MESHY_API_KEY is read from it)
- *   4. The active profile in the credentials file (written by `meshy auth login`)
- *   5. Built-in defaults
+ *   4. A credential the host app hands over (DSH_MESHY_CREDENTIAL, below)
+ *   5. The active profile in the credentials file (written by `meshy auth login`)
+ *   6. Built-in defaults
  *
  * The env var keeps priority over the stored credential on purpose: CI and
  * containers export MESHY_API_KEY and must not be silently overridden by
@@ -18,6 +19,13 @@
  *
  * Fail-fast on a missing/placeholder credential — with the command that fixes
  * it attached, not just a complaint.
+ *
+ * DeepSeek Harness runs model shell calls in a sandbox that cannot write the
+ * credential store, and lets a plugin add only DSH_* variables to them. Its
+ * Meshy plugin keeps the login on the host side and hands every shell call a
+ * current credential: DSH_MESHY_CREDENTIAL (an access token or API key, used
+ * as-is — never refreshed or stored here), DSH_MESHY_REGION (the site it
+ * belongs to) and DSH_MESHY_SUBJECT (the account it binds journal records to).
  */
 
 import { credentialsPath, readCredentials, resolveStoredCredential, type CredentialKind } from "./credentials.js";
@@ -26,6 +34,8 @@ import { authRequiredError, CliError, UsageError } from "./errors.js";
 import { setLogLevel, type LogLevel } from "./logger.js";
 
 const PLACEHOLDER_KEYS = new Set(["", "YOUR_MESHY_API_KEY_HERE"]);
+/** Browser-login access tokens carry this prefix; static API keys do not. */
+export const OAUTH_ACCESS_TOKEN_PREFIX = "msy_at_";
 
 /** Meshy's two sites share accounts; only the API and sign-in hosts differ. */
 export const REGIONS = {
@@ -39,13 +49,22 @@ export function parseRegion(raw: string, source: string): Region {
   throw new UsageError(`${source} must be global or cn, got '${raw}'`);
 }
 
+/** The credential a host app hands over (see the header), or "" when there is none. */
+export function hostCredential(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env["DSH_MESHY_CREDENTIAL"]?.trim() ?? "";
+  return PLACEHOLDER_KEYS.has(raw) ? "" : raw;
+}
+
 /**
- * MESHY_REGION, else the region the active stored profile logged in to, else
- * global. An unreadable credentials file is left for loadConfig to report.
+ * MESHY_REGION, else the region of a host-provided credential, else the
+ * region the active stored profile logged in to, else global. An unreadable
+ * credentials file is left for loadConfig to report.
  */
 export function resolveRegion(env: NodeJS.ProcessEnv = process.env): Region {
   const raw = env["MESHY_REGION"]?.trim();
   if (raw) return parseRegion(raw, "MESHY_REGION");
+  const hostRegion = env["DSH_MESHY_REGION"]?.trim();
+  if (hostCredential(env) && hostRegion) return parseRegion(hostRegion, "DSH_MESHY_REGION");
   try {
     const state = readCredentials(credentialsPath(undefined, env));
     return state?.profiles[state.active_profile]?.region === "cn" ? "cn" : "global";
@@ -65,7 +84,7 @@ export function regionOf(baseUrlV1: string): "cn" | undefined {
 }
 
 /** Where the credential in use came from — surfaced by `meshy auth status`. */
-export type CredentialSource = "flag" | "env" | "env-file" | "file";
+export type CredentialSource = "flag" | "env" | "env-file" | "host" | "file";
 
 export interface MeshyConfig {
   apiKey: string;
@@ -93,7 +112,8 @@ export interface MeshyConfig {
   /**
    * The kind of credential in use — "oauth" for browser-login tokens, "api_key" for static keys.
    * "api_key" when credentialSource is "flag", "env" or "env-file" (those paths only accept static keys).
-   * Derived from the stored profile kind when credentialSource is "file".
+   * Derived from the stored profile kind when credentialSource is "file", and
+   * from the token prefix when it is "host".
    */
   credentialKind: CredentialKind;
   /**
@@ -221,6 +241,11 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
     apiKey = envFileKey;
     credentialSource = "env-file";
     credentialKind = "api_key";
+  } else if (hostCredential()) {
+    apiKey = hostCredential();
+    credentialSource = "host";
+    credentialKind = apiKey.startsWith(OAUTH_ACCESS_TOKEN_PREFIX) ? "oauth" : "api_key";
+    credentialSubject = process.env["DSH_MESHY_SUBJECT"]?.trim() || undefined;
   } else {
     // A corrupt credentials file throws out of resolveStoredCredential rather
     // than being swallowed into "not logged in" — see credentials.ts.
@@ -264,11 +289,12 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
 }
 
 /**
- * Stored profiles were issued for the v1 origin they were resolved against.
- * A different Creative Lab origin only receives an explicitly supplied key.
+ * Stored profiles and host-provided credentials were issued for the v1 origin
+ * they were resolved against. A different Creative Lab origin only receives an
+ * explicitly supplied key.
  */
 export function assertCredentialAllowedForOrigin(cfg: MeshyConfig, targetBase: string, label: string): void {
-  if (cfg.credentialSource !== "file") return;
+  if (cfg.credentialSource !== "file" && cfg.credentialSource !== "host") return;
   const v1Origin = originOf(cfg.baseUrlV1);
   const targetOrigin = originOf(targetBase);
   if (v1Origin && targetOrigin && v1Origin === targetOrigin) return;

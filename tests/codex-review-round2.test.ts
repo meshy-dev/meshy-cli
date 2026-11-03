@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFil
 import { join } from "node:path";
 import { credentialBinding } from "../src/internal/operation-store.js";
 import { jsonReply, parseNdjson, parseSingleJson, runCli, startMockApi, tmpDir } from "./helpers/cli.js";
+import { openStoredProfile } from "./helpers/credentials.js";
 
 const CREATE = ["text-to-3d", "create", "--mode", "preview", "--prompt", "round two", "--async"];
 
@@ -379,9 +380,9 @@ test("N07/R2-F06 an OAuth profile without user_id or login_id cannot replay an e
     const after = await runCli(refreshOp, { env, cwd: dir });
     assert.equal(after.code, 0, `${after.stderr}\n${after.stdout}`);
     assert.equal((parseSingleJson(after.stdout) as { warnings: Array<{ code: string }> }).warnings[0]?.code, "operation_replayed");
-    const saved = JSON.parse(readFileSync(creds, "utf8")) as { profiles: { default: { access_token: string; login_id: string } } };
-    assert.equal(saved.profiles.default.login_id, "login-cccc", "refresh preserved the login id");
-    assert.match(saved.profiles.default.access_token, /^refreshed-/, "the token was rotated by the refresh");
+    const saved = openStoredProfile(creds);
+    assert.equal(saved.login_id, "login-cccc", "refresh preserved the login id");
+    assert.match(String(saved.access_token), /^refreshed-/, "the token was rotated by the refresh");
     assert.equal(api.requests.filter((q) => q.method === "POST" && !q.path.endsWith("/oauth/token")).length, 3);
     // Journals hold neither tokens nor login ids in the clear.
     const ops = join(String(env["MESHY_CONFIG_DIR"]), "operations");
