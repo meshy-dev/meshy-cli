@@ -85,6 +85,15 @@ spend the stored login. It uses a still-valid token as it is, and for an expired
 one exits `3` saying where to refresh it; the stored login stays intact.
 `auth login` checks the same thing before it opens the browser.
 
+The refresh runs under the credentials lock, so commands started together
+refresh once and the rest pick up the new token. Once a refresh request is
+sent it is always saved, even if a second Ctrl-C or a terminate signal arrives
+meanwhile; the exit follows the save. The API ends the previous access token as
+soon as it issues a new one, so a command whose token another process replaced
+gets a 401: it then retries once with the token now stored for the same login
+(the same profile, or for `DSH_MESHY_CREDENTIAL` the login named by
+`DSH_MESHY_SUBJECT`), and never with another account's.
+
 **Who is signed in:** `auth status` and `auth list` show the `account` (name and
 email) of a browser login. It is reported by the site at sign-in, so a login
 made before 0.8, an API key, and the China site (which does not report it yet)

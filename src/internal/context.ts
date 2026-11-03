@@ -59,6 +59,32 @@ export function interruptedBy(): string {
   return interruptSignal;
 }
 
+let heldExits = 0;
+let pendingExit: number | undefined;
+
+/**
+ * Runs `fn` with forced exits (a second Ctrl-C, the end of a terminate
+ * signal's grace period) held until it settles. For the few steps that must
+ * not stop half-way: once the API has answered an OAuth refresh, the old
+ * refresh token is spent, and a process killed before saving the answer
+ * would leave only that behind.
+ */
+export async function withExitHeld<T>(fn: () => Promise<T>): Promise<T> {
+  heldExits += 1;
+  try {
+    return await fn();
+  } finally {
+    heldExits -= 1;
+    if (heldExits === 0 && pendingExit !== undefined) process.exit(pendingExit);
+  }
+}
+
+/** process.exit, unless withExitHeld is running: then once it settles. */
+export function exitWhenSafe(code: number): void {
+  if (heldExits > 0) pendingExit = code;
+  else process.exit(code);
+}
+
 /** Test hook: reset module state between in-process runs. */
 export function resetCommandContextForTests(): void {
   current = null;

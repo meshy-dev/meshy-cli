@@ -28,7 +28,7 @@
  * belongs to) and DSH_MESHY_SUBJECT (the account it binds journal records to).
  */
 
-import { credentialsPath, readCredentials, resolveStoredCredential, type CredentialKind } from "./credentials.js";
+import { credentialsPath, profileSecrets, readCredentials, resolveStoredCredential, type CredentialKind } from "./credentials.js";
 import { loadEnvFile } from "./env-file.js";
 import { authRequiredError, CliError, UsageError } from "./errors.js";
 import { setLogLevel, type LogLevel } from "./logger.js";
@@ -286,6 +286,32 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
 
   setLogLevel(cfg.logLevel);
   return cfg;
+}
+
+/**
+ * After a 401, the access token the store holds now for the same login, when
+ * it is a different, unexpired one: another process refreshed while this one
+ * held the old token, and the API ends the old access token the moment it
+ * issues the new one. Null for API keys, another account, or nothing newer.
+ * A host-provided credential matches by its subject (the profile's user id or
+ * login id), a stored one by its login id.
+ */
+export function storedTokenAfterRejection(cfg: MeshyConfig, rejected: string): string | null {
+  if (cfg.credentialKind !== "oauth" || (cfg.credentialSource !== "file" && cfg.credentialSource !== "host")) return null;
+  try {
+    const state = readCredentials(cfg.credentialsFile);
+    const name = cfg.credentialSource === "file" ? cfg.credentialProfile : state?.active_profile;
+    const profile = name ? state?.profiles[name] : undefined;
+    if (!profile || profile.kind !== "oauth" || (profile.expires_at ?? 0) <= Date.now()) return null;
+    const sameLogin = cfg.credentialSource === "host"
+      ? Boolean(cfg.credentialSubject) && (cfg.credentialSubject === profile.user_id || cfg.credentialSubject === profile.login_id)
+      : !cfg.credentialLoginId || cfg.credentialLoginId === profile.login_id;
+    if (!sameLogin) return null;
+    const token = profileSecrets(cfg.credentialsFile, profile).access_token;
+    return token && token !== rejected ? token : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
