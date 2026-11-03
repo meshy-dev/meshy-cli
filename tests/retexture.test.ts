@@ -9,8 +9,11 @@
  * Meshy N1 (`ai_model: "meshy-n1"`) makes a 2K base color texture from
  * reference images only: one image, or 1-4 views with the front first. The
  * API answers 400 for N1 with a text prompt alone, `enable_pbr: true`, 4k/8k
- * (or `hd_texture: true`) and any `remove_lighting`, and only meshy-7 or
- * meshy-n1 take `multiview_image_urls`.
+ * (or `hd_texture: true` with no texture_resolution) and any
+ * `remove_lighting`, and only meshy-7 or meshy-n1 take
+ * `multiview_image_urls`. Two refusals here are the CLI's own, stricter than
+ * the API: a prompt beside one image (the API drops it) and `hd_texture: true`
+ * beside an explicit "2k" (the API takes the 2k).
  *
  * Failure modes these tests guard:
  *   F1  N1 inherits the game-ready `enable_pbr: true` default → a 400 on every
@@ -29,8 +32,9 @@
  *   F7  An N1 prompt beside an image is sent through `--data`; the API drops
  *       the prompt silently, so the caller never learns it was ignored.
  *   F8  An explicit PBR / 4k / 8k / hd_texture / remove_lighting ask with N1
- *       — by flag or by `--data` — is sent (a 400) instead of refused before
- *       the POST, or is silently rewritten to what N1 can do.
+ *       — by flag or by `--data` — is sent instead of refused before the POST
+ *       (a 400 for all but hd_texture beside an explicit 2k, which the API
+ *       would quietly run at 2k), or is silently rewritten to what N1 can do.
  *   F9  The other models lose their defaults: no `--ai-model`, meshy-7 and
  *       meshy-6 must keep PBR on and 4k; multi-view without a model must
  *       keep the meshy-7 pin.

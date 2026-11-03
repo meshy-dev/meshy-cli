@@ -127,8 +127,10 @@ const spec: ResourceCommandSpec = {
           opts.aiModel === MESHY_N1 ? N1_NEEDS_IMAGE : "provide --text-style-prompt, --image-style-url or --multiview-image-urls",
         );
       }
-      // The API takes exactly one style input; picking for the caller would
-      // silently drop the other one, so refuse instead.
+      // Exactly one style flag. The API is looser: views beside a prompt or an
+      // image are a 400 there, but v1 clears a prompt beside one image and
+      // textures from the image alone. Picking for the caller would drop one
+      // flag without a word, so the CLI refuses every combination.
       const styleFlags = [
         ["--text-style-prompt", Boolean(opts.textStylePrompt)],
         ["--image-style-url", Boolean(opts.imageStyleUrl)],
