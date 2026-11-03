@@ -17,7 +17,7 @@
  * images only: one style image (the front view) or 1-4 views. The API refuses
  * it a prompt alone, PBR maps, 4k/8k and remove_lighting, so the game-ready
  * defaults (PBR on, 4k) flip for it, and an explicit ask for any of those is
- * refused before the POST (decisions.md D-088).
+ * refused before the POST (decisions.md D-090).
  */
 
 import { Option } from "commander";

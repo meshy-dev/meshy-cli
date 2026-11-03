@@ -93,15 +93,18 @@ EXAMPLES:
 AUTHENTICATION:
     auth login                       open the browser for OAuth login (loopback + PKCE)
     auth login --with-key msy_...    paste an existing API key instead of the browser flow
-    auth status                      which credential is in effect, and does it work
+    auth status                      which credential is in effect, whose it is, and does it work
     auth list                        stored profiles
     auth use <profile>               switch the active profile
     auth logout [--all]              forget the stored credential
 
-    Resolution order: --api-key > MESHY_API_KEY > --api-key-file > stored profile. The
-    env var stays ahead of the stored credential so CI is never overridden by
-    whatever a developer logged into on that machine. Non-production --base-url-v1
-    uses a separate credentials.dev.json, so staging cannot clobber a production login.
+    Resolution order: --api-key > MESHY_API_KEY > --api-key-file > a host app's
+    DSH_MESHY_CREDENTIAL > stored profile. The env var stays ahead of the stored
+    credential so CI is never overridden by whatever a developer logged into on
+    that machine. Stored secrets are encrypted under a key the OS keeps (Keychain,
+    DPAPI, Secret Service; MESHY_KEYRING=file for a key file). Non-production
+    --base-url-v1 uses a separate credentials.v2.dev.json, so staging cannot
+    clobber a production login.
 
 RESOURCE COMMANDS:
     All endpoint commands stay available and stay supported — they are indexed

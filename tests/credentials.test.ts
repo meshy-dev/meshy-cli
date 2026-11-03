@@ -8,6 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -24,6 +25,9 @@ import { fileURLToPath } from "node:url";
 import {
   CredentialsFileError,
   DEFAULT_PROFILE,
+  legacyCredentialsPath,
+  profileSecrets,
+  storeWritable,
   configDir,
   credentialsPath,
   deleteCredentialsFile,
@@ -38,6 +42,7 @@ import {
   writeCredentials,
 } from "../src/internal/credentials.js";
 import { loadConfig } from "../src/internal/config.js";
+import { openStoredProfile } from "./helpers/credentials.js";
 
 const execFileAsync = promisify(execFile);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -92,8 +97,8 @@ test("isNonProdBaseUrl — an unparseable URL counts as non-prod", () => {
 
 test("credentialsPath — prod and non-prod resolve to separate files", () => {
   const env = { MESHY_CONFIG_DIR: "/cfg", MESHY_CREDENTIALS_PATH: undefined };
-  assert.equal(credentialsPath("https://api.meshy.ai/openapi/v1", env), "/cfg/credentials.json");
-  assert.equal(credentialsPath("https://staging.meshy.ai/v1", env), "/cfg/credentials.dev.json");
+  assert.equal(credentialsPath("https://api.meshy.ai/openapi/v1", env), join("/cfg", "credentials.v2.json"));
+  assert.equal(credentialsPath("https://staging.meshy.ai/v1", env), join("/cfg", "credentials.v2.dev.json"));
 });
 
 test("credentialsPath — MESHY_CREDENTIALS_PATH overrides even the dev split", () => {
@@ -121,7 +126,8 @@ test("writeCredentials → readCredentials round-trip", () => {
   );
   const state = readCredentials(file);
   assert.equal(state?.active_profile, "work");
-  assert.equal(state?.profiles["work"]?.api_key, "msy_work");
+  assert.equal(openStoredProfile(file, "work").api_key, "msy_work");
+  assert.equal(state?.profiles["work"]?.hint, "ms…", "the masked hint lists the profile without its key");
 });
 
 test("writeCredentials — file is 0600 and leaves no temp file behind", () => {
@@ -178,7 +184,7 @@ test("saveProfile — stamps created_at and preserves existing profiles", () => 
   saveProfile(file, "two", { kind: "api_key", api_key: "msy_2" });
   const state = readCredentials(file);
   assert.equal(typeof state?.profiles["one"]?.created_at, "number");
-  assert.equal(state?.profiles["one"]?.api_key, "msy_1");
+  assert.equal(openStoredProfile(file, "one").api_key, "msy_1");
 });
 
 test("removeProfile — reports whether it existed and repoints the active profile", () => {
@@ -350,3 +356,73 @@ test("loadConfig — a corrupt store surfaces instead of reading as 'not logged 
     assert.throws(() => loadConfig(), CredentialsFileError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sealing and the pre-0.8 file
+// ---------------------------------------------------------------------------
+
+function legacyDir(profiles: Record<string, unknown>): { dir: string; v2: string; legacy: string } {
+  const dir = mkdtempSync(join(tmpdir(), "meshy-creds-legacy-"));
+  const legacy = join(dir, "credentials.json");
+  writeFileSync(legacy, JSON.stringify({ auth_version: 1, active_profile: "default", profiles }), { mode: 0o600 });
+  return { dir, v2: join(dir, "credentials.v2.json"), legacy };
+}
+
+test("a pre-0.8 plaintext file is read as-is until the first write moves it, then it is deleted", () => {
+  const { v2, legacy } = legacyDir({
+    default: { kind: "oauth", access_token: "msy_at_old_access", refresh_token: "msy_rt_old_refresh", expires_at: 1, login_id: "L1" },
+    ci: { kind: "api_key", api_key: "msy_ci_key_1234567890" },
+  });
+  assert.equal(legacyCredentialsPath(v2), legacy);
+  const before = readCredentials(v2);
+  assert.equal(before?.profiles["default"]?.access_token, "msy_at_old_access", "read from the old file while v2 is absent");
+
+  saveProfile(v2, "new", { kind: "api_key", api_key: "msy_new_key_1234567890" }, { makeActive: false });
+
+  assert.ok(!existsSync(legacy), "the old file is deleted once its profiles moved");
+  assert.equal(openStoredProfile(v2, "default").refresh_token, "msy_rt_old_refresh");
+  assert.equal(openStoredProfile(v2, "default").login_id, "L1");
+  assert.equal(openStoredProfile(v2, "ci").api_key, "msy_ci_key_1234567890");
+  assert.equal(openStoredProfile(v2, "new").api_key, "msy_new_key_1234567890");
+  assert.equal(readCredentials(v2)?.active_profile, "default");
+});
+
+test("once the v2 file exists, an old file an older CLI writes is left alone", () => {
+  const { v2, legacy } = legacyDir({ default: { kind: "api_key", api_key: "msy_first_1234567890" } });
+  saveProfile(v2, "default", { kind: "api_key", api_key: "msy_v2_key_1234567890" });
+  writeFileSync(legacy, JSON.stringify({ active_profile: "default", profiles: { default: { kind: "api_key", api_key: "msy_older_cli_login" } } }));
+
+  assert.equal(openStoredProfile(v2).api_key, "msy_v2_key_1234567890");
+  saveProfile(v2, "other", { kind: "api_key", api_key: "msy_other_1234567890" });
+  assert.ok(existsSync(legacy), "an older CLI keeps its own login");
+});
+
+test("deleteCredentialsFile removes the old file too", () => {
+  const { v2, legacy } = legacyDir({ default: { kind: "api_key", api_key: "msy_k" } });
+  assert.equal(deleteCredentialsFile(v2), true);
+  assert.ok(!existsSync(legacy));
+  assert.equal(deleteCredentialsFile(v2), false);
+});
+
+test("a profile whose key is gone is an auth error, not a crash", () => {
+  const sealedFile = tmpFile();
+  saveProfile(sealedFile, DEFAULT_PROFILE, { kind: "api_key", api_key: "msy_sealed_1234567890" });
+  // The same file in a directory without its master key.
+  const file = tmpFile();
+  writeFileSync(file, readFileSync(sealedFile));
+  const profile = readCredentials(file)?.profiles[DEFAULT_PROFILE];
+  assert.ok(profile);
+  assert.throws(
+    () => profileSecrets(file, profile),
+    (err: unknown) => (err as { code?: string }).code === "unauthenticated" && /cannot be read/.test((err as Error).message),
+  );
+});
+
+test("storeWritable — true for a writable directory, false when it cannot be written", () => {
+  assert.equal(storeWritable(tmpFile()), true);
+  const blocker = join(mkdtempSync(join(tmpdir(), "meshy-creds-ro-")), "not-a-dir");
+  writeFileSync(blocker, "");
+  // The store directory would have to live under a regular file: no platform can create it.
+  assert.equal(storeWritable(join(blocker, "credentials.v2.json")), false);
+});
+

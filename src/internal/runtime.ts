@@ -11,12 +11,14 @@
  *                       store, never refreshes anything.
  */
 
+import { dirname } from "node:path";
 import { Command } from "commander";
 import { looksLikeFile } from "./paths.js";
 import { MeshyClient } from "../client/index.js";
 import { loadConfig, type ConfigOverrides, type MeshyConfig } from "./config.js";
-import { credentialsPath, readCredentials, saveProfile } from "./credentials.js";
-import { authRequiredError, UsageError } from "./errors.js";
+import { acquireCredentialsLock, credentialsPath, profileSecrets, readCredentials, storeWritable, updateCredentialsHeld } from "./credentials.js";
+import { withExitHeld } from "./context.js";
+import { authRequiredError, HintedError, UsageError } from "./errors.js";
 import { logger, setLogLevel } from "./logger.js";
 import { refreshTokens } from "./oauth.js";
 import type { LogLevel } from "./logger.js";
@@ -54,8 +56,13 @@ export interface LocalRuntime {
   readonly flags: GlobalFlags;
 }
 
-/** 60-second skew window: refresh if token expires within this many ms. */
-const REFRESH_SKEW_MS = 60_000;
+/**
+ * Refresh an OAuth credential this far ahead of expiry. Every command then
+ * starts with at least this long left, so a long `wait` does not outlive its
+ * token, and a host app that re-reads the token on a schedule shorter than
+ * this always hands out one with time to spare.
+ */
+export const REFRESH_SKEW_MS = 30 * 60_000;
 
 /**
  * Silently refresh an OAuth credential when it is near expiry or already
@@ -65,6 +72,12 @@ const REFRESH_SKEW_MS = 60_000;
  *   - credentialSource === "file"
  *   - the active profile is kind "oauth" with a refresh_token
  *   - the access_token expires within REFRESH_SKEW_MS (or is already past)
+ *
+ * When the store cannot be written here (a sandboxed agent shell), the
+ * refresh is skipped: the API rotates the refresh token on use, so a refresh
+ * whose result cannot be saved spends the stored token, and the next attempt
+ * ends the login. A still-valid token is used as-is; an expired one is an
+ * auth error that says where to refresh it instead.
  *
  * On a successful refresh the new tokens are written back to the credentials
  * file and loadConfig is re-run so the returned config carries the fresh token.
@@ -90,61 +103,69 @@ export async function refreshOAuthCredentialIfNeeded(
   const credFile = credentialsPath(config.baseUrlV1);
   const stored = readCredentials(credFile);
   const profile = stored?.profiles[config.credentialProfile];
-
-  if (
-    !profile ||
-    profile.kind !== "oauth" ||
-    !profile.refresh_token ||
-    !profile.access_token
-  ) {
-    return config;
-  }
+  if (!profile || profile.kind !== "oauth") return config;
 
   const expiresAt = profile.expires_at ?? 0;
   const needsRefresh = expiresAt - Date.now() < REFRESH_SKEW_MS;
   if (!needsRefresh) return config;
 
+  const secrets = profileSecrets(credFile, profile);
+  if (!secrets.refresh_token || !secrets.access_token) return config;
+
   const alreadyExpired = expiresAt <= Date.now();
+  if (!storeWritable(credFile)) {
+    if (!alreadyExpired) return config;
+    throw new HintedError({
+      message: `The OAuth token expired, and ${dirname(credFile)} is not writable here, so it was not refreshed; the stored login is kept.`,
+      code: "unauthenticated",
+      hint: `Run any meshy command where ${dirname(credFile)} is writable (outside the sandbox) to refresh it, then retry.`,
+    });
+  }
+
   // Snapshot the access token we started with so we can detect a
   // concurrent rotation after a refresh failure (B3).
-  const originalAccessToken = profile.access_token;
+  const originalAccessToken = secrets.access_token;
   const profileName = config.credentialProfile;
 
+  // The whole refresh runs under the store's lock, so concurrent CLI
+  // processes refresh once between them: whoever waited re-reads the store
+  // and finds the new token instead of spending the refresh token again.
+  const release = acquireCredentialsLock(credFile);
   try {
-    const tok = await refreshTokens({
-      baseUrlV1: config.baseUrlV1,
-      refreshToken: profile.refresh_token,
+    const current = readCredentials(credFile)?.profiles[profileName];
+    const refreshToken = current?.kind === "oauth" ? profileSecrets(credFile, current).refresh_token : undefined;
+    if (current && (current.expires_at ?? 0) - Date.now() >= REFRESH_SKEW_MS) {
+      logger.debug("OAuth token already refreshed by another process");
+    } else if (current && refreshToken) await withExitHeld(async () => {
+      const tok = await refreshTokens({ baseUrlV1: config.baseUrlV1, refreshToken });
+      // Write back: preserve profile name, created_at, region and account.
+      updateCredentialsHeld(credFile, (state) => {
+        state.profiles[profileName] = {
+          kind: "oauth",
+          access_token: tok.access_token,
+          refresh_token: tok.refresh_token,
+          expires_at: Date.now() + tok.expires_in * 1000,
+          user_id: tok.user_id ?? current.user_id,
+          ...(current.login_id ? { login_id: current.login_id } : {}),
+          ...(current.region ? { region: current.region } : {}),
+          ...(current.account ? { account: current.account } : {}),
+          created_at: current.created_at ?? Date.now(),
+        };
+      });
     });
-    // Write back: preserve profile name and created_at, update tokens.
-    saveProfile(
-      credFile,
-      profileName,
-      {
-        kind: "oauth",
-        access_token: tok.access_token,
-        refresh_token: tok.refresh_token,
-        expires_at: Date.now() + tok.expires_in * 1000,
-        user_id: tok.user_id ?? profile.user_id,
-        ...(profile.login_id ? { login_id: profile.login_id } : {}),
-        created_at: profile.created_at,
-      },
-      { makeActive: false },
-    );
-    // Re-run loadConfig so the caller carries the fresh token.
-    return loadConfig(overrides);
   } catch (err) {
-    // B3: Read-after-write — another concurrent CLI process may have
-    // already rotated the token (server-side refresh-token rotation).
-    // Re-read the file; if the active profile now holds a DIFFERENT
-    // access token that is comfortably unexpired (>REFRESH_SKEW_MS),
+    // B3: Read-after-write — a CLI before 0.8.1 refreshes outside the lock
+    // and may already have rotated the token (server-side refresh-token
+    // rotation). Re-read the file; if the active profile now holds a
+    // DIFFERENT access token that is comfortably unexpired (>REFRESH_SKEW_MS),
     // adopt it and proceed rather than failing the command.
     const afterFailure = readCredentials(credFile);
     const afterProfile = profileName ? afterFailure?.profiles[profileName] : undefined;
+    const afterToken = afterProfile?.kind === "oauth" ? profileSecrets(credFile, afterProfile).access_token : undefined;
     if (
-      afterProfile?.kind === "oauth" &&
-      afterProfile.access_token &&
-      afterProfile.access_token !== originalAccessToken &&
-      (afterProfile.expires_at ?? 0) - Date.now() > REFRESH_SKEW_MS
+      afterToken &&
+      afterToken !== originalAccessToken &&
+      (afterProfile?.expires_at ?? 0) - Date.now() > REFRESH_SKEW_MS
     ) {
       // Another process already rotated — adopt the new token.
       logger.debug("OAuth refresh failed but concurrent rotation detected; adopting new token");
@@ -158,7 +179,11 @@ export async function refreshOAuthCredentialIfNeeded(
       logger.debug("OAuth refresh failed (token still valid, proceeding)", err);
       return config;
     }
+  } finally {
+    release();
   }
+  // Re-run loadConfig so the caller carries the token now in the store.
+  return loadConfig(overrides);
 }
 
 export function configOverridesFrom(flags: GlobalFlags): ConfigOverrides {

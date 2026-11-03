@@ -17,6 +17,7 @@
 
 import * as readline from "node:readline";
 import { randomUUID } from "node:crypto";
+import { dirname } from "node:path";
 import { Command } from "commander";
 import { MeshyClient, MeshyApiError } from "../client/index.js";
 import { loadConfig, parseRegion, REGIONS, regionBaseUrls, regionOf, resolveRegion, type Region } from "../internal/config.js";
@@ -28,7 +29,9 @@ import {
   removeProfile,
   saveProfile,
   setActiveProfile,
+  storeWritable,
   DEFAULT_PROFILE,
+  type CredentialAccount,
 } from "../internal/credentials.js";
 import {
   deviceAuthorization,
@@ -44,14 +47,16 @@ import {
   loadDeviceFlowByFlowId,
   saveDeviceFlow,
 } from "../internal/device-state.js";
-import { CREDENTIAL_REJECTED_HINT, EXIT_CODES, HintedError, SESSION_REVOKED_HINT, UsageError } from "../internal/errors.js";
+import { CliError, CREDENTIAL_REJECTED_HINT, EXIT_CODES, HintedError, SESSION_REVOKED_HINT, UsageError } from "../internal/errors.js";
 import { detectHeadless, resolveLoginMode } from "../internal/headless.js";
 import {
   buildAuthorizeUrl,
   codeChallengeS256,
   exchangeCode,
+  fetchAccount,
   generateCodeVerifier,
   generateState,
+  IDENTITY_SCOPE,
   openBrowser,
   startCallbackServer,
 } from "../internal/oauth.js";
@@ -76,6 +81,21 @@ const MANUAL_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 /** Base URLs matter here only because they select the credentials file. */
 function resolveFile(flags: GlobalFlags): string {
   return credentialsPath(resolveBaseUrlV1(flags));
+}
+
+/**
+ * A login the store cannot keep would make the user approve it in the browser
+ * for nothing, so this is checked before any flow starts.
+ */
+function assertStoreWritable(file: string): void {
+  if (storeWritable(file)) return;
+  throw new CliError({
+    code: "local_io",
+    message: `Cannot sign in here: ${dirname(file)} is not writable, so the login could not be stored.`,
+    hint: process.env["DSH_SHELL"] === "1"
+      ? "In DeepSeek Harness, sign in from Settings → Meshy, or with the meshy_sign_in tool."
+      : `Run meshy auth login where ${dirname(file)} is writable (outside the sandbox).`,
+  });
 }
 
 function resolveBaseUrlV1(flags: GlobalFlags, region: Region = resolveRegion()): string {
@@ -125,6 +145,7 @@ async function finishLogin(
   },
 ): Promise<void> {
   const file = resolveFile(flags);
+  const account = await fetchAccount(baseUrlV1, tok.access_token);
   // Every login gets its own identifier: the operation journal binds a
   // submission to the account (user_id) when the token endpoint reports one,
   // and to this login otherwise — never to a token that rotates on refresh.
@@ -136,6 +157,7 @@ async function finishLogin(
     ...(tok.user_id ? { user_id: tok.user_id } : {}),
     login_id: randomUUID(),
     ...(regionOf(baseUrlV1) ? { region: "cn" as const } : {}),
+    ...(account ? { account } : {}),
   };
   const credState = saveProfile(file, opts.profile, profileData);
 
@@ -159,6 +181,7 @@ async function finishLogin(
     profile: opts.profile,
     active_profile: credState.active_profile,
     credential: maskSecret(tok.access_token),
+    account,
     credentials_file: file,
     verified: verifyOutcome,
     ...(balance === undefined ? {} : { balance }),
@@ -214,6 +237,7 @@ const loginCommand = new Command("login")
 
       const region = opts.region === undefined ? resolveRegion() : parseRegion(opts.region, "--region");
       const baseUrlV1 = resolveBaseUrlV1(flags, region);
+      assertStoreWritable(resolveFile(flags));
 
       const key = opts.withKey?.trim();
       if (key) {
@@ -345,7 +369,7 @@ const loginCommand = new Command("login")
       if (mode === "device" || mode === "no-wait") {
         let deviceResp;
         try {
-          deviceResp = await deviceAuthorization(baseUrlV1);
+          deviceResp = await deviceAuthorization(baseUrlV1, IDENTITY_SCOPE);
         } catch (err) {
           if (err instanceof DeviceFlowNotSupportedError) {
             // --no-wait is a contract with agent harnesses: emit the
@@ -437,6 +461,7 @@ const loginCommand = new Command("login")
           redirectUri: OOB_REDIRECT_URI,
           state: oauthState,
           codeChallenge,
+          scope: IDENTITY_SCOPE,
         });
 
         process.stderr.write(`Open this URL in a browser:\n${authorizeUrl}\n`);
@@ -563,6 +588,7 @@ async function runLoopbackFlow(
       redirectUri: "http://127.0.0.1:0/callback",
       state: oauthState,
       codeChallenge,
+      scope: IDENTITY_SCOPE,
     });
     const parsed = new URL(authorizeUrl);
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
@@ -585,6 +611,7 @@ async function runLoopbackFlow(
       redirectUri,
       state: oauthState,
       codeChallenge,
+      scope: IDENTITY_SCOPE,
     });
 
     await openBrowser(authorizeUrl);
@@ -620,9 +647,10 @@ async function runLoopbackFlow(
 // ---------------------------------------------------------------------------
 
 const statusCommand = new Command("status")
-  .description("Show which credential is in effect, where it came from, and whether it works")
-  .option("--offline", "skip the balance call")
-  .action(async (opts: { offline?: boolean }, thisCmd: Command) => {
+  .description("Show which credential is in effect, who it belongs to, where it came from, and whether it works")
+  .option("--offline", "skip the balance and account calls")
+  .option("--show-token", "also print the credential itself, for a host app that hands it to sandboxed tools")
+  .action(async (opts: { offline?: boolean; showToken?: boolean }, thisCmd: Command) => {
     const opened = openCommand(thisCmd, "auth.status");
     rejectOutputFlag(opened, undefined);
     const flags = opened.flags;
@@ -656,10 +684,15 @@ const statusCommand = new Command("status")
       throw err;
     }
 
+    const profile = config.credentialSource === "file" && config.credentialProfile
+      ? safeReadCredentials(file)?.profiles[config.credentialProfile]
+      : undefined;
+    let account: CredentialAccount | null = profile?.account ?? null;
     let balance: unknown;
     let verified: boolean | undefined;
     let verifyHint: string | undefined;
     if (!opts.offline) {
+      const live = fetchAccount(config.baseUrlV1, config.apiKey);
       try {
         balance = await new MeshyClient(config).balance.get();
         verified = true;
@@ -673,6 +706,7 @@ const statusCommand = new Command("status")
           verifyHint = "Could not verify credential (network or server error). Check connectivity and retry.";
         }
       }
+      account = (await live) ?? account;
     }
 
     await emitAuth(flags, {
@@ -680,10 +714,13 @@ const statusCommand = new Command("status")
       source: config.credentialSource,
       profile: config.credentialProfile ?? null,
       credential: maskSecret(config.apiKey),
+      account,
+      expires_at: profile?.kind === "oauth" ? (profile.expires_at ?? null) : null,
       credentials_file: file,
       base_url_v1: config.baseUrlV1,
       profiles: stored.names,
       active_profile: stored.active,
+      ...(opts.showToken ? { token: config.apiKey, subject: config.credentialSubject ?? config.credentialLoginId ?? null } : {}),
       ...(verified === undefined ? {} : { verified }),
       ...(balance === undefined ? {} : { balance }),
       ...(verifyHint !== undefined ? { hint: verifyHint } : {}),
@@ -756,7 +793,8 @@ const listCommand = new Command("list")
       name,
       active: name === state?.active_profile,
       kind: profile.kind,
-      credential: maskSecret(profile.api_key ?? profile.access_token ?? ""),
+      credential: profile.hint ?? maskSecret(profile.api_key ?? profile.access_token ?? ""),
+      account: profile.account ?? null,
       created_at: profile.created_at ?? null,
     }));
     await emitAuth(flags, { credentials_file: file, active_profile: state?.active_profile ?? null, profiles });
@@ -767,6 +805,14 @@ const listCommand = new Command("list")
  * telling the user which file to look at — that is the one moment the path
  * matters most.
  */
+function safeReadCredentials(file: string): ReturnType<typeof readCredentials> {
+  try {
+    return readCredentials(file);
+  } catch {
+    return null;
+  }
+}
+
 function safeReadProfiles(file: string): { names: string[]; active: string | null } {
   try {
     const state = readCredentials(file);

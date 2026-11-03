@@ -39,7 +39,7 @@ meshy balance --api-key-file ./keys.env         # dotenv-style file; only MESHY_
 
 Get a key at <https://www.meshy.ai/developers/keys>.
 
-**Resolution order:** `--api-key` › `MESHY_API_KEY` › `--api-key-file` › the active stored profile.
+**Resolution order:** `--api-key` › `MESHY_API_KEY` › `--api-key-file` › a host app's credential (`DSH_MESHY_CREDENTIAL`, below) › the active stored profile.
 The environment variable stays ahead of the stored credential on purpose, so a
 CI runner is never overridden by whatever a developer once logged into on that
 machine. With none of the four, commands exit `3` and print the command that
@@ -53,20 +53,60 @@ another account. There is no automatic `.env` discovery. The flag is not called
 `--env-file` because Node.js itself intercepts that name anywhere in argv and
 loads the whole file into the environment before the CLI starts.
 
-**Where it lives:** `~/.config/meshy/credentials.json`, mode `0600`, on every
-platform (`MESHY_CONFIG_DIR` or `MESHY_CREDENTIALS_PATH` move it). Writes go
-through a cross-process lock and a temp-file rename, because several agents
-driving this CLI at once is the normal case. The global and China API hosts
-(`api.meshy.ai`, `api.meshy.cn`) share this file, since one account works on
-both. A non-production `--base-url-v1` reads and writes `credentials.dev.json`
-instead, so staging cannot clobber a production login. Stored profiles are only ever sent to the v1/v2 origins they
-were resolved for (and to a Creative Lab base on the same origin).
+**Where it lives:** `~/.config/meshy/credentials.v2.json`, mode `0600`, on every
+platform (`MESHY_CONFIG_DIR` or `MESHY_CREDENTIALS_PATH` move it). The API key or
+tokens in it are encrypted (AES-256-GCM); the key that opens them is kept by the
+OS: the login Keychain on macOS, DPAPI on Windows, the Secret Service (GNOME
+Keyring, KWallet) on Linux desktops. Where none of those is usable — CI,
+containers, an SSH session, a locked keychain, or `MESHY_KEYRING=file` — the key
+is a `0600` `master.key` file next to the credentials instead. Writes go through
+a cross-process lock and a temp-file rename, because several agents driving this
+CLI at once is the normal case. The global and China API hosts (`api.meshy.ai`,
+`api.meshy.cn`) share this file, since one account works on both. A
+non-production `--base-url-v1` reads and writes `credentials.v2.dev.json`
+instead, so staging cannot clobber a production login. Stored profiles are only
+ever sent to the v1/v2 origins they were resolved for (and to a Creative Lab base
+on the same origin).
 
-**OAuth token refresh:** when the stored OAuth access token is within 60 seconds
+Releases before 0.8 kept a plaintext `credentials.json`. 0.8 reads it until its
+first write, which moves the profiles into the encrypted file and deletes it. An
+older CLI on the same machine then finds no login and signs in once on its own;
+the two logins do not interfere afterwards.
+
+**OAuth token refresh:** when the stored OAuth access token is within 30 minutes
 of expiry (or already expired), the CLI silently refreshes it using the stored
-refresh token before running the command. A refresh failure with an unexpired
-token is swallowed (the existing token is used); a failure with an expired token
-exits `3` with a hint to run `meshy auth login`.
+refresh token before running the command, so a command never starts with a
+token about to run out. A refresh failure with an unexpired token is swallowed
+(the existing token is used); a failure with an expired token exits `3` with a
+hint to run `meshy auth login`. Where the credentials directory cannot be
+written — a sandboxed agent shell — the CLI does not refresh at all: the API
+replaces the refresh token on every use, so a refresh it could not save would
+spend the stored login. It uses a still-valid token as it is, and for an expired
+one exits `3` saying where to refresh it; the stored login stays intact.
+`auth login` checks the same thing before it opens the browser.
+
+The refresh runs under the credentials lock, so commands started together
+refresh once and the rest pick up the new token. Once a refresh request is
+sent it is always saved, even if a second Ctrl-C or a terminate signal arrives
+meanwhile; the exit follows the save. The API ends the previous access token as
+soon as it issues a new one, so a command whose token another process replaced
+gets a 401: it then retries once with the token now stored for the same login
+(the same profile, or for `DSH_MESHY_CREDENTIAL` the login named by
+`DSH_MESHY_SUBJECT`), and never with another account's.
+
+**Who is signed in:** `auth status` and `auth list` show the `account` (name and
+email) of a browser login. It is reported by the site at sign-in, so a login
+made before 0.8, an API key, and the China site (which does not report it yet)
+show `null`. `auth status --show-token` also prints the credential itself, for a
+host app that hands it to sandboxed tools.
+
+**Host apps (DeepSeek Harness):** a shell the host runs in a sandbox cannot
+write the credentials directory, and the host may only add `DSH_*` variables to
+it. The Meshy plugin therefore keeps the login on the host side and gives every
+shell call `DSH_MESHY_CREDENTIAL` (the current access token or API key, used as
+is and never refreshed or stored), `DSH_MESHY_REGION` (its site),
+`DSH_MESHY_SUBJECT` (the account the operation journal binds to) and
+`DSH_MESHY_STATE_DIR` (a writable directory for the operation journal).
 
 **Profiles:** `auth login --profile work`, `auth list`, `auth use work`,
 `auth logout [--all]`.
@@ -484,6 +524,8 @@ URI is accepted when its bytes are a GLB.
 | `MESHY_OAUTH_AUTHORIZE_URL` | `https://www.meshy.ai/oauth/authorize` (`https://meshy.cn/oauth/authorize` for `cn`) — override for staging/testing |
 | `MESHY_CLI_NO_BROWSER` | unset — set to `1` to suppress browser open (URL still printed to stderr) |
 | `MESHY_CONFIG_DIR` | `~/.config/meshy` (credentials, operation journal, update cache) |
+| `MESHY_KEYRING` | unset — the OS key store; `file` keeps the credentials key in a `0600` file instead |
+| `DSH_MESHY_CREDENTIAL`, `DSH_MESHY_REGION`, `DSH_MESHY_SUBJECT`, `DSH_MESHY_STATE_DIR` | set by the DeepSeek Harness plugin for its sandboxed shell calls (see Credentials) |
 | `MESHY_CONNECT_TIMEOUT_MS` | `10000` (read for compatibility; fetch has no separate connect timeout) |
 | `MESHY_READ_TIMEOUT_MS` | `120000` — covers headers *and* body |
 | `MESHY_POLL_INTERVAL_MS` | `3000` |

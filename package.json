@@ -1,6 +1,6 @@
 {
   "name": "meshy-cli",
-  "version": "0.7.3",
+  "version": "0.8.1",
   "description": "Official command-line interface for the Meshy AI API — text-to-3D, image-to-3D, text-to-motion, remesh, UV unwrap, rigging, animate, retexture, 2D images, printability, auto split, multi-color print, Creative Lab, balance and usage — plus selective downloads, project folders, face checks, OBJ print preparation and slicer launch.",
   "license": "MIT",
   "type": "module",
@@ -48,7 +48,7 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "pretest": "tsc",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --env-file=tests/test.env --test tests/**/*.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "prepare": "test -f dist/index.js || npm run build",
     "prepublishOnly": "npm run clean && npm run build"

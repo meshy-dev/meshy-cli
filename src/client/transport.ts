@@ -85,6 +85,11 @@ export interface TransportConfig {
   baseUrl: string;
   apiKey?: string;
   credentialKind?: "oauth" | "api_key";
+  /**
+   * Asked once after a 401: the credential to retry with, or null. Another
+   * process may have refreshed the login while this one held the old token.
+   */
+  renewCredential?: (rejected: string) => string | null;
   readTimeoutMs: number;
   fetchImpl?: typeof fetch;
   userAgent?: string;
@@ -166,10 +171,26 @@ export function createTransport(cfg: TransportConfig): Transport {
   const authenticated = Boolean(cfg.apiKey);
   const userAgent = cfg.userAgent ?? USER_AGENT;
   const maxBody = cfg.defaultMaxBodyBytes ?? DEFAULT_MAX_JSON_BODY_BYTES;
+  let apiKey = cfg.apiKey;
+
+  /**
+   * On a 401, switch to the credential renewCredential offers and report
+   * whether the request should be sent again. A 401 is answered before the
+   * request is acted on, so sending it again cannot repeat a side effect.
+   */
+  function renewAfter(resp: Response, path: string): boolean {
+    if (resp.status !== 401 || !apiKey || !cfg.renewCredential) return false;
+    const next = cfg.renewCredential(apiKey);
+    if (!next || next === apiKey) return false;
+    logger.debug(`401 on ${path}: another process refreshed the login; retrying with the stored token`);
+    apiKey = next;
+    resp.body?.cancel().catch(() => undefined);
+    return true;
+  }
 
   function headersFor(extra?: ConstructorParameters<typeof Headers>[0]): Headers {
     const headers = new Headers(extra);
-    if (cfg.apiKey) headers.set("Authorization", `Bearer ${cfg.apiKey}`);
+    if (apiKey) headers.set("Authorization", `Bearer ${apiKey}`);
     else headers.delete("Authorization");
     headers.delete("Cookie");
     headers.set("User-Agent", userAgent);
@@ -262,15 +283,19 @@ export function createTransport(cfg: TransportConfig): Transport {
           url.searchParams.set(k, String(v));
         }
       }
-      const headers = headersFor(opts.headers);
-      const init: RequestInit = { method };
-      if (opts.body !== undefined) {
-        headers.set("Content-Type", "application/json");
-        init.body = JSON.stringify(opts.body);
-      }
-      init.headers = headers;
+      const body = opts.body === undefined ? undefined : JSON.stringify(opts.body);
+      const send = () => {
+        const headers = headersFor(opts.headers);
+        if (body !== undefined) headers.set("Content-Type", "application/json");
+        return doFetch(url, { method, headers, ...(body === undefined ? {} : { body }) }, timeoutMs, opts.signal, path);
+      };
       const timeoutMs = opts.timeoutMs ?? cfg.readTimeoutMs;
-      const { resp, release, timeoutSignal } = await doFetch(url, init, timeoutMs, opts.signal, path);
+      let sent = await send();
+      if (renewAfter(sent.resp, path)) {
+        sent.release();
+        sent = await send();
+      }
+      const { resp, release, timeoutSignal } = sent;
       try {
         refuseRedirect(resp, path);
         if (!resp.ok) {
@@ -300,9 +325,15 @@ export function createTransport(cfg: TransportConfig): Transport {
 
     async fetchRaw(path, init = {}) {
       const url = resolveApiUrl(baseUrl, path);
-      const headers = headersFor(init.headers);
       const timeoutMs = init.timeoutMs ?? cfg.readTimeoutMs;
-      const { resp, release } = await doFetch(url, { ...init, headers }, timeoutMs, init.signal ?? undefined, path);
+      const send = () => doFetch(url, { ...init, headers: headersFor(init.headers) }, timeoutMs, init.signal ?? undefined, path);
+      let sent = await send();
+      // Only a body that can be read twice is sent twice.
+      if ((init.body == null || typeof init.body === "string") && renewAfter(sent.resp, path)) {
+        sent.release();
+        sent = await send();
+      }
+      const { resp, release } = sent;
       try {
         refuseRedirect(resp, path);
         if (!resp.ok) throw await mapHttpError(resp, path, cfg.credentialKind);
@@ -332,16 +363,20 @@ export function createTransport(cfg: TransportConfig): Transport {
 
     async openStream(path, opts = {}) {
       const url = resolveApiUrl(baseUrl, path);
-      const headers = headersFor({ Accept: "text/event-stream", ...(opts.headers ?? {}) });
       const controller = new AbortController();
       const signal = combineSignals(controller.signal, opts.signal)!;
       const connectTimeoutMs = opts.connectTimeoutMs ?? cfg.readTimeoutMs;
       const connectTimer = setTimeout(() => controller.abort(new Error(`stream connect timed out after ${connectTimeoutMs}ms`)), connectTimeoutMs);
       const fetchImpl = cfg.fetchImpl ?? globalThis.fetch;
+      const open = () => {
+        logger.debug(`HTTP GET (stream) ${url.href}`);
+        const headers = headersFor({ Accept: "text/event-stream", ...(opts.headers ?? {}) });
+        return fetchImpl(url, { method: "GET", headers, signal, redirect: "manual" });
+      };
       let resp: Response;
       try {
-        logger.debug(`HTTP GET (stream) ${url.href}`);
-        resp = await fetchImpl(url, { method: "GET", headers, signal, redirect: "manual" });
+        resp = await open();
+        if (renewAfter(resp, path)) resp = await open();
       } catch (err) {
         clearTimeout(connectTimer);
         throw wrapFetchError(err, "request", path, opts.signal, controller.signal, connectTimeoutMs);
