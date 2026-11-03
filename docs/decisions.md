@@ -1486,3 +1486,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   before the request is acted on, so the retry cannot repeat a create. Bodies
   that cannot be read twice (none today) are not retried. Another account's
   token is never used.
+- The Windows key store (DPAPI through Windows PowerShell) waits up to 30 s
+  instead of 5 s. PowerShell took 3–5 s to start on CI runners, so a cold or
+  busy machine could fall back to the key file when sealing, or fail to open a
+  stored login. DPAPI never prompts; the Keychain and the Secret Service keep
+  5 s, since a locked keychain may.
