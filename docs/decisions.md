@@ -1532,3 +1532,38 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - The face limit is not checked locally. The CLI cannot count a remote model,
   and the API refuses a known count over the limit before the task starts.
   `meshy inspect faces --model` measures a local GLB.
+
+## D-091 image-to-3d and multi-image-to-3d pick the texture model with `--texture-model`; the texture defaults follow it (PRO-4335)
+
+- The v1 Image to 3D and Multi-Image to 3D creates take `texture_model`, the
+  texture model apart from the geometry (PRO-4249, PRO-4277). `--texture-model`
+  is a choice list: `meshy-7`, `meshy-n1`, `meshy-6-lite` on image-to-3d;
+  `meshy-7`, `meshy-n1` on multi-image-to-3d, which the API limits to the
+  multi-view texture models. `meshy-6` is not offered: the API takes it only as
+  the Meshy 6 geometry's own, and that geometry is retiring. Omitted, nothing is
+  sent and the geometry's own texture model runs, so no default changes.
+- The texture defaults follow the texture model that runs: `texture_model`
+  where the merged payload takes it from (the flag, then `--data`), else the
+  geometry's own, read from `ai_model` the same way (Meshy 7.1, latest, T2.5
+  and T2 → Meshy 7; Meshy 6 → Meshy 6; Meshy 6 Lite → Meshy 6 Lite). Meshy N1
+  gets `enable_pbr: false` and `2k`, Meshy 6 Lite `enable_pbr: true` and `2k`,
+  everything else the game-ready PBR and 4k, as D-090 did for retexture. So
+  `--data '{"ai_model":"meshy-6-lite"}'`, which used to carry a 4k default
+  the API refuses, now sends 2k.
+- An ask the texture model cannot honour is refused before the POST (exit 2),
+  on the merged payload so `--data` meets the same rules: for Meshy N1 a
+  texture prompt, `enable_pbr: true`, 4k/8k, `hd_texture: true`,
+  `remove_lighting: true` and a quad remesh; for Meshy 6 Lite 4k/8k,
+  `hd_texture: true` and `remove_lighting: true`; on multi-image-to-3d a
+  `texture_model` of `meshy-6` or `meshy-6-lite` sent through `--data`. These
+  mirror the API's 400s (meshyd `api_image_to_3d_texture_model.go`).
+  `remove_lighting: false` asks for nothing the model cannot do and is sent.
+- Two refusals are the CLI's own, stricter than the API: `hd_texture: true`
+  beside an explicit `"2k"` (the API runs it at 2k; as D-090), and a
+  `texture_model` on an untextured run (the API ignores it; the CLI refuses it
+  with the other texture settings, so a texture model asked for never
+  vanishes).
+- `create --help` ends with the "choose models by project" guide shared by
+  every Meshy integration (geometry + texture model per project, with the
+  Models page link) and a short note on how that command reaches each row.
+  `--ai-model` is unchanged: Meshy 6 Lite as a geometry stays on `--data`.

@@ -156,6 +156,15 @@ meshy-cli text-to-3d create --mode refine  --preview-task-id <id> --texture-reso
 meshy-cli image-to-3d create --image-url https://example.com/cat.png --geometry-resolution 2k
 meshy-cli image-to-3d create --image-url cat.png --should-texture false
 
+# the texture model, apart from the geometry (create --help has the choose-by-project
+# guide): meshy-7 (the default on Meshy 7.1 and smart topology; PBR, up to 8k),
+# meshy-n1 (a 2k base color from the input images; no prompt, no PBR) or, on
+# image-to-3d only, meshy-6-lite (2k). The texture defaults follow it: the CLI sends
+# 2k for meshy-n1 and meshy-6-lite and PBR off for meshy-n1, and refuses what the
+# texture model cannot do (a prompt, PBR, 4k/8k or --remove-lighting true on meshy-n1).
+meshy-cli image-to-3d create --image-url hero.png --model-type smart-topology --target-polycount 20000 --texture-model meshy-n1
+meshy-cli multi-image-to-3d create --image-urls front.png,side.png --texture-model meshy-n1
+
 # text → standalone motion clip (Prime/FBX by default; Swift produces BVH)
 meshy-cli text-to-motion create --prompt "a character waving" --duration 3
 
