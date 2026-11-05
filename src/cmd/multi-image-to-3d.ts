@@ -6,13 +6,30 @@
  * credits; the same geometry setting as the web app's Ultra 2K) and needs
  * meshy-7.1 / latest. "4k" is single-image only — the API refuses it here.
  * ai_model stays reachable through --data.
+ *
+ * --texture-model picks the texture model apart from the geometry: meshy-7 or
+ * meshy-n1, the multi-view ones (the API refuses meshy-6 and meshy-6-lite
+ * here). The texture defaults follow it (texturing.ts).
  */
 
 import { Option } from "commander";
 import { parseBool, parseCsv } from "../internal/flags.js";
 import { UsageError } from "../internal/errors.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
-import { refuseTextureSettingsWithoutTexture, texturingDefaults } from "../internal/texturing.js";
+import {
+  MULTI_IMAGE_TO_3D_TEXTURE_MODELS,
+  modelGuideHelp,
+  refuseTextureModelConflicts,
+  refuseTextureSettingsWithoutTexture,
+  texturingDefaults,
+} from "../internal/texturing.js";
+
+/** How this command reaches its rows of the model guide. */
+const HOW_HERE = [
+  "In this command: the geometry is meshy-7.1 (the default) and --texture-model",
+  "takes meshy-7 or meshy-n1; none is --should-texture false. Smart topology",
+  "(meshy-t2.5, meshy-t2) and --texture-model meshy-6-lite are image-to-3d only.",
+];
 
 const spec: ResourceCommandSpec = {
   name: "multi-image-to-3d",
@@ -46,12 +63,20 @@ const spec: ResourceCommandSpec = {
           "generate textures (default: true; false gives an untextured draft mesh — texture it later with retexture)",
           parseBool,
         )
+        .addOption(
+          new Option(
+            "--texture-model <model>",
+            "texture model, apart from the geometry (default: the geometry's own, meshy-7 on meshy-7.1): " +
+              "meshy-7 (PBR maps, up to 8k) | meshy-n1 (Meshy N1: a 2k base color from the views, or --texture-image-urls when given; no --texture-prompt, no PBR maps). " +
+              "The texture defaults follow it: 2k and PBR off on meshy-n1",
+          ).choices([...MULTI_IMAGE_TO_3D_TEXTURE_MODELS]),
+        )
         .option(
           "--enable-pbr <bool>",
-          "generate normal/metallic/roughness maps, plus an emission map on meshy-6 below 8k (default: true, so game-engine imports carry the full map set)",
+          "generate normal/metallic/roughness maps, plus an emission map on meshy-6 below 8k (default: true, so game-engine imports carry the full map set; false on meshy-n1, which makes a base color texture only)",
           parseBool,
         )
-        .option("--texture-prompt <text>", "text guidance for texturing (max 800 chars)")
+        .option("--texture-prompt <text>", "text guidance for texturing (max 800 chars); not with --texture-model meshy-n1")
         .option(
           "--texture-image-urls <csv>",
           "1-4 views of the same object to guide texturing, front first; URLs or local files; independent of --image-urls. Exclusive with --texture-prompt",
@@ -60,15 +85,16 @@ const spec: ResourceCommandSpec = {
         .addOption(
           new Option(
             "--texture-resolution <res>",
-            "base color texture size (default: 4k)",
+            "base color texture size (default: 4k; 2k on --texture-model meshy-n1, its only size)",
           ).choices(["2k", "4k", "8k"]),
         )
         .option(
           "--remove-lighting <bool>",
-          "strip baked lighting from the base color (default: true)",
+          "strip baked lighting from the base color (default: true); --texture-model meshy-n1 refuses true",
           parseBool,
         )
-        .option("--target-formats <csv>", "glb,obj,fbx,stl,usdz,3mf (default: glb)", parseCsv);
+        .option("--target-formats <csv>", "glb,obj,fbx,stl,usdz,3mf (default: glb)", parseCsv)
+        .addHelpText("after", modelGuideHelp(HOW_HERE));
     },
     toPayload(opts) {
       const urls = opts.imageUrls as string[] | undefined;
@@ -88,6 +114,7 @@ const spec: ResourceCommandSpec = {
         input_task_id: opts.inputTaskId,
         geometry_resolution: opts.geometryResolution,
         should_texture: opts.shouldTexture,
+        texture_model: opts.textureModel,
         enable_pbr: opts.enablePbr,
         texture_prompt: opts.texturePrompt,
         texture_resolution: opts.textureResolution,
@@ -96,13 +123,15 @@ const spec: ResourceCommandSpec = {
       };
     },
     toDefaults(opts, data) {
-      // Textured like the API, as image-to-3d (see texturing.ts). No model
-      // choice and no geometry default: the server's standard pass applies,
-      // and Ultra (2k) rides only when asked for — it bills extra.
+      // Textured like the API, as image-to-3d; the texture settings follow the
+      // texture model that runs (see texturing.ts). No geometry model choice
+      // and no geometry default: the server's standard pass applies, and
+      // Ultra (2k) rides only when asked for — it bills extra.
       return { ...texturingDefaults(opts, data), target_formats: ["glb"] };
     },
-    validatePayload(payload) {
-      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt", "texture_image_urls"]);
+    validatePayload(payload, opts) {
+      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt", "texture_image_urls"], opts);
+      refuseTextureModelConflicts(payload, opts, "multi-image-to-3d");
     },
   },
   endpointOf: (c) => c.multiImageTo3d,

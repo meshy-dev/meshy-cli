@@ -172,6 +172,15 @@ These are API rules, not preferences — ignoring them produces failed tasks:
 - `image-to-3d` and `multi-image-to-3d` texture by default, like the API (one
   task, full PBR maps, 4k base color). `--should-texture false` is an untextured
   draft to confirm first; texture it later with `retexture`.
+- **`--texture-model`** picks the texture model apart from the geometry:
+  `meshy-7` (the default on Meshy 7.1 and smart topology; PBR, up to 8K),
+  `meshy-n1` (a 2K base color from the input images; no texture prompt, no PBR)
+  or, on `image-to-3d` only, `meshy-6-lite` (2K). The CLI's texture defaults
+  follow it (2K for `meshy-n1` / `meshy-6-lite`, PBR off for `meshy-n1`) and it
+  refuses what the texture model cannot do. `create --help` lists which geometry
+  and texture model suit which project (game character: `--model-type
+  smart-topology` + `--texture-model meshy-n1`); detail at
+  https://docs.meshy.ai/en/api/models.
 - **The default model is `latest` = Meshy 7.1** on all three generators.
   `--geometry-resolution 2k|4k` runs the Ultra geometry pass (+5 credits;
   text-to-3d: preview only; multi-image: `2k` only; not with smart-topology).

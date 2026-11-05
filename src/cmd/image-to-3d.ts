@@ -11,6 +11,9 @@
  * The Ultra geometry pass (--geometry-resolution 2k|4k) rides on standard
  * only: it needs meshy-7.1, so pairing it with smart-topology is rejected here
  * rather than on the wire.
+ *
+ * --texture-model picks the texture model apart from the geometry (meshy-7,
+ * meshy-n1, meshy-6-lite); the texture defaults follow it (texturing.ts).
  */
 
 import { Option } from "commander";
@@ -18,13 +21,29 @@ import { parseBool, parseCsv, parseInt10 } from "../internal/flags.js";
 import { UsageError } from "../internal/errors.js";
 import { buildResourceCommand, type ResourceCommandSpec } from "../internal/task-command.js";
 import { prepareSmartTopologyPayload, SMART_TOPOLOGY_MODELS } from "../internal/smart-topology.js";
-import { refuseTextureSettingsWithoutTexture, texturingDefaults } from "../internal/texturing.js";
+import {
+  IMAGE_TO_3D_TEXTURE_MODELS,
+  modelGuideHelp,
+  refuseTextureModelConflicts,
+  refuseTextureSettingsWithoutTexture,
+  texturingDefaults,
+} from "../internal/texturing.js";
+
+/** How this command reaches each row of the model guide. */
+const HOW_HERE = [
+  "In this command: meshy-7.1 is the default geometry; meshy-t2.5 is",
+  "--model-type smart-topology (add --ai-model meshy-t2 for meshy-t2, and",
+  "--target-polycount); meshy-6-lite is --data '{\"ai_model\":\"meshy-6-lite\"}'.",
+  "The texture is --texture-model; none is --should-texture false. Photos of one",
+  "object from 2 to 4 sides: multi-image-to-3d.",
+];
 
 const spec: ResourceCommandSpec = {
   name: "image-to-3d",
   description:
     "Generate a 3D model from a single reference image (clean backgrounds and clear edges " +
-    "give the best results). Textured by default, as the API (full PBR map set, 4k base color); " +
+    "give the best results). Textured by default, as the API (full PBR map set, 4k base color; " +
+    "--texture-model picks the texture model); " +
     "--should-texture false gives an untextured draft mesh to confirm before `retexture`. " +
     "Topology/polycount are not tunable in standard mode — chain `remesh` afterwards; " +
     "smart-topology mode has a native polycount and costs less",
@@ -65,16 +84,24 @@ const spec: ResourceCommandSpec = {
           "generate textures (default: true; false gives an untextured draft mesh — texture it later with retexture)",
           parseBool,
         )
+        .addOption(
+          new Option(
+            "--texture-model <model>",
+            "texture model, apart from the geometry (default: the geometry's own, meshy-7 on meshy-7.1 and smart-topology): " +
+              "meshy-7 (PBR maps, up to 8k) | meshy-n1 (Meshy N1: a 2k base color from the input image; no --texture-prompt, no PBR maps) | " +
+              "meshy-6-lite (2k, PBR maps). The texture defaults follow it: 2k on meshy-n1 and meshy-6-lite, PBR off on meshy-n1",
+          ).choices([...IMAGE_TO_3D_TEXTURE_MODELS]),
+        )
         .option(
           "--enable-pbr <bool>",
-          "generate normal/metallic/roughness maps, plus an emission map on meshy-6 below 8k (default: true, so game-engine imports carry the full map set)",
+          "generate normal/metallic/roughness maps, plus an emission map on meshy-6 below 8k (default: true, so game-engine imports carry the full map set; false on meshy-n1, which makes a base color texture only)",
           parseBool,
         )
-        .option("--texture-prompt <text>", "text guidance for texturing (max 800 chars)")
+        .option("--texture-prompt <text>", "text guidance for texturing (max 800 chars); not with --texture-model meshy-n1")
         .addOption(
           new Option(
             "--texture-resolution <res>",
-            "base color texture size (default: 4k)",
+            "base color texture size (default: 4k; 2k on --texture-model meshy-n1 and meshy-6-lite, their only size)",
           ).choices(["2k", "4k", "8k"]),
         )
         .addOption(
@@ -90,10 +117,11 @@ const spec: ResourceCommandSpec = {
         )
         .option(
           "--remove-lighting <bool>",
-          "strip baked lighting from the base color; the API applies it on meshy-6 only (--data '{\"ai_model\":\"meshy-6\"}') — the default Meshy 7.1 does not use it and smart-topology refuses it",
+          "strip baked lighting from the base color; the API applies it on meshy-6 only (--data '{\"ai_model\":\"meshy-6\"}') — the default Meshy 7.1 does not use it and smart-topology refuses it; --texture-model meshy-n1 and meshy-6-lite refuse true",
           parseBool,
         )
-        .option("--target-formats <csv>", "glb,obj,fbx,stl,usdz,3mf (default: glb)", parseCsv);
+        .option("--target-formats <csv>", "glb,obj,fbx,stl,usdz,3mf (default: glb)", parseCsv)
+        .addHelpText("after", modelGuideHelp(HOW_HERE));
     },
     toPayload(opts) {
       if (!opts.imageUrl && !opts.inputTaskId && !opts.data) {
@@ -116,6 +144,7 @@ const spec: ResourceCommandSpec = {
         target_polycount: opts.targetPolycount,
         geometry_resolution: opts.geometryResolution,
         should_texture: opts.shouldTexture,
+        texture_model: opts.textureModel,
         enable_pbr: opts.enablePbr,
         texture_prompt: opts.texturePrompt,
         texture_resolution: opts.textureResolution,
@@ -126,16 +155,17 @@ const spec: ResourceCommandSpec = {
       };
     },
     toDefaults(opts, data) {
-      // Textured like the API, with the game-ready texture settings (see
-      // texturing.ts). The standard follows the server's meshy-7.1 default;
-      // Smart Topology's model and polycount defaults are applied after
-      // payload merging. The Ultra pass stays off unless asked for: it bills
-      // extra. GLB-only output — omitting target_formats makes the API
-      // produce every format.
+      // Textured like the API, with the game-ready texture settings, which
+      // follow the texture model that runs (see texturing.ts). The standard
+      // follows the server's meshy-7.1 default; Smart Topology's model and
+      // polycount defaults are applied after payload merging. The Ultra pass
+      // stays off unless asked for: it bills extra. GLB-only output —
+      // omitting target_formats makes the API produce every format.
       return { ...texturingDefaults(opts, data), target_formats: ["glb"] };
     },
-    validatePayload(payload) {
-      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt"]);
+    validatePayload(payload, opts) {
+      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt"], opts);
+      refuseTextureModelConflicts(payload, opts, "image-to-3d");
       prepareSmartTopologyPayload(payload);
       // Smart topology has neither knob; v1 answers 400 for either (it does not ignore them).
       if (payload.model_type === "smart-topology") {
