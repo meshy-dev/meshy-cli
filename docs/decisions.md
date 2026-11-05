@@ -1545,19 +1545,25 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - The texture defaults follow the texture model that runs: `texture_model`
   where the merged payload takes it from (the flag, then `--data`), else the
   geometry's own, read from `ai_model` the same way (Meshy 7.1, latest, T2.5
-  and T2 → Meshy 7; Meshy 6 → Meshy 6; Meshy 6 Lite → Meshy 6 Lite). Meshy N1
+  and T2 → Meshy 7; Meshy 6 → Meshy 6; Meshy 6 Lite and the retired Meshy 5 →
+  Meshy 6 Lite). Meshy N1
   gets `enable_pbr: false` and `2k`, Meshy 6 Lite `enable_pbr: true` and `2k`,
   everything else the game-ready PBR and 4k, as D-090 did for retexture. So
   `--data '{"ai_model":"meshy-6-lite"}'`, which used to carry a 4k default
   the API refuses, now sends 2k.
-- An ask the texture model cannot honour is refused before the POST (exit 2),
-  on the merged payload so `--data` meets the same rules: for Meshy N1 a
-  texture prompt, `enable_pbr: true`, 4k/8k, `hd_texture: true`,
-  `remove_lighting: true` and a quad remesh; for Meshy 6 Lite 4k/8k,
-  `hd_texture: true` and `remove_lighting: true`; on multi-image-to-3d a
-  `texture_model` of `meshy-6` or `meshy-6-lite` sent through `--data`. These
-  mirror the API's 400s (meshyd `api_image_to_3d_texture_model.go`).
-  `remove_lighting: false` asks for nothing the model cannot do and is sent.
+- An ask the texture model that runs cannot honour is refused before the POST
+  (exit 2), on the merged payload so `--data` meets the same rules: for Meshy
+  N1 a texture prompt, `enable_pbr: true`, 4k/8k, `hd_texture: true`,
+  `remove_lighting: true` and a quad remesh; for Meshy 6 Lite (picked, or the
+  meshy-6-lite geometry's own) 4k/8k, `hd_texture: true` and
+  `remove_lighting: true`; on multi-image-to-3d a `texture_model` of `meshy-6`
+  or `meshy-6-lite` sent through `--data`. These mirror the API's 400s (meshyd
+  `api_image_to_3d_texture_model.go`, `native_texture_rules.go`).
+  `remove_lighting: false` asks for nothing the model cannot do and is sent. A
+  quad remesh means one that runs: `should_remesh` as sent, else the API's
+  default for the model (off on latest, Meshy 6, 7, 7.1, T2 and T2.5; on for
+  Meshy 6 Lite), so `topology: "quad"` with no remesh is sent, as the API
+  takes it.
 - Two refusals are the CLI's own, stricter than the API: `hd_texture: true`
   beside an explicit `"2k"` (the API runs it at 2k; as D-090), and a
   `texture_model` on an untextured run (the API ignores it; the CLI refuses it

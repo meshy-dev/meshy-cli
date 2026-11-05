@@ -21,11 +21,14 @@
  *   F3  meshy-7, or no --texture-model, loses PBR or 4k; or texture_model is
  *       sent when it was not asked for (the server default must stay).
  *   F4  A texture model set through --data keeps the Meshy 7 defaults.
- *   F5  --data ai_model meshy-6-lite with no texture model gets the 4k
- *       default: its own texture model, Meshy 6 Lite, makes 2k only.
+ *   F5  --data ai_model meshy-6-lite (or the retired meshy-5) with no texture
+ *       model gets the 4k default: its own texture model, Meshy 6 Lite, makes
+ *       2k only; or an ask for more than 2k on it is sent, or quietly run at
+ *       2k (hd_texture).
  *   F6  The flag stops beating --data, or the defaults follow the loser.
  *   F7  An ask meshy-n1 cannot do, by flag or by --data, is sent (a 400) or is
- *       quietly rewritten.
+ *       quietly rewritten; or a quad topology with no remesh running (the
+ *       API's default on Meshy 7.1) is refused, though the API takes it.
  *   F8  An ask meshy-6-lite cannot do is sent; or one it can do (PBR, a
  *       prompt, remove_lighting false) is refused.
  *   F9  --texture-model accepts a value the endpoint refuses (meshy-6, a
@@ -52,11 +55,14 @@ async function withApi(fn: (api: MockApi) => Promise<void>): Promise<void> {
   }
 }
 
-// 1x1 PNGs as local files: the create path inlines them.
+// 1x1 PNGs as local files (white front, black side, so their data URIs
+// differ and the order is visible): the create path inlines them.
 const cwd = tmpDir("meshy-texture-model-");
-for (const name of ["front.png", "side.png"]) {
-  writeFileSync(join(cwd, name), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC", "base64"));
-}
+const PNGS: Record<string, string> = {
+  "front.png": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC",
+  "side.png": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC",
+};
+for (const [name, b64] of Object.entries(PNGS)) writeFileSync(join(cwd, name), Buffer.from(b64, "base64"));
 
 type Endpoint = "image-to-3d" | "multi-image-to-3d";
 const BASE: Record<Endpoint, string[]> = {
@@ -140,10 +146,16 @@ for (const endpoint of ENDPOINTS) {
       assert.ok(!("texture_model" in lite));
       assert.equal(lite["texture_resolution"], "2k");
       assert.equal(lite["enable_pbr"], true);
+      assert.equal((await sent(api, endpoint, "--data", '{"ai_model":"meshy-5"}'))["texture_resolution"], "2k", "meshy-5 textures with Meshy 6 Lite");
       // Meshy 6's own texture model is HD-capable; a picked meshy-7 runs instead of Lite.
       assert.equal((await sent(api, endpoint, "--data", '{"ai_model":"meshy-6"}'))["texture_resolution"], "4k");
       const meshy7 = await sent(api, endpoint, "--data", '{"ai_model":"meshy-6-lite"}', "--texture-model", "meshy-7");
       assert.deepEqual(textureOf(meshy7), { texture_model: "meshy-7", enable_pbr: true, texture_resolution: "4k" });
+      // More than 2k on the Lite geometry's own texture model is refused, not sent or run at 2k.
+      for (const extra of [["--texture-resolution", "4k"], ["--data", '{"ai_model":"meshy-6-lite","hd_texture":true}']]) {
+        const args = extra[0] === "--data" ? extra : ["--data", '{"ai_model":"meshy-6-lite"}', ...extra];
+        await assertRefused(api, endpoint, args, /ai_model meshy-6-lite, which textures with meshy-6-lite, cannot be used with/);
+      }
     });
   });
 
@@ -175,6 +187,8 @@ for (const endpoint of ENDPOINTS) {
         [["--data", '{"hd_texture":true}'], /hd_texture true/],
         [["--remove-lighting", "true"], /--remove-lighting true/],
         [["--data", '{"should_remesh":true,"topology":"quad"}'], /topology quad/],
+        // meshy-6-lite remeshes by default, so its quad topology runs.
+        [["--data", '{"ai_model":"meshy-6-lite","topology":"quad"}'], /topology quad/],
       ];
       for (const [extra, message] of cases) {
         await assertRefused(api, endpoint, ["--texture-model", "meshy-n1", ...extra], message);
@@ -182,6 +196,16 @@ for (const endpoint of ENDPOINTS) {
       }
       // meshy-n1 picked through --data meets the same rules.
       await assertRefused(api, endpoint, ["--data", '{"texture_model":"meshy-n1"}', "--enable-pbr", "true"], /--texture-model meshy-n1 cannot be used with --enable-pbr true/);
+    });
+  });
+
+  test(`${endpoint}: meshy-n1 takes a quad topology when no remesh runs, as the API does (F7)`, async () => {
+    await withApi(async (api) => {
+      // Meshy 7.1 (the default) does not remesh unless asked: the topology is unused.
+      for (const data of ['{"topology":"quad"}', '{"topology":"quad","should_remesh":false}']) {
+        const body = await sent(api, endpoint, "--texture-model", "meshy-n1", "--data", data);
+        assert.equal(body["topology"], "quad", data);
+      }
     });
   });
 
@@ -228,8 +252,8 @@ test("image-to-3d: meshy-6-lite refuses 4k/8k, hd_texture and remove_lighting tr
     assert.equal(body["enable_pbr"], true);
     assert.equal(body["texture_prompt"], "rusty iron");
     assert.equal(body["remove_lighting"], false);
-    // A --data ai_model meshy-6-lite (its own texture model) meets the same 2k rule.
-    await assertRefused(api, "image-to-3d", ["--data", '{"ai_model":"meshy-6-lite","texture_model":"meshy-6-lite"}', "--texture-resolution", "4k"], /--texture-resolution 4k/);
+    // Picked on its own geometry (a no-op for the API), it meets the same 2k rule.
+    await assertRefused(api, "image-to-3d", ["--data", '{"ai_model":"meshy-6-lite","texture_model":"meshy-6-lite"}', "--texture-resolution", "4k"], /--texture-model meshy-6-lite cannot be used with --texture-resolution 4k/);
   });
 });
 
@@ -250,9 +274,11 @@ test("image-to-3d: meshy-n1 on smart topology is sent, with the T2.5 pin and the
 test("multi-image-to-3d: meshy-n1 takes --texture-image-urls as its views, in the order given (F11)", async () => {
   await withApi(async (api) => {
     const body = await sent(api, "multi-image-to-3d", "--texture-model", "meshy-n1", "--texture-image-urls", "side.png,front.png");
-    const views = body["texture_image_urls"] as string[];
-    assert.equal(views.length, 2);
-    for (const v of views) assert.match(v, /^data:image\/png;base64,/);
+    assert.deepEqual(
+      body["texture_image_urls"],
+      [`data:image/png;base64,${PNGS["side.png"]}`, `data:image/png;base64,${PNGS["front.png"]}`],
+      "the views ride in the order given, side first",
+    );
     assert.deepEqual(textureOf(body), { texture_model: "meshy-n1", enable_pbr: false, texture_resolution: "2k" });
   });
 });

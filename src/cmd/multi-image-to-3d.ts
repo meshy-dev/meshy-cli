@@ -28,7 +28,7 @@ import {
 const HOW_HERE = [
   "In this command: the geometry is meshy-7.1 (the default) and --texture-model",
   "takes meshy-7 or meshy-n1; none is --should-texture false. Smart topology",
-  "(meshy-t2.5, meshy-t2) and meshy-6-lite are image-to-3d only (one image).",
+  "(meshy-t2.5, meshy-t2) and --texture-model meshy-6-lite are image-to-3d only.",
 ];
 
 const spec: ResourceCommandSpec = {

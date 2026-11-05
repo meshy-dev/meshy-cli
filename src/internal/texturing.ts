@@ -34,7 +34,8 @@ const isSet = (v: unknown): boolean => v !== undefined && v !== null && v !== ""
 
 /**
  * Each geometry's own texture model, the one that runs when texture_model is
- * omitted. An omitted or unlisted ai_model is the API default's: Meshy 7.
+ * omitted (meshyd APIImageTo3DDefaultTextureModel). An omitted or unlisted
+ * ai_model is the API default's: Meshy 7.
  */
 const GEOMETRY_TEXTURE_MODEL: Readonly<Record<string, string>> = {
   latest: MESHY_7,
@@ -44,19 +45,41 @@ const GEOMETRY_TEXTURE_MODEL: Readonly<Record<string, string>> = {
   "meshy-t2": MESHY_7,
   "meshy-6": "meshy-6",
   "meshy-6-lite": MESHY_6_LITE,
+  "meshy-5": MESHY_6_LITE, // retired; textures with Meshy 6 Lite while the API still takes it
 };
 
 /**
- * The texture model the request runs: `texture_model` where the merged payload
- * takes it from (the flag, then --data), else the geometry's own, read from
- * ai_model the same way (so `--data '{"ai_model":"meshy-6-lite"}'` gets the
- * 2k Meshy 6 Lite defaults).
+ * The texture model a request runs: the picked `texture_model`, else the
+ * geometry's own. `explicit` says which, for the refusal's wording.
+ */
+function textureModelFor(picked: unknown, geometry: unknown): { model: unknown; explicit: boolean } {
+  if (isSet(picked)) return { model: picked, explicit: true };
+  const own = typeof geometry === "string" && Object.hasOwn(GEOMETRY_TEXTURE_MODEL, geometry) ? GEOMETRY_TEXTURE_MODEL[geometry] : MESHY_7;
+  return { model: own, explicit: false };
+}
+
+/**
+ * The texture model the request runs, with texture_model and ai_model each
+ * read where the merged payload takes it from (the flag, then --data), so
+ * `--data '{"ai_model":"meshy-6-lite"}'` gets the 2k Meshy 6 Lite defaults.
  */
 function runningTextureModel(opts: Record<string, unknown>, data: Record<string, unknown>): unknown {
-  const picked = opts.textureModel ?? data["texture_model"];
-  if (isSet(picked)) return picked;
-  const geometry = opts.aiModel ?? data["ai_model"];
-  return typeof geometry === "string" && Object.hasOwn(GEOMETRY_TEXTURE_MODEL, geometry) ? GEOMETRY_TEXTURE_MODEL[geometry] : MESHY_7;
+  return textureModelFor(opts.textureModel ?? data["texture_model"], opts.aiModel ?? data["ai_model"]).model;
+}
+
+/**
+ * ai_model values whose should_remesh defaults to false on the API (meshyd
+ * ResolveShouldRemeshDefault); an omitted ai_model is latest. Every other
+ * model (meshy-6-lite, meshy-5) remeshes by default.
+ */
+const REMESH_OFF_BY_DEFAULT: readonly string[] = ["latest", "meshy-6", "meshy-7", "meshy-7.1", "meshy-t1", "meshy-t2", "meshy-t2.5"];
+
+/** Whether the API runs a remesh for this payload: should_remesh as sent, else the model's default. */
+function remeshRuns(payload: Record<string, unknown>): boolean {
+  const asked = payload["should_remesh"];
+  if (typeof asked === "boolean") return asked;
+  const model = typeof payload["ai_model"] === "string" ? payload["ai_model"] : "latest";
+  return !REMESH_OFF_BY_DEFAULT.includes(model);
 }
 
 /**
@@ -90,14 +113,18 @@ export function refuseTextureSettingsWithoutTexture(payload: Record<string, unkn
 
 /**
  * Refuse, on the merged payload (so `--data` meets the same rules as the
- * flags), what the picked texture model cannot do — the API's 400s, checked
- * before the POST. Nothing is rewritten to what the model can make. The
- * defaults never trip this: they follow the texture model.
+ * flags), what the texture model that runs cannot do — the API's 400s,
+ * checked before the POST. That is the picked texture_model, else the
+ * geometry's own (Meshy 6 Lite on ai_model meshy-6-lite). Nothing is
+ * rewritten to what the model can make. The defaults never trip this: they
+ * follow the same texture model.
  *
  *   - meshy-n1: a texture prompt, PBR, 4k/8k (or hd_texture), remove_lighting
- *     true, a quad remesh;
- *   - meshy-6-lite: 4k/8k (or hd_texture), remove_lighting true; and on
- *     multi-image-to-3d it is refused outright, as is meshy-6;
+ *     true, a quad remesh (one that runs: should_remesh as sent, else the
+ *     geometry's default);
+ *   - meshy-6-lite: 4k/8k (or hd_texture), remove_lighting true; and as a
+ *     picked texture_model on multi-image-to-3d it is refused outright, as is
+ *     meshy-6;
  *   - meshy-7: nothing.
  *
  * hd_texture true beside an explicit "2k" is the CLI's own refusal (the API
@@ -105,9 +132,9 @@ export function refuseTextureSettingsWithoutTexture(payload: Record<string, unkn
  * cannot make.
  */
 export function refuseTextureModelConflicts(payload: Record<string, unknown>, endpoint: "image-to-3d" | "multi-image-to-3d"): void {
-  const model = payload["texture_model"];
-  if (model === undefined || payload["should_texture"] === false) return;
-  if (endpoint === "multi-image-to-3d" && (model === MESHY_6_LITE || model === "meshy-6")) {
+  if (payload["should_texture"] === false) return;
+  const { model, explicit } = textureModelFor(payload["texture_model"], payload["ai_model"]);
+  if (explicit && endpoint === "multi-image-to-3d" && (model === MESHY_6_LITE || model === "meshy-6")) {
     throw new UsageError(
       `multi-image-to-3d takes the multi-view texture models only: --texture-model ${MESHY_7} or ${MESHY_N1} (the API refuses ${String(model)} here)`,
     );
@@ -124,12 +151,14 @@ export function refuseTextureModelConflicts(payload: Record<string, unknown>, en
   if (resolution === "4k" || resolution === "8k") conflicts.push(`--texture-resolution ${resolution} (it makes 2k only)`);
   if (payload["hd_texture"] === true) conflicts.push("hd_texture true (that is 4k; it makes 2k only)");
   if (payload["remove_lighting"] === true) conflicts.push("--remove-lighting true (the API refuses it)");
-  if (model === MESHY_N1 && payload["topology"] === "quad" && payload["should_remesh"] !== false) {
-    conflicts.push("topology quad (the API refuses a quad remesh with it)");
+  if (model === MESHY_N1 && payload["topology"] === "quad" && remeshRuns(payload)) {
+    conflicts.push("topology quad with a remesh (the API refuses a quad remesh with it)");
   }
-  if (conflicts.length > 0) {
-    throw new UsageError(`--texture-model ${model} cannot be used with ${conflicts.join(", ")}; drop them or pick another --texture-model`);
-  }
+  if (conflicts.length === 0) return;
+  const subject = explicit
+    ? `--texture-model ${model}`
+    : `ai_model ${String(payload["ai_model"])}, which textures with ${model},`;
+  throw new UsageError(`${subject} cannot be used with ${conflicts.join(", ")}; drop them or pick ${explicit ? "another" : "a"} --texture-model`);
 }
 
 /**
