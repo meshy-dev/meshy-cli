@@ -129,9 +129,9 @@ const spec: ResourceCommandSpec = {
       // Ultra (2k) rides only when asked for — it bills extra.
       return { ...texturingDefaults(opts, data), target_formats: ["glb"] };
     },
-    validatePayload(payload) {
-      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt", "texture_image_urls"]);
-      refuseTextureModelConflicts(payload, "multi-image-to-3d");
+    validatePayload(payload, opts) {
+      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt", "texture_image_urls"], opts);
+      refuseTextureModelConflicts(payload, opts, "multi-image-to-3d");
     },
   },
   endpointOf: (c) => c.multiImageTo3d,

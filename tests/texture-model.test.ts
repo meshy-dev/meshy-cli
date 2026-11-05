@@ -33,7 +33,10 @@
  *       prompt, remove_lighting false) is refused.
  *   F9  --texture-model accepts a value the endpoint refuses (meshy-6, a
  *       typo; meshy-6-lite on multi-image-to-3d) and spends a request.
- *   F10 An untextured run carries a texture model the API would ignore.
+ *   F10 An untextured run carries a --texture-model flag the API would ignore.
+ *   F13 A request without the --texture-model flag gains a refusal for a
+ *       body the API accepts: an untextured run with a --data texture_model,
+ *       or hd_texture true beside an explicit 2k (the API runs 2k).
  *   F11 meshy-n1 on smart topology or with multi-image texture views is
  *       refused, though the API runs both.
  *   F12 The help loses the model guide, its Models link or the choices.
@@ -93,6 +96,8 @@ async function assertRefused(api: MockApi, endpoint: Endpoint, args: string[], m
   assert.match(r.stdout + r.stderr, message, `${endpoint} ${args.join(" ")}`);
   assert.equal(posts(api).length, before, `${endpoint} ${args.join(" ")}: nothing may be sent`);
 }
+
+const isSetField = (body: Record<string, unknown>, key: string) => body[key] !== undefined && body[key] !== null && body[key] !== "";
 
 const textureOf = (body: Record<string, unknown>) => ({
   texture_model: body["texture_model"],
@@ -213,15 +218,45 @@ for (const endpoint of ENDPOINTS) {
   // Untextured runs (F10)
   // -------------------------------------------------------------------------
 
-  test(`${endpoint}: a texture model on an untextured run is refused, by flag or --data (F10)`, async () => {
+  test(`${endpoint}: --texture-model on an untextured run is refused, whichever way should_texture false came (F10)`, async () => {
     await withApi(async (api) => {
       for (const extra of [
         ["--should-texture", "false", "--texture-model", "meshy-7"],
-        ["--should-texture", "false", "--data", '{"texture_model":"meshy-n1"}'],
-        ["--data", '{"should_texture":false,"texture_model":"meshy-n1"}'],
+        ["--texture-model", "meshy-n1", "--data", '{"should_texture":false}'],
       ]) {
         await assertRefused(api, endpoint, extra, /--texture-model cannot be used with --should-texture false/);
       }
+    });
+  });
+
+  test(`${endpoint}: without the flag, an untextured run with a --data texture_model goes through, as the API ignores it (F13, B)`, async () => {
+    await withApi(async (api) => {
+      for (const extra of [
+        ["--data", '{"should_texture":false,"texture_model":"meshy-n1"}'],
+        ["--should-texture", "false", "--data", '{"texture_model":"meshy-7"}'],
+      ]) {
+        const body = await sent(api, endpoint, ...extra);
+        assert.equal(body["should_texture"], false, extra.join(" "));
+        assert.ok(isSetField(body, "texture_model"), `${extra.join(" ")}: --data is passed through`);
+        assert.ok(!("enable_pbr" in body) && !("texture_resolution" in body), `${extra.join(" ")}: no texture settings on an untextured run`);
+      }
+    });
+  });
+
+  test(`${endpoint}: without the flag, hd_texture true beside an explicit 2k goes through, as the API runs 2k (F13, A)`, async () => {
+    await withApi(async (api) => {
+      for (const data of [
+        '{"ai_model":"meshy-6-lite","hd_texture":true,"texture_resolution":"2k"}',
+        '{"texture_model":"meshy-n1","hd_texture":true,"texture_resolution":"2k"}',
+      ]) {
+        const body = await sent(api, endpoint, "--data", data);
+        assert.equal(body["hd_texture"], true, data);
+        assert.equal(body["texture_resolution"], "2k", data);
+      }
+      // With the flag it stays the CLI's own refusal: the caller asked for HD the model cannot make.
+      await assertRefused(api, endpoint, ["--texture-model", "meshy-n1", "--data", '{"hd_texture":true,"texture_resolution":"2k"}'], /hd_texture true/);
+      // A bare hd_texture true gets no 2k default to win over it: the 4k ask the API refuses is refused here, not run at 2k.
+      await assertRefused(api, endpoint, ["--data", '{"ai_model":"meshy-6-lite","hd_texture":true}'], /hd_texture true/);
     });
   });
 }

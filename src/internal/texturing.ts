@@ -87,22 +87,31 @@ function remeshRuns(payload: Record<string, unknown>): boolean {
  * unless the flags or `--data` turn texturing off (the flag wins, as in the
  * merged payload). They follow the texture model that runs: meshy-n1 makes a
  * 2k base color only (PBR off), meshy-6-lite makes 2k with PBR maps.
+ *
+ * On those 2k-only models a `--data` hd_texture true gets no 2k default: the
+ * API takes texture_resolution over hd_texture, so the default would run the
+ * 4k ask at 2k without a word. Left alone, it meets the refusal instead.
  */
 export function texturingDefaults(opts: Record<string, unknown>, data: Record<string, unknown>): Record<string, unknown> {
   const shouldTexture = opts.shouldTexture ?? data["should_texture"];
   if (shouldTexture === false) return {};
   const model = runningTextureModel(opts, data);
-  if (model === MESHY_N1) return { enable_pbr: false, texture_resolution: "2k" };
-  if (model === MESHY_6_LITE) return { enable_pbr: true, texture_resolution: "2k" };
+  if (model === MESHY_N1 || model === MESHY_6_LITE) {
+    const defaults: Record<string, unknown> = { enable_pbr: model === MESHY_6_LITE };
+    if (data["hd_texture"] !== true) defaults["texture_resolution"] = "2k";
+    return defaults;
+  }
   return { enable_pbr: true, texture_resolution: "4k" };
 }
 
 /** Refuse texture settings on an untextured run, before the POST the API would answer with a 400. */
-export function refuseTextureSettingsWithoutTexture(payload: Record<string, unknown>, keys: readonly string[]): void {
+export function refuseTextureSettingsWithoutTexture(payload: Record<string, unknown>, keys: readonly string[], opts: Record<string, unknown>): void {
   if (payload["should_texture"] !== false) return;
   // The API ignores texture_model on an untextured run rather than refusing
-  // it; the CLI refuses it too, so a texture model asked for never vanishes.
-  if (isSet(payload["texture_model"])) {
+  // it. The --texture-model flag is refused there, so a texture model asked
+  // for never vanishes; a texture_model in --data goes through, as before
+  // the flag existed.
+  if (isSet(opts.textureModel)) {
     throw new UsageError("--texture-model cannot be used with --should-texture false: an untextured run has no texture model (texture it later with retexture)");
   }
   const set = keys.filter((k) => payload[k] !== undefined).map((k) => `--${k.replace(/_/g, "-")}`);
@@ -128,10 +137,14 @@ export function refuseTextureSettingsWithoutTexture(payload: Record<string, unkn
  *   - meshy-7: nothing.
  *
  * hd_texture true beside an explicit "2k" is the CLI's own refusal (the API
- * runs it at 2k), as on retexture: the caller asked for a texture the model
- * cannot make.
+ * runs it at 2k), as on retexture, and only with the --texture-model flag: a
+ * request without it keeps what the API accepts.
  */
-export function refuseTextureModelConflicts(payload: Record<string, unknown>, endpoint: "image-to-3d" | "multi-image-to-3d"): void {
+export function refuseTextureModelConflicts(
+  payload: Record<string, unknown>,
+  opts: Record<string, unknown>,
+  endpoint: "image-to-3d" | "multi-image-to-3d",
+): void {
   if (payload["should_texture"] === false) return;
   const { model, explicit } = textureModelFor(payload["texture_model"], payload["ai_model"]);
   if (explicit && endpoint === "multi-image-to-3d" && (model === MESHY_6_LITE || model === "meshy-6")) {
@@ -149,7 +162,9 @@ export function refuseTextureModelConflicts(payload: Record<string, unknown>, en
   }
   const resolution = payload["texture_resolution"];
   if (resolution === "4k" || resolution === "8k") conflicts.push(`--texture-resolution ${resolution} (it makes 2k only)`);
-  if (payload["hd_texture"] === true) conflicts.push("hd_texture true (that is 4k; it makes 2k only)");
+  if (payload["hd_texture"] === true && (resolution === undefined || isSet(opts.textureModel))) {
+    conflicts.push("hd_texture true (that is 4k; it makes 2k only)");
+  }
   if (payload["remove_lighting"] === true) conflicts.push("--remove-lighting true (the API refuses it)");
   if (model === MESHY_N1 && payload["topology"] === "quad" && remeshRuns(payload)) {
     conflicts.push("topology quad with a remesh (the API refuses a quad remesh with it)");

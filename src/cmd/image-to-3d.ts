@@ -163,9 +163,9 @@ const spec: ResourceCommandSpec = {
       // omitting target_formats makes the API produce every format.
       return { ...texturingDefaults(opts, data), target_formats: ["glb"] };
     },
-    validatePayload(payload) {
-      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt"]);
-      refuseTextureModelConflicts(payload, "image-to-3d");
+    validatePayload(payload, opts) {
+      refuseTextureSettingsWithoutTexture(payload, ["enable_pbr", "texture_resolution", "texture_prompt"], opts);
+      refuseTextureModelConflicts(payload, opts, "image-to-3d");
       prepareSmartTopologyPayload(payload);
       // Smart topology has neither knob; v1 answers 400 for either (it does not ignore them).
       if (payload.model_type === "smart-topology") {
