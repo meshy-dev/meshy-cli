@@ -1579,3 +1579,48 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   every Meshy integration (geometry + texture model per project, with the
   Models page link) and a short note on how that command reaches each row.
   `--ai-model` is unchanged: Meshy 6 Lite as a geometry stays on `--data`.
+
+## D-092 The User-Agent names the AI agent running the command
+
+- Usage is split by agent, not only by client: a request says which AI agent
+  ran the command, read from the variables agents set on the commands they
+  execute. It is a statistic and decides nothing; like the rest of the
+  User-Agent it is self-reported.
+- The agent goes inside the parentheses, after the Node version:
+  `meshy-cli/0.8.4 (win32 x64; node v22.12.0; agent cursor)`. The readers we
+  know of take only the platform from the parentheses (the account settings
+  page, its first token) and the tool name from after them (the API's
+  `client_host`), so what they derive stays the same; a server that stores the
+  raw header now stores the segment too. After the parentheses stays
+  `MESHY_CLI_CLIENT`'s, as before.
+- Only requests to Meshy carry it, decided by where the request goes. API
+  requests carry it when their base origin is Meshy's (`meshy.ai`, `meshy.cn`
+  and their subdomains); the transport follows no redirect and refuses a URL
+  outside its base, so that origin is the only one reached. An API base
+  elsewhere (a custom `MESHY_BASE_URL_*`, a server on this machine included,
+  since nothing says whose it is) gets the string without it. Sign-in (OAuth, device), the
+  preflight of an image or model URL given as input, and asset downloads
+  follow redirects to wherever they lead, so they send the string without it
+  too, exactly as before (platform, Node version, `MESHY_CLI_CLIENT`).
+- The id comes from a fixed list (`cursor`, `claude-code`, `codex`, `copilot`,
+  `gemini-cli`, `kiro-cli`, `opencode`, `hermes-agent`, `dsh`, `cline`,
+  `roo-code`), with an optional surface from a small fixed list
+  (`claude-code/desktop`, `codex/desktop`, `cursor/cloud`, `copilot/vscode`).
+  Only markers with first-party evidence are read: the agent's docs, source
+  or shipped code. Markers a human's terminal also carries (`TERM_PROGRAM`,
+  `VSCODE_*`, `CLAUDECODE` alone, the retired `CURSOR_TRACE_ID`) and user
+  configuration are not. Claude Code's surface comes from
+  `CLAUDE_CODE_ENTRYPOINT`, folded into the list; raw values are never sent.
+- An agent that sets only `AI_AGENT` is named by it, cut to lowercase
+  letters, digits, `.` and `-` (at most 32). Claude Code's `_harness` form,
+  set on the hooks and MCP servers it starts rather than on its model's
+  commands, does not count.
+- One agent inside another inherits the outer one's variables. Command-line
+  agents are checked before IDE agents (Cursor running `claude -p` is Claude
+  Code), and `AI_AGENT` last, since some agents keep an existing value.
+- `MESHY_CLI_AGENT` names the agent explicitly, for one with no marker, or
+  `none` turns detection off; an invalid value is ignored and `doctor` warns.
+  `doctor` reports the agent and the variable that decided it, never a value.
+- Inside DeepSeek Harness the request still ends in `dsh` after the
+  parentheses (D-087) while servers that read only that part are in use; the
+  agent segment says `dsh` too.

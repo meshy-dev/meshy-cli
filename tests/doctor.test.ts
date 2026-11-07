@@ -161,6 +161,35 @@ test("T-102 no credential anywhere: local_ready stays true, credentials check wa
   assert.equal(placeholder.credential_sources.flag, false);
 });
 
+test("agent: doctor names the agent and the variable that decided it, never a value", async () => {
+  const cwd = tmp("meshy-cwd-");
+  const run = (extra: Record<string, string>) =>
+    withNoNetwork(() => runDoctor({ flags: flagsOf(), checkApi: false, checkSlicers: false, env: isolatedEnv(extra), cwd }));
+
+  const none = await run({});
+  assert.equal(none.agent, null);
+  assert.equal(check(none, "agent").status, "ok");
+  assert.match(check(none, "agent").detail, /no AI agent detected/);
+
+  const cursor = await run({ CURSOR_AGENT: "1" });
+  assert.equal(cursor.agent?.id, "cursor");
+  assert.equal(cursor.agent?.via, "CURSOR_AGENT");
+  assert.match(check(cursor, "agent").detail, /"cursor" \(from CURSOR_AGENT\)/);
+
+  const claude = await run({ AI_AGENT: "claude-code_2-1-317_agent", CLAUDE_CODE_ENTRYPOINT: "claude-desktop" });
+  assert.deepEqual(claude.agent, { id: "claude-code", surface: "desktop", via: "AI_AGENT" });
+  assert.ok(!JSON.stringify(claude).includes("2-1-317"), "the AI_AGENT value never reaches the report");
+
+  const off = await run({ CURSOR_AGENT: "1", MESHY_CLI_AGENT: "none" });
+  assert.equal(off.agent, null);
+  assert.match(check(off, "agent").detail, /off/);
+
+  const invalid = await run({ CURSOR_AGENT: "1", MESHY_CLI_AGENT: "not valid!" });
+  assert.equal(check(invalid, "agent").status, "warn");
+  assert.equal(invalid.agent?.id, "cursor");
+  assert.ok(!check(invalid, "agent").detail.includes("not valid!"), "the ignored value is not echoed");
+});
+
 test("stored profile: the credentials file is stat'ed, never parsed", async () => {
   const dir = tmp();
   const credFile = join(dir, "credentials.json");
