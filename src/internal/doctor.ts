@@ -19,6 +19,7 @@
 import { accessSync, constants as fsConstants, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { MeshyClient } from "../client/index.js";
+import { agentToken, detectAgent, type AgentDetection } from "./agent.js";
 import {
   deriveCreativeLabBase,
   derivePublicWebBase,
@@ -45,6 +46,8 @@ export interface DoctorCheck {
 
 export interface DoctorReport {
   cli: { version: string; node: string; platform: string; arch: string };
+  /** The AI agent named in the User-Agent (internal/agent.ts); null when none. `via` is a variable name, never a value. */
+  agent: { id: string; surface: string; via: string } | null;
   /** Node satisfies the engine range and the CLI loaded: local commands can run. */
   local_ready: boolean;
   /** null unless --check-api was requested. */
@@ -152,6 +155,26 @@ function summarizeSlicers(detection: unknown): string {
   return "slicer detection completed";
 }
 
+/** Names the agent the User-Agent will carry, and the variable that decided it; values are never shown. */
+function agentCheck(detection: AgentDetection): DoctorCheck {
+  const { agent, override } = detection;
+  const named = agent ? agentToken(detection) : "";
+  if (override === "none") {
+    return { id: "agent", status: "ok", detail: "agent detection is off (MESHY_CLI_AGENT=none)" };
+  }
+  const found = agent
+    ? `requests name the agent "${named}" (from ${agent.via})`
+    : "no AI agent detected; requests name none";
+  if (override === "invalid") {
+    return {
+      id: "agent",
+      status: "warn",
+      detail: `MESHY_CLI_AGENT is ignored: use lowercase letters, digits, '.' and '-' (at most 32), optionally '/<surface>', or 'none'; ${found}`,
+    };
+  }
+  return { id: "agent", status: "ok", detail: found };
+}
+
 /** Run the diagnosis and also return the raw API failure for exit-code mapping. */
 export async function runDoctorDetailed(opts: DoctorOptions): Promise<DoctorOutcome> {
   const { flags } = opts;
@@ -178,6 +201,8 @@ export async function runDoctorDetailed(opts: DoctorOptions): Promise<DoctorOutc
       ? `node ${process.version} satisfies the required >=${REQUIRED_NODE}`
       : `node ${process.version} is below the required >=${REQUIRED_NODE}; install Node ${REQUIRED_NODE} or newer`,
   });
+  const agentDetection = detectAgent(env);
+  checks.push(agentCheck(agentDetection));
 
   // --- Base URLs (same precedence as config.ts, resolved without a credential) ---
   const regionBase = regionBaseUrls(resolveRegion(env));
@@ -285,6 +310,7 @@ export async function runDoctorDetailed(opts: DoctorOptions): Promise<DoctorOutc
 
   const report: DoctorReport = {
     cli: { version: VERSION, node: process.version, platform: process.platform, arch: process.arch },
+    agent: agentDetection.agent,
     local_ready: nodeOk && VERSION.length > 0,
     api_ready: null,
     checks,

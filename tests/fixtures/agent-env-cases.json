@@ -1,0 +1,269 @@
+{
+  "description": "Environment of a command an AI agent runs -> the User-Agent's agent segment. Shared by every implementation of the detection: each case is the oracle, independent of the code. `source` says where the environment comes from: `captured` is a real run with only the marker variables kept (no ids, paths or users), `shipped` is read from the agent's released code or docs, `derived` combines documented markers to pin an ordering rule.",
+  "cases": [
+    {
+      "name": "Claude Code inside the Claude desktop app",
+      "source": "captured: Claude 4.23118.0, Claude Code 2.1.317, macOS",
+      "platform": "darwin",
+      "env": {
+        "AI_AGENT": "claude-code_2-1-317_agent",
+        "CLAUDECODE": "1",
+        "CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+        "CLAUDE_CODE_CHILD_SESSION": "1",
+        "CLAUDE_CODE_DESKTOP_APP_VERSION": "4.23118.0",
+        "CLAUDE_AGENT_SDK_VERSION": "0.3.317",
+        "__CFBundleIdentifier": "com.anthropic.claudefordesktop"
+      },
+      "agent": "claude-code/desktop",
+      "via": "CLAUDE_CODE_CHILD_SESSION"
+    },
+    {
+      "name": "Claude Code CLI",
+      "source": "shipped: Claude Code docs (env-vars) and binary",
+      "platform": "linux",
+      "env": { "CLAUDECODE": "1", "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_CODE_ENTRYPOINT": "cli", "AI_AGENT": "claude-code_2-1-317_agent" },
+      "agent": "claude-code/cli"
+    },
+    {
+      "name": "Claude Code recognised from AI_AGENT alone",
+      "source": "shipped: Claude Code binary sets AI_AGENT on its model's commands",
+      "platform": "darwin",
+      "env": { "AI_AGENT": "claude-code_2-1-260_agent" },
+      "agent": "claude-code",
+      "via": "AI_AGENT"
+    },
+    {
+      "name": "Claude Code's harness form is not a model command",
+      "source": "shipped: hooks and MCP servers inherit claude-code_<ver>_harness",
+      "platform": "darwin",
+      "env": { "AI_AGENT": "claude-code_2-1-317_harness", "CLAUDECODE": "1" },
+      "agent": ""
+    },
+    {
+      "name": "CLAUDECODE alone is a human's IDE terminal too",
+      "source": "shipped: Claude Code docs say IDE extensions set it in their integrated terminals",
+      "platform": "darwin",
+      "env": { "CLAUDECODE": "1", "TERM_PROGRAM": "vscode" },
+      "agent": ""
+    },
+    {
+      "name": "Unknown Claude Code entrypoint",
+      "source": "derived",
+      "platform": "darwin",
+      "env": { "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_CODE_ENTRYPOINT": "something-new" },
+      "agent": "claude-code/other"
+    },
+    {
+      "name": "Cursor IDE agent",
+      "source": "shipped: Cursor 3.28.7 extension host and terminal tool",
+      "platform": "win32",
+      "env": { "CURSOR_AGENT": "1", "COMPOSER_NO_INTERACTION": "1", "TERM_PROGRAM": "vscode", "npm_config_yes": "true" },
+      "agent": "cursor",
+      "via": "CURSOR_AGENT"
+    },
+    {
+      "name": "Cursor cloud machine",
+      "source": "shipped: Cursor cloud agent metadata socket docs",
+      "platform": "linux",
+      "env": { "CURSOR_AGENT": "1" },
+      "existing_paths": ["/run/cursor/api.sock"],
+      "agent": "cursor/cloud"
+    },
+    {
+      "name": "Cursor cloud socket moved by CURSOR_AGENT_SOCKET",
+      "source": "shipped: Cursor cloud agent metadata socket docs",
+      "platform": "linux",
+      "env": { "CURSOR_AGENT": "1", "CURSOR_AGENT_SOCKET": "/tmp/cursor.sock" },
+      "existing_paths": ["/tmp/cursor.sock"],
+      "agent": "cursor/cloud"
+    },
+    {
+      "name": "The cloud socket only counts on Linux",
+      "source": "derived",
+      "platform": "darwin",
+      "env": { "CURSOR_AGENT": "1" },
+      "existing_paths": ["/run/cursor/api.sock"],
+      "agent": "cursor"
+    },
+    {
+      "name": "Retired Cursor terminal marker",
+      "source": "shipped: CURSOR_TRACE_ID is absent from Cursor 3.28.7",
+      "platform": "darwin",
+      "env": { "CURSOR_TRACE_ID": "abc", "TERM_PROGRAM": "vscode" },
+      "agent": ""
+    },
+    {
+      "name": "Codex CLI",
+      "source": "shipped: openai/codex shell environment",
+      "platform": "linux",
+      "env": { "CODEX_THREAD_ID": "t", "CODEX_CI": "1", "NO_COLOR": "1", "TERM": "dumb" },
+      "agent": "codex",
+      "via": "CODEX_THREAD_ID"
+    },
+    {
+      "name": "Codex in the ChatGPT desktop app",
+      "source": "shipped: the desktop app starts codex with its originator; commands inherit the default environment",
+      "platform": "darwin",
+      "env": { "CODEX_THREAD_ID": "t", "CODEX_INTERNAL_ORIGINATOR_OVERRIDE": "Codex Desktop" },
+      "agent": "codex/desktop"
+    },
+    {
+      "name": "Codex unified exec without a thread id",
+      "source": "derived",
+      "platform": "linux",
+      "env": { "CODEX_CI": "1" },
+      "agent": "codex",
+      "via": "CODEX_CI"
+    },
+    {
+      "name": "VS Code Copilot agent",
+      "source": "shipped: microsoft/vscode agent terminal",
+      "platform": "win32",
+      "env": { "AI_AGENT": "github_copilot_vscode_agent", "COPILOT_AGENT": "1", "TERM_PROGRAM": "vscode" },
+      "agent": "copilot/vscode",
+      "via": "COPILOT_AGENT"
+    },
+    {
+      "name": "Copilot cloud agent through AI_AGENT",
+      "source": "derived",
+      "platform": "linux",
+      "env": { "AI_AGENT": "github_copilot_cloud_agent", "GITHUB_ACTIONS": "true" },
+      "agent": "copilot/cloud",
+      "via": "AI_AGENT"
+    },
+    {
+      "name": "Gemini CLI",
+      "source": "shipped: gemini-cli shell tool docs",
+      "platform": "darwin",
+      "env": { "GEMINI_CLI": "1", "PAGER": "cat" },
+      "agent": "gemini-cli"
+    },
+    {
+      "name": "Kiro CLI sets both FIFOs",
+      "source": "shipped: Kiro CLI built-in tools docs",
+      "platform": "linux",
+      "env": { "AGENT_DISPLAY_OUT": "/tmp/k/display", "AGENT_CONTEXT_OUT": "/tmp/k/context" },
+      "agent": "kiro-cli"
+    },
+    {
+      "name": "One AGENT_* variable alone is generic",
+      "source": "derived",
+      "platform": "linux",
+      "env": { "AGENT_DISPLAY_OUT": "/tmp/k/display", "AGENT_SESSION_ID": "s" },
+      "agent": ""
+    },
+    {
+      "name": "OpenCode",
+      "source": "shipped: opencode shell tool",
+      "platform": "darwin",
+      "env": { "OPENCODE": "1", "AGENT": "1", "AI_AGENT": "opencode" },
+      "agent": "opencode",
+      "via": "OPENCODE"
+    },
+    {
+      "name": "Hermes Agent",
+      "source": "shipped: hermes-agent docs and source",
+      "platform": "linux",
+      "env": { "HERMES_AGENT": "true", "AI_AGENT": "hermes-agent" },
+      "agent": "hermes-agent"
+    },
+    {
+      "name": "DeepSeek Harness",
+      "source": "shipped: deepseek-harness shell env",
+      "platform": "linux",
+      "env": { "DSH_SHELL": "1" },
+      "agent": "dsh"
+    },
+    {
+      "name": "Cline terminal",
+      "source": "shipped: cline VS Code terminal",
+      "platform": "darwin",
+      "env": { "CLINE_ACTIVE": "true", "TERM_PROGRAM": "vscode" },
+      "agent": "cline"
+    },
+    {
+      "name": "Roo Code terminal",
+      "source": "shipped: Roo Code VS Code terminal",
+      "platform": "darwin",
+      "env": { "ROO_ACTIVE": "true" },
+      "agent": "roo-code"
+    },
+    {
+      "name": "Cursor's agent runs claude -p: the inner command-line agent wins",
+      "source": "derived",
+      "platform": "darwin",
+      "env": { "CURSOR_AGENT": "1", "CLAUDE_CODE_CHILD_SESSION": "1", "AI_AGENT": "claude-code_2-1-317_agent", "CLAUDE_CODE_ENTRYPOINT": "sdk-cli" },
+      "agent": "claude-code/cli"
+    },
+    {
+      "name": "VS Code Copilot hosts Codex: Codex wins over the inherited AI_AGENT",
+      "source": "derived",
+      "platform": "darwin",
+      "env": { "AI_AGENT": "github_copilot_vscode_agent", "CODEX_THREAD_ID": "t" },
+      "agent": "codex"
+    },
+    {
+      "name": "Claude Code runs OpenCode, which keeps the outer AI_AGENT",
+      "source": "derived",
+      "platform": "darwin",
+      "env": { "AI_AGENT": "claude-code_2-1-317_agent", "CLAUDE_CODE_CHILD_SESSION": "1", "OPENCODE": "1" },
+      "agent": "opencode"
+    },
+    {
+      "name": "Any other AI_AGENT is named by it",
+      "source": "derived",
+      "platform": "linux",
+      "env": { "AI_AGENT": "Some_Agent@1.2" },
+      "agent": "some-agent-1.2",
+      "via": "AI_AGENT"
+    },
+    {
+      "name": "An AI_AGENT with nothing usable names none",
+      "source": "derived",
+      "platform": "linux",
+      "env": { "AI_AGENT": "___" },
+      "agent": ""
+    },
+    {
+      "name": "Human terminal",
+      "source": "derived",
+      "platform": "darwin",
+      "env": { "TERM_PROGRAM": "iTerm.app", "GOOSE_PROVIDER": "openai", "PAGER": "cat" },
+      "agent": ""
+    },
+    {
+      "name": "MESHY_CLI_AGENT names an agent with no marker",
+      "source": "derived",
+      "platform": "linux",
+      "env": { "MESHY_CLI_AGENT": "Grok-Bot", "CURSOR_AGENT": "1" },
+      "agent": "grok-bot",
+      "via": "MESHY_CLI_AGENT",
+      "override": "valid"
+    },
+    {
+      "name": "MESHY_CLI_AGENT with a surface",
+      "source": "derived",
+      "platform": "darwin",
+      "env": { "MESHY_CLI_AGENT": "claude-code/desktop" },
+      "agent": "claude-code/desktop",
+      "override": "valid"
+    },
+    {
+      "name": "MESHY_CLI_AGENT=none turns detection off",
+      "source": "derived",
+      "platform": "darwin",
+      "env": { "MESHY_CLI_AGENT": "NONE", "CURSOR_AGENT": "1" },
+      "agent": "",
+      "override": "none"
+    },
+    {
+      "name": "An invalid MESHY_CLI_AGENT is ignored and detection goes on",
+      "source": "derived",
+      "platform": "darwin",
+      "env": { "MESHY_CLI_AGENT": "has space; x", "CURSOR_AGENT": "1" },
+      "agent": "cursor",
+      "via": "CURSOR_AGENT",
+      "override": "invalid"
+    }
+  ]
+}
