@@ -31,7 +31,7 @@ import type { Task } from "../client/types.js";
 import { publishTempFile, tempPathFor, writeJsonFile } from "./atomic-file.js";
 import { CliError, UsageError, type ErrorRecovery } from "./errors.js";
 import { isInside, looksLikeFile, realpathLenient, resolveWithinRoot, safeExtension } from "./paths.js";
-import { ASSET_USER_AGENT } from "./user-agent.js";
+import { USER_AGENT } from "./user-agent.js";
 import { enumerateAssets, selectDefaultAssets, type Asset, type DefaultSelection, type SkipReason } from "./artifacts.js";
 import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";
 
@@ -143,7 +143,7 @@ export async function fetchToTemp(rawUrl: string, target: string, opts: FetchOpt
     for (let hop = 0; ; hop++) {
       let r: Response;
       try {
-        r = await fetchImpl(url, { method: "GET", redirect: "manual", signal, headers: { "User-Agent": ASSET_USER_AGENT, Accept: "*/*" } });
+        r = await fetchImpl(url, { method: "GET", redirect: "manual", signal, headers: { "User-Agent": USER_AGENT, Accept: "*/*" } });
       } catch (err) {
         if (opts.signal?.aborted) throw new CliError({ code: "interrupted", message: `download of ${redact(url)} interrupted` });
         if (controller.signal.aborted) throw new CliError({ code: "network", message: `download of ${redact(url)} timed out after ${limits.timeoutMs}ms` });

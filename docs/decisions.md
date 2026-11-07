@@ -1593,11 +1593,15 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   `client_host`), so what they derive stays the same; a server that stores the
   raw header now stores the segment too. After the parentheses stays
   `MESHY_CLI_CLIENT`'s, as before.
-- Only requests to Meshy carry it: the API transport and the sign-in (OAuth,
-  device) requests. The preflight of an image or model URL given as input,
-  asset downloads and the redirects they follow can reach any host, which has
-  no use for the agent, so they send the string without it; what they sent
-  before (platform, Node version, `MESHY_CLI_CLIENT`) is unchanged.
+- Only requests to Meshy carry it, decided by where the request goes. API
+  requests carry it when their base origin is Meshy's (`meshy.ai`, `meshy.cn`
+  and their subdomains) or a loopback host, which is the user's own machine;
+  the transport follows no redirect and refuses a URL outside its base, so
+  that origin is the only one reached. An API base elsewhere (a custom
+  `MESHY_BASE_URL_*`) gets the string without it. Sign-in (OAuth, device), the
+  preflight of an image or model URL given as input, and asset downloads
+  follow redirects to wherever they lead, so they send the string without it
+  too, exactly as before (platform, Node version, `MESHY_CLI_CLIENT`).
 - The id comes from a fixed list (`cursor`, `claude-code`, `codex`, `copilot`,
   `gemini-cli`, `kiro-cli`, `opencode`, `hermes-agent`, `dsh`, `cline`,
   `roo-code`), with an optional surface from a small fixed list

@@ -163,7 +163,7 @@ function agentCheck(detection: AgentDetection): DoctorCheck {
     return { id: "agent", status: "ok", detail: "agent detection is off (MESHY_CLI_AGENT=none)" };
   }
   const found = agent
-    ? `requests name the agent "${named}" (from ${agent.via})`
+    ? `API requests to Meshy name the agent "${named}" (from ${agent.via})`
     : "no AI agent detected; requests name none";
   if (override === "invalid") {
     return {
