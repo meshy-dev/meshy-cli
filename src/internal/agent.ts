@@ -129,8 +129,14 @@ const RULES: readonly Rule[] = [
   },
   {
     id: "claude-code",
-    match: (env) =>
-      is(env, "CLAUDE_CODE_CHILD_SESSION", "1") ?? (CLAUDE_AGENT.test(value(env, "AI_AGENT")) ? "AI_AGENT" : null),
+    match: (env) => {
+      const ai = value(env, "AI_AGENT");
+      if (CLAUDE_AGENT.test(ai)) return "AI_AGENT";
+      // Hooks and status lines carry CLAUDE_CODE_CHILD_SESSION too, beside the _harness AI_AGENT:
+      // not a command the model ran. Without a Claude AI_AGENT (older releases), the child marker decides.
+      if (CLAUDE_ANY.test(ai)) return null;
+      return is(env, "CLAUDE_CODE_CHILD_SESSION", "1");
+    },
     surface: claudeSurface,
   },
   {
@@ -143,13 +149,13 @@ const RULES: readonly Rule[] = [
   { id: "roo-code", match: (env) => is(env, "ROO_ACTIVE", "true") },
 ];
 
-/** Known AI_AGENT values that differ from our ids. */
-const AI_AGENT_NAMES: Readonly<Record<string, { id: string; surface: string }>> = {
-  github_copilot_cloud_agent: { id: "copilot", surface: "cloud" },
-  "github-copilot-cli": { id: "copilot", surface: "cli" },
-  opencode: { id: "opencode", surface: "" },
-  "hermes-agent": { id: "hermes-agent", surface: "" },
-};
+/** Known AI_AGENT values that differ from our ids. A Map, so a value like "constructor" is not a hit. */
+const AI_AGENT_NAMES: ReadonlyMap<string, { id: string; surface: string }> = new Map([
+  ["github_copilot_cloud_agent", { id: "copilot", surface: "cloud" }],
+  ["github-copilot-cli", { id: "copilot", surface: "cli" }],
+  ["opencode", { id: "opencode", surface: "" }],
+  ["hermes-agent", { id: "hermes-agent", surface: "" }],
+]);
 
 /** Any other AI_AGENT value, cut to the id charset: lowercase letters, digits, '.', '-', at most 32. */
 function genericAiAgent(raw: string): string {
@@ -182,7 +188,7 @@ export function detectAgent(
 
   const ai = value(env, "AI_AGENT");
   if (ai && !CLAUDE_ANY.test(ai)) {
-    const known = AI_AGENT_NAMES[ai];
+    const known = AI_AGENT_NAMES.get(ai);
     if (known) return { agent: { ...known, via: "AI_AGENT" }, override };
     const id = genericAiAgent(ai);
     if (id) return { agent: { id, surface: "", via: "AI_AGENT" }, override };

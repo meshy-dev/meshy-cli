@@ -29,6 +29,10 @@ for (const c of cases) {
     const paths = new Set(c.existing_paths ?? []);
     const detection = detectAgent(c.env, c.platform, (p) => paths.has(p));
     assert.equal(agentToken(detection), c.agent);
+    if (detection.agent) {
+      assert.equal(typeof detection.agent.id, "string");
+      assert.equal(typeof detection.agent.surface, "string");
+    }
     if (c.via !== undefined) assert.equal(detection.agent?.via, c.via);
     assert.equal(detection.override, c.override ?? "unset");
   });
