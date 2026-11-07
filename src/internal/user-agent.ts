@@ -44,22 +44,21 @@ export const USER_AGENT = userAgent(process.env, NO_AGENT);
 
 const AGENT_USER_AGENT = userAgent();
 
-function isMeshyOrLoopback(hostname: string): boolean {
+function isMeshyHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, "");
-  if (["meshy.ai", "meshy.cn"].some((domain) => host === domain || host.endsWith(`.${domain}`))) return true;
-  return host === "localhost" || host.endsWith(".localhost") || host === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(host);
+  return ["meshy.ai", "meshy.cn"].some((domain) => host === domain || host.endsWith(`.${domain}`));
 }
 
 /**
- * For the API transport to `baseUrl`: names the agent when its origin is
- * Meshy's (meshy.ai, meshy.cn and their subdomains) or a loopback host — the
- * user's own machine, a Meshy server run locally; any other origin (a custom
- * MESHY_BASE_URL_*) gets USER_AGENT. The transport never follows a redirect and
- * refuses a URL outside its base, so this origin is the only one it reaches.
+ * For the API transport to `baseUrl`: names the agent only when its origin is
+ * Meshy's (meshy.ai, meshy.cn and their subdomains). Any other origin — a
+ * custom MESHY_BASE_URL_*, a server on this machine included, since nothing
+ * says whose it is — gets USER_AGENT. The transport never follows a redirect
+ * and refuses a URL outside its base, so this origin is the only one reached.
  */
 export function apiUserAgent(baseUrl: string): string {
   try {
-    return isMeshyOrLoopback(new URL(baseUrl).hostname) ? AGENT_USER_AGENT : USER_AGENT;
+    return isMeshyHost(new URL(baseUrl).hostname) ? AGENT_USER_AGENT : USER_AGENT;
   } catch {
     return USER_AGENT;
   }

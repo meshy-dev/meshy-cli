@@ -1,6 +1,6 @@
 /**
  * The agent segment goes only to Meshy (D-092): the API transport carries it
- * when its base origin is Meshy's (or the user's own machine); sign-in, the
+ * when its base origin is Meshy's; sign-in, the
  * input URL preflight and asset downloads follow redirects to any host and
  * carry the string without it, as they did before.
  *
@@ -73,15 +73,12 @@ test("USER_AGENT is the string without the agent segment", () => {
   assert.equal(USER_AGENT, WITH_AGENT.replace("; agent test-agent", ""));
 });
 
-test("apiUserAgent names the agent only for a Meshy or loopback origin", () => {
+test("apiUserAgent names the agent only for a Meshy origin, not even one on this machine", () => {
   for (const base of [
     "https://api.meshy.ai/openapi/v1",
     "https://api.staging.meshy.ai/openapi/v2",
     "https://api.meshy.cn/openapi/v1",
     "https://API.Meshy.AI./openapi/v1",
-    "http://localhost:8080/openapi/v1",
-    "http://127.0.0.1:9/openapi/v1",
-    "http://[::1]:9/openapi/v1",
   ]) {
     assert.equal(apiUserAgent(base), WITH_AGENT, base);
   }
@@ -91,6 +88,9 @@ test("apiUserAgent names the agent only for a Meshy or loopback origin", () => {
     "https://notmeshy.ai/openapi/v1",
     "https://meshy.ai-proxy.example/openapi/v1",
     "http://10.0.0.5/openapi/v1",
+    "http://localhost:8080/openapi/v1",
+    "http://127.0.0.1:9/openapi/v1",
+    "http://[::1]:9/openapi/v1",
     "not a url",
   ]) {
     assert.equal(apiUserAgent(base), USER_AGENT, base);

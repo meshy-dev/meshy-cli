@@ -1595,10 +1595,10 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   `MESHY_CLI_CLIENT`'s, as before.
 - Only requests to Meshy carry it, decided by where the request goes. API
   requests carry it when their base origin is Meshy's (`meshy.ai`, `meshy.cn`
-  and their subdomains) or a loopback host, which is the user's own machine;
-  the transport follows no redirect and refuses a URL outside its base, so
-  that origin is the only one reached. An API base elsewhere (a custom
-  `MESHY_BASE_URL_*`) gets the string without it. Sign-in (OAuth, device), the
+  and their subdomains); the transport follows no redirect and refuses a URL
+  outside its base, so that origin is the only one reached. An API base
+  elsewhere (a custom `MESHY_BASE_URL_*`, a server on this machine included,
+  since nothing says whose it is) gets the string without it. Sign-in (OAuth, device), the
   preflight of an image or model URL given as input, and asset downloads
   follow redirects to wherever they lead, so they send the string without it
   too, exactly as before (platform, Node version, `MESHY_CLI_CLIENT`).
