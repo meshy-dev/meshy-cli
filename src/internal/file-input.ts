@@ -21,7 +21,7 @@ import { extname, isAbsolute, resolve as resolvePath } from "node:path";
 import type { MediaField, MediaKind } from "../client/resource-registry.js";
 import { UsageError } from "./errors.js";
 import { logger } from "./logger.js";
-import { USER_AGENT } from "./user-agent.js";
+import { ASSET_USER_AGENT } from "./user-agent.js";
 
 export const DEFAULT_MEDIA_LIMITS = {
   /** 50 MiB — an engineering default, not a Meshy product limit. */
@@ -166,7 +166,7 @@ async function preflightUrl(url: string, flagLabel: string, limits: MediaLimits,
   }
   if (parsed.username || parsed.password) throw new UsageError(`${flagLabel}: URLs with embedded credentials are not accepted`);
   const fetchImpl = o.fetchImpl ?? globalThis.fetch;
-  const headers = { "User-Agent": USER_AGENT };
+  const headers = { "User-Agent": ASSET_USER_AGENT };
   const timeout = AbortSignal.timeout(limits.preflightTimeoutMs);
   const signal = o.signal ? AbortSignal.any([timeout, o.signal]) : timeout;
   let resp: Response;

@@ -32,4 +32,15 @@ export function userAgent(env: NodeJS.ProcessEnv = process.env, detection: Agent
   return client ? `${base} ${client}` : base;
 }
 
+const NO_AGENT: AgentDetection = { agent: null, override: "unset" };
+
+/** For Meshy's API and sign-in: the transport, the OAuth and device-login requests. */
 export const USER_AGENT = userAgent();
+
+/**
+ * For every other host: the image or model URL passed as input, asset
+ * downloads, and the redirects either follows. The same string without the
+ * agent segment, which only Meshy counts; the platform, Node version and
+ * MESHY_CLI_CLIENT go as they did before the segment existed.
+ */
+export const ASSET_USER_AGENT = userAgent(process.env, NO_AGENT);
