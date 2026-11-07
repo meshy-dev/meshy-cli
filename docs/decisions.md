@@ -1587,10 +1587,12 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   execute. It is a statistic and decides nothing; like the rest of the
   User-Agent it is self-reported.
 - The agent goes inside the parentheses, after the Node version:
-  `meshy-cli/0.8.4 (win32 x64; node v22.12.0; agent cursor)`. Servers read the
-  parentheses only for the platform and read the tool name after them, so a
-  server that predates the segment ignores it and nothing it records changes.
-  After the parentheses stays `MESHY_CLI_CLIENT`'s, as before.
+  `meshy-cli/0.8.4 (win32 x64; node v22.12.0; agent cursor)`. The readers we
+  know of take only the platform from the parentheses (the account settings
+  page, its first token) and the tool name from after them (the API's
+  `client_host`), so what they derive stays the same; a server that stores the
+  raw header now stores the segment too. After the parentheses stays
+  `MESHY_CLI_CLIENT`'s, as before.
 - The id comes from a fixed list (`cursor`, `claude-code`, `codex`, `copilot`,
   `gemini-cli`, `kiro-cli`, `opencode`, `hermes-agent`, `dsh`, `cline`,
   `roo-code`), with an optional surface from a small fixed list

@@ -3,9 +3,9 @@
  * its requests. The value lands in an HTTP header, so it must never smuggle a
  * line break or grow without bound.
  *
- * The AI agent running the command goes inside the parentheses (D-092):
- * servers read the parentheses only for the platform (the first token) and
- * the tool name only after them, so both readings must stay as they were.
+ * The AI agent running the command goes inside the parentheses (D-092): the
+ * known readers take the platform from the parentheses (their first token)
+ * and the tool name from after them, so both readings must stay as they were.
  */
 
 import test from "node:test";

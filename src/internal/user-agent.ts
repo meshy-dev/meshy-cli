@@ -10,8 +10,9 @@ const MAX_CLIENT = 100;
  *   meshy-cli/<version> (<platform> <arch>; node <version>[; agent <id>[/<surface>]])[ <client>]
  *
  * The agent segment names the AI agent running the command (internal/agent.ts).
- * It sits inside the parentheses, which servers read only for the platform,
- * so a server that does not know it yet ignores it.
+ * It sits inside the parentheses, from which the known readers (the account
+ * settings page, the API's client_host) take only the platform, so they read
+ * the same platform and tool name with it as without it (D-092).
  *
  * A tool that runs meshy-cli for its users, such as Meshy DCC Core, names
  * itself in MESHY_CLI_CLIENT ("meshy-dcc/0.2.2 (blender)"). The value is
