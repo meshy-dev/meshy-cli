@@ -22,7 +22,7 @@
 
 import { mapHttpError, MeshyApiError } from "./errors.js";
 import { logger } from "../internal/logger.js";
-import { USER_AGENT } from "../internal/user-agent.js";
+import { apiUserAgent } from "../internal/user-agent.js";
 
 export type TransportPhase = "validate" | "connect" | "request" | "response" | "body" | "timeout" | "aborted";
 
@@ -169,7 +169,7 @@ function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal
 export function createTransport(cfg: TransportConfig): Transport {
   const baseUrl = stripTrail(cfg.baseUrl);
   const authenticated = Boolean(cfg.apiKey);
-  const userAgent = cfg.userAgent ?? USER_AGENT;
+  const userAgent = cfg.userAgent ?? apiUserAgent(baseUrl);
   const maxBody = cfg.defaultMaxBodyBytes ?? DEFAULT_MAX_JSON_BODY_BYTES;
   let apiKey = cfg.apiKey;
 
