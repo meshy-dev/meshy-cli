@@ -1639,8 +1639,23 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   `EnvHttpProxyAgent` as the global dispatcher once, so every fetch goes
   through it: the API, sign-in, downloads, input URL checks, and the update
   check's child process, which starts through the same entry point. `https:`
-  URLs use `HTTPS_PROXY` and fall back to `HTTP_PROXY`; hosts in `NO_PROXY` go
-  direct. Without a proxy variable nothing changes.
+  URLs use `HTTPS_PROXY` (a CONNECT tunnel) and fall back to `HTTP_PROXY`;
+  `http:` URLs go to the proxy as plain forwarded requests, as curl sends
+  them, so a proxy that only forwards still works. Without a proxy variable
+  nothing changes.
+- Hosts in `NO_PROXY` go direct, and so does this machine (`localhost`,
+  `127.0.0.1`, `::1`) always, as Go's `net/http` does (Ark, 2026-11-09): a
+  custom `MESHY_BASE_URL_*` on loopback is a development server, and its
+  credential would otherwise cross the proxy in the clear.
+- A proxy value that is not an `http://` or `https://` URL does not fall back
+  to going direct: every request fails before it leaves, with an error that
+  names the variable and never its value, which may hold a password. Local
+  commands still run.
+- A request the proxy refuses (a CONNECT answered other than 200, a forwarded
+  request answered 407) never reached Meshy: the transport records it as
+  never sent (`not_submitted`), not as a submission whose outcome is unknown,
+  and the error says it was the proxy. undici reports these only by message;
+  `tests/proxy.test.ts` pins the messages of the version in the lockfile.
 - undici is a dependency for this alone. Node's own `http.setGlobalProxyFromEnv`
   does the same, but Node 22 does not have it (24.20 does); one code path
   covers every Node the CLI supports (22.12+), and the global dispatcher is

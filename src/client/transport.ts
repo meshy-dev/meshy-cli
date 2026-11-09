@@ -23,6 +23,7 @@
 import { mapHttpError, MeshyApiError } from "./errors.js";
 import { logger } from "../internal/logger.js";
 import { apiUserAgent } from "../internal/user-agent.js";
+import { proxyFailure } from "../internal/proxy.js";
 
 export type TransportPhase = "validate" | "connect" | "request" | "response" | "body" | "timeout" | "aborted";
 
@@ -154,6 +155,8 @@ function errnoOf(err: unknown): string | undefined {
 const CONNECT_ERRNOS = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT", "ERR_TLS_CERT_ALTNAME_INVALID", "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "SELF_SIGNED_CERT_IN_CHAIN"]);
 
 function classifyFetchFailure(err: unknown, phase: TransportPhase): TransportPhase {
+  // Failed at the proxy, before the target (D-093).
+  if (proxyFailure(err)) return "connect";
   const errno = errnoOf(err);
   if (errno && CONNECT_ERRNOS.has(errno)) return "connect";
   return phase;
@@ -223,9 +226,10 @@ export function createTransport(cfg: TransportConfig): Transport {
       return new TransportError({ message: `request to ${path} timed out after ${timeoutMs}ms`, phase: "timeout", path, cause: err, credentialKind: cfg.credentialKind });
     }
     const errno = errnoOf(err);
+    const proxy = proxyFailure(err);
     const msg = err instanceof Error ? err.message : String(err);
     return new TransportError({
-      message: `network error calling ${path}: ${msg}${errno ? ` (${errno})` : ""}`,
+      message: proxy ? `${proxy} (calling ${path}); nothing was sent` : `network error calling ${path}: ${msg}${errno ? ` (${errno})` : ""}`,
       phase: classifyFetchFailure(err, phase),
       path,
       errno,

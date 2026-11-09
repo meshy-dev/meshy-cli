@@ -147,7 +147,7 @@ ENVIRONMENT:
     MESHY_CLI_NO_UPDATE_NOTIFIER       set to disable update checks
     MESHY_CLI_CLIENT                   name of the tool running meshy-cli, added to the User-Agent
     MESHY_CLI_AGENT                    AI agent named to Meshy in the User-Agent (default: detected); none = off
-    HTTPS_PROXY, HTTP_PROXY            proxy every request goes through (lowercase too); NO_PROXY: hosts that go direct
+    HTTPS_PROXY, HTTP_PROXY            proxy every request goes through (lowercase too); NO_PROXY and localhost go direct
 
 Docs: https://docs.meshy.ai/`;
 
