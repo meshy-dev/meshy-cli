@@ -10,6 +10,7 @@
 import { HintedError } from "./errors.js";
 import { USER_AGENT } from "./user-agent.js";
 import type { TokenResponse } from "./oauth.js";
+import { fetchErrorMessage, PROXY_HINT, proxyFailure } from "./proxy.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -112,9 +113,9 @@ export async function deviceAuthorization(
     });
   } catch (err) {
     throw new HintedError({
-      message: `Network error contacting device authorization endpoint: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Network error contacting device authorization endpoint: ${fetchErrorMessage(err)}`,
       code: "oauth_network",
-      hint: "Run: meshy auth login --with-key msy_...",
+      hint: proxyFailure(err) ? PROXY_HINT : "Run: meshy auth login --with-key msy_...",
     });
   }
 
@@ -227,9 +228,9 @@ async function deviceTokenOnce(
     });
   } catch (err) {
     throw new HintedError({
-      message: `Network error polling device token: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Network error polling device token: ${fetchErrorMessage(err)}`,
       code: "oauth_network",
-      hint: "Run: meshy auth login",
+      hint: proxyFailure(err) ? PROXY_HINT : "Run: meshy auth login",
     });
   }
 

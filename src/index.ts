@@ -27,7 +27,7 @@ import { useProxyFromEnv } from "./internal/proxy.js";
 
 async function main(): Promise<number> {
   // Before any request, the update check's included (D-093).
-  useProxyFromEnv();
+  await useProxyFromEnv();
   const argv = process.argv;
   if (argv.includes("--no-update-check")) {
     // Children (none today, but any future spawn) inherit the opt-out.

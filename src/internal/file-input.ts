@@ -22,6 +22,7 @@ import type { MediaField, MediaKind } from "../client/resource-registry.js";
 import { UsageError } from "./errors.js";
 import { logger } from "./logger.js";
 import { USER_AGENT } from "./user-agent.js";
+import { fetchErrorMessage } from "./proxy.js";
 
 export const DEFAULT_MEDIA_LIMITS = {
   /** 50 MiB — an engineering default, not a Meshy product limit. */
@@ -179,7 +180,7 @@ async function preflightUrl(url: string, flagLabel: string, limits: MediaLimits,
       controller.abort();
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = fetchErrorMessage(err);
     if (timeout.aborted) throw new UsageError(`${flagLabel}: preflight of ${url} timed out after ${limits.preflightTimeoutMs}ms`);
     throw new UsageError(`${flagLabel}: cannot reach ${url} (${msg})`);
   }

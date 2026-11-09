@@ -1635,22 +1635,32 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   than the CLI requires.
 - At start, before any request, the CLI reads `https_proxy`, `HTTPS_PROXY`,
   `http_proxy`, `HTTP_PROXY` and `no_proxy`, `NO_PROXY` (lowercase first, as
-  curl and undici do). When either proxy is set it installs undici's
-  `EnvHttpProxyAgent` as the global dispatcher once, so every fetch goes
-  through it: the API, sign-in, downloads, input URL checks, and the update
-  check's child process, which starts through the same entry point. `https:`
-  URLs use `HTTPS_PROXY` (a CONNECT tunnel) and fall back to `HTTP_PROXY`;
-  `http:` URLs go to the proxy as plain forwarded requests, as curl sends
-  them, so a proxy that only forwards still works. Without a proxy variable
-  nothing changes.
-- Hosts in `NO_PROXY` go direct, and so does this machine (`localhost`,
-  `127.0.0.1`, `::1`) always, as Go's `net/http` does (Ark, 2026-11-09): a
-  custom `MESHY_BASE_URL_*` on loopback is a development server, and its
-  credential would otherwise cross the proxy in the clear.
-- A proxy value that is not an `http://` or `https://` URL does not fall back
-  to going direct: every request fails before it leaves, with an error that
-  names the variable and never its value, which may hold a password. Local
-  commands still run.
+  curl and undici do). When either proxy is set it installs a global
+  dispatcher once, so every fetch goes through it: the API, sign-in,
+  downloads, input URL checks, and the update check's child process, which
+  starts through the same entry point. Without a proxy variable nothing
+  changes.
+- The dispatcher is undici's `EnvHttpProxyAgent`. `https:` URLs use
+  `HTTPS_PROXY` (a CONNECT tunnel) and fall back to `HTTP_PROXY`. `http:` URLs
+  go to an `http://` proxy as plain forwarded requests, as curl sends them, so
+  a proxy that only forwards still works. undici tunnels through an
+  `https://` proxy for every URL; curl would forward `http:` there, and the
+  only `http:` targets are a custom `MESHY_BASE_URL_*` (usually this machine,
+  which goes direct) and an input URL a user gives. `NO_PROXY` is passed as
+  given, so `*` still means every host.
+- This machine always goes direct: `localhost`, `127.0.0.0/8` and `::1`, as
+  Go's `net/http` does (Ark, 2026-11-09). A custom `MESHY_BASE_URL_*` on
+  loopback is a development server, and its credential would otherwise cross
+  the proxy in the clear. `NO_PROXY` cannot express a range, so a thin
+  dispatcher in front sends loopback hosts to a plain agent and everything
+  else to `EnvHttpProxyAgent`.
+- A proxy value undici cannot use (not `http://` or `https://`, no host, a
+  query, a bad escape) does not fall back to going direct: every request
+  fails before it leaves, with an error that names the variable and never its
+  value, which may hold a password. The check builds the proxy agent undici
+  would build, so nothing it accepts is refused. Local commands still run.
+  Sign-in and downloads report the same message, and sign-in points at the
+  proxy variables rather than at another way to sign in.
 - A request the proxy refuses (a CONNECT answered other than 200, a forwarded
   request answered 407) never reached Meshy: the transport records it as
   never sent (`not_submitted`), not as a submission whose outcome is unknown,

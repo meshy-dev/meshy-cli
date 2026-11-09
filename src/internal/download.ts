@@ -34,6 +34,7 @@ import { isInside, looksLikeFile, realpathLenient, resolveWithinRoot, safeExtens
 import { USER_AGENT } from "./user-agent.js";
 import { enumerateAssets, selectDefaultAssets, type Asset, type DefaultSelection, type SkipReason } from "./artifacts.js";
 import { fileDigest, relinkMaterials, type MaterialLinkReport } from "./material-links.js";
+import { fetchErrorMessage } from "./proxy.js";
 
 /** Extensions sharp can transcode between. */
 const CONVERTIBLE_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "tiff", "tif", "avif"]);
@@ -147,7 +148,7 @@ export async function fetchToTemp(rawUrl: string, target: string, opts: FetchOpt
       } catch (err) {
         if (opts.signal?.aborted) throw new CliError({ code: "interrupted", message: `download of ${redact(url)} interrupted` });
         if (controller.signal.aborted) throw new CliError({ code: "network", message: `download of ${redact(url)} timed out after ${limits.timeoutMs}ms` });
-        throw new CliError({ code: "network", message: `download of ${redact(url)} failed: ${err instanceof Error ? err.message : String(err)}`, cause: err });
+        throw new CliError({ code: "network", message: `download of ${redact(url)} failed: ${fetchErrorMessage(err)}`, cause: err });
       }
       if (r.status >= 300 && r.status < 400) {
         const loc = r.headers.get("location");

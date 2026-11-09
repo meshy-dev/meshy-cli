@@ -17,7 +17,8 @@ import { connect, type AddressInfo } from "node:net";
 import { getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from "undici";
 
 import { createTransport, TransportError } from "../src/client/transport.js";
-import { proxySettings, useProxyFromEnv } from "../src/internal/proxy.js";
+import { deviceAuthorization } from "../src/internal/device.js";
+import { isLoopbackHost, PROXY_HINT, proxySettings, useProxyFromEnv } from "../src/internal/proxy.js";
 import { jsonReply, runCli, startMockApi } from "./helpers/cli.js";
 
 interface TestProxy {
@@ -96,23 +97,21 @@ function keepDispatcher(t: { after: (fn: () => void) => void }): void {
   t.after(() => setGlobalDispatcher(previous));
 }
 
-const LOOPBACK = "localhost,127.0.0.1,[::1]";
-
-test("no proxy variable: nothing to read, nothing installed", () => {
-  assert.deepEqual(proxySettings({}), { kind: "none" });
-  assert.deepEqual(proxySettings({ HTTPS_PROXY: "  ", NO_PROXY: "example.com" }), { kind: "none" }, "blank values and NO_PROXY alone name no proxy");
+test("no proxy variable: nothing to read, nothing installed", async () => {
+  assert.deepEqual(await proxySettings({}), { kind: "none" });
+  assert.deepEqual(await proxySettings({ HTTPS_PROXY: "  ", NO_PROXY: "example.com" }), { kind: "none" }, "blank values and NO_PROXY alone name no proxy");
   const installed: Dispatcher[] = [];
-  assert.equal(useProxyFromEnv({ PATH: "/usr/bin" }, (d) => installed.push(d)), false);
+  assert.equal(await useProxyFromEnv({ PATH: "/usr/bin" }, (d) => installed.push(d)), false);
   assert.equal(installed.length, 0);
 });
 
-test("proxy settings: both spellings, lowercase first; this machine always goes direct", () => {
-  assert.deepEqual(proxySettings({ HTTPS_PROXY: "http://proxy:3128" }), {
+test("proxy settings: both spellings, lowercase first", async () => {
+  assert.deepEqual(await proxySettings({ HTTPS_PROXY: "http://proxy:3128/" }), {
     kind: "proxy",
-    settings: { httpsProxy: "http://proxy:3128", httpProxy: "", noProxy: LOOPBACK },
+    settings: { httpsProxy: "http://proxy:3128/", httpProxy: "", noProxy: "" },
   });
   assert.deepEqual(
-    proxySettings({
+    await proxySettings({
       https_proxy: "http://lower:1",
       HTTPS_PROXY: "http://upper:1",
       http_proxy: "http://lower:2",
@@ -120,20 +119,35 @@ test("proxy settings: both spellings, lowercase first; this machine always goes 
       no_proxy: "lower.example",
       NO_PROXY: "upper.example",
     }),
-    { kind: "proxy", settings: { httpsProxy: "http://lower:1", httpProxy: "http://lower:2", noProxy: `lower.example,${LOOPBACK}` } },
+    { kind: "proxy", settings: { httpsProxy: "http://lower:1", httpProxy: "http://lower:2", noProxy: "lower.example" } },
   );
+});
+
+test("this machine is localhost, 127.0.0.0/8 and ::1, in any spelling a URL gives", () => {
+  for (const host of ["localhost", "LOCALHOST", "127.0.0.1", "127.0.0.2", "127.255.255.254", "[::1]", "::1", new URL("http://[::ffff:127.0.0.1]/").hostname]) {
+    assert.equal(isLoopbackHost(host), true, host);
+  }
+  for (const host of ["128.0.0.1", "10.0.0.1", "[::2]", "localhost.example", "example.com", "0.0.0.0"]) {
+    assert.equal(isLoopbackHost(host), false, host);
+  }
 });
 
 test("an invalid proxy URL names the variable, never its value, and no request leaves", async (t) => {
   keepDispatcher(t);
   const target = await startTarget();
   t.after(target.close);
-  for (const value of ["http://user:s3cret@proxy.example:notaport", "proxy.example:3128", "ftp://proxy.example:21"]) {
-    assert.deepEqual(proxySettings({ HTTPS_PROXY: value }), { kind: "invalid", variable: "HTTPS_PROXY" }, value);
+  for (const value of [
+    "http://user:s3cret@proxy.example:notaport",
+    "proxy.example:3128",
+    "ftp://proxy.example:21",
+    "http://user:%E0%A4%A@proxy.example:8080",
+    "http://proxy.example:8080/?x=1",
+  ]) {
+    assert.deepEqual(await proxySettings({ HTTPS_PROXY: value }), { kind: "invalid", variable: "HTTPS_PROXY" }, value);
   }
-  assert.deepEqual(proxySettings({ http_proxy: "::" }), { kind: "invalid", variable: "http_proxy" });
+  assert.deepEqual(await proxySettings({ http_proxy: "::" }), { kind: "invalid", variable: "http_proxy" });
 
-  assert.equal(useProxyFromEnv({ HTTP_PROXY: "http://user:s3cret@proxy.example:notaport" }), true);
+  assert.equal(await useProxyFromEnv({ HTTP_PROXY: "http://user:s3cret@proxy.example:notaport" }), true);
   const transport = createTransport({ baseUrl: `http://api.example.invalid:${target.port()}/openapi/v1`, apiKey: "msy_k", readTimeoutMs: 5000 });
   await assert.rejects(transport.requestJson("POST", "/text-to-3d", { body: {} }), (e: unknown) => {
     assert.ok(e instanceof TransportError);
@@ -143,6 +157,14 @@ test("an invalid proxy URL names the variable, never its value, and no request l
     return true;
   });
   assert.equal(target.hits(), 0, "the request did not go direct either");
+
+  await assert.rejects(deviceAuthorization(`http://api.example.invalid:${target.port()}/openapi/v1`), (e: unknown) => {
+    const err = e as { message: string; hint?: string };
+    assert.match(err.message, /HTTP_PROXY is not a valid proxy URL/, "sign-in names the variable too");
+    assert.doesNotMatch(err.message, /s3cret/);
+    assert.equal(err.hint, PROXY_HINT, "and points at the proxy, not at another way to sign in");
+    return true;
+  });
 });
 
 test("an http: request goes through the proxy as a plain forward, an https: one as a tunnel", async (t) => {
@@ -151,7 +173,7 @@ test("an http: request goes through the proxy as a plain forward, an https: one 
   t.after(target.close);
   const proxy = await startProxy(target.port, { connect: 403 });
   t.after(proxy.close);
-  assert.equal(useProxyFromEnv({ HTTP_PROXY: proxy.url }), true);
+  assert.equal(await useProxyFromEnv({ HTTP_PROXY: proxy.url }), true);
 
   const res = await fetch(`http://api.example.invalid:${target.port()}/x`);
   assert.equal(res.status, 200, "a proxy that refuses CONNECT still forwards plain HTTP");
@@ -167,7 +189,7 @@ test("NO_PROXY and this machine's own addresses go direct", async (t) => {
   const proxy = await startProxy(target.port);
   t.after(proxy.close);
 
-  assert.equal(useProxyFromEnv({ HTTP_PROXY: proxy.url }), true);
+  assert.equal(await useProxyFromEnv({ HTTP_PROXY: proxy.url }), true);
   for (const host of ["127.0.0.1", "localhost"]) {
     const res = await fetch(`http://${host}:${target.port()}/x`);
     assert.equal(res.status, 200, host);
@@ -192,9 +214,11 @@ test("NO_PROXY and this machine's own addresses go direct", async (t) => {
     t.diagnostic("no IPv6 loopback here; [::1] not exercised");
   }
 
-  assert.equal(useProxyFromEnv({ HTTP_PROXY: proxy.url, NO_PROXY: "api.example.invalid" }), true);
-  await assert.rejects(fetch(`http://api.example.invalid:${target.port()}/x`), "a NO_PROXY host goes direct, and .invalid does not resolve");
-  assert.equal(proxy.forwarded() + proxy.tunnels(), 0);
+  for (const noProxy of ["api.example.invalid", "*"]) {
+    assert.equal(await useProxyFromEnv({ HTTP_PROXY: proxy.url, NO_PROXY: noProxy }), true);
+    await assert.rejects(fetch(`http://api.example.invalid:${target.port()}/x`), `NO_PROXY=${noProxy} goes direct, and .invalid does not resolve`);
+    assert.equal(proxy.forwarded() + proxy.tunnels(), 0, `NO_PROXY=${noProxy}`);
+  }
 });
 
 test("a proxy that refuses the request is a request never sent, and says it was the proxy", async (t) => {
@@ -207,7 +231,7 @@ test("a proxy that refuses the request is a request never sent, and says it was 
   ] as const) {
     const proxy = await startProxy(target.port, proxyOpts);
     try {
-      assert.equal(useProxyFromEnv({ HTTPS_PROXY: proxy.url, HTTP_PROXY: proxy.url }), true);
+      assert.equal(await useProxyFromEnv({ HTTPS_PROXY: proxy.url, HTTP_PROXY: proxy.url }), true);
       const transport = createTransport({ baseUrl: `${scheme}://api.example.invalid:${target.port()}/openapi/v1`, apiKey: "msy_k", readTimeoutMs: 5000 });
       await assert.rejects(transport.requestJson("POST", "/text-to-3d", { body: {} }), (e: unknown) => {
         assert.ok(e instanceof TransportError, name);
