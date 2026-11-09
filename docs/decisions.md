@@ -1646,8 +1646,9 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   a proxy that only forwards still works. undici tunnels through an
   `https://` proxy for every URL; curl would forward `http:` there, and the
   only `http:` targets are a custom `MESHY_BASE_URL_*` (usually this machine,
-  which goes direct) and an input URL a user gives. `NO_PROXY` is passed as
-  given, so `*` still means every host.
+  which goes direct) and an input URL a user gives; Ark accepted this limit
+  on 2026-11-09 rather than a hand-written forwarding client. `NO_PROXY` is
+  passed as given, so `*` still means every host.
 - This machine always goes direct: `localhost`, `127.0.0.0/8` and `::1`, as
   Go's `net/http` does (Ark, 2026-11-09). A custom `MESHY_BASE_URL_*` on
   loopback is a development server, and its credential would otherwise cross
