@@ -115,15 +115,23 @@ const PROXY_REFUSALS = [/^Proxy response \(\d{3}\) !== 200 when HTTP Tunneling$/
 
 /**
  * Why a fetch failed at the proxy, before reaching its target: the proxy
- * setting is unusable, or the proxy refused the request (a CONNECT answered
- * other than 200, a forwarded request answered 407). Undefined for any other
- * failure. Either way the target was never reached.
+ * setting is unusable, the TLS connection to an https:// proxy failed on its
+ * certificate's name (undici wraps only that one, as UND_ERR_PRX_TLS; other
+ * certificate and connection errors reach the transport as their own errno),
+ * or the proxy refused the request (a CONNECT answered other than 200, a
+ * forwarded request answered 407). Undefined for any other failure. Either
+ * way the target was never reached.
  */
 export function proxyFailure(err: unknown): string | undefined {
   // fetch wraps it: "fetch failed" → (a refused tunnel: "Request was cancelled.") → undici's error.
   let cause: unknown = err;
   for (let depth = 0; depth < 5 && cause instanceof Error; depth += 1, cause = cause.cause) {
-    if ((cause as { code?: unknown }).code === PROXY_INVALID_CODE) return cause.message;
+    const { code } = cause as { code?: unknown };
+    if (code === PROXY_INVALID_CODE) return cause.message;
+    if (code === "UND_ERR_PRX_TLS") {
+      const reason = cause.cause instanceof Error ? cause.cause.message : cause.message;
+      return `the TLS connection to the proxy failed: ${reason}`;
+    }
     const { message } = cause;
     if (PROXY_REFUSALS.some((re) => re.test(message))) return `the proxy refused the request: ${message}`;
   }

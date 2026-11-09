@@ -14,7 +14,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, request as httpRequest, type Server } from "node:http";
 import { connect, type AddressInfo } from "node:net";
-import { getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from "undici";
+import { errors, getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from "undici";
 
 import { createTransport, TransportError } from "../src/client/transport.js";
 import { deviceAuthorization } from "../src/internal/device.js";
@@ -245,6 +245,25 @@ test("a proxy that refuses the request is a request never sent, and says it was 
     }
   }
   assert.equal(target.hits(), 0);
+});
+
+test("a failed TLS handshake with an https:// proxy is a request never sent", async () => {
+  // fetch's error when an https:// proxy's certificate does not match its
+  // name, as undici 7 builds it (TypeError → SecureProxyConnectionError → the
+  // TLS error). Reproducing it for real needs a CA the test process trusts.
+  const tls = Object.assign(new Error("Hostname/IP does not match certificate's altnames: IP: 127.0.0.1 is not in the cert's list: "), {
+    code: "ERR_TLS_CERT_ALTNAME_INVALID",
+  });
+  const fetchImpl = (async () => {
+    throw new TypeError("fetch failed", { cause: new errors.SecureProxyConnectionError(tls) });
+  }) as unknown as typeof fetch;
+  const transport = createTransport({ baseUrl: "https://api.meshy.ai/openapi/v1", apiKey: "msy_k", readTimeoutMs: 5000, fetchImpl });
+  await assert.rejects(transport.requestJson("POST", "/text-to-3d", { body: {} }), (e: unknown) => {
+    assert.ok(e instanceof TransportError);
+    assert.equal(e.neverSent, true, "the target was never reached");
+    assert.match(e.message, /TLS connection to the proxy failed: Hostname\/IP does not match/);
+    return true;
+  });
 });
 
 test("the CLI's API requests go through HTTP_PROXY", async (t) => {

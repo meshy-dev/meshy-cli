@@ -1663,9 +1663,13 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   Sign-in and downloads report the same message, and sign-in points at the
   proxy variables rather than at another way to sign in.
 - A request the proxy refuses (a CONNECT answered other than 200, a forwarded
-  request answered 407) never reached Meshy: the transport records it as
-  never sent (`not_submitted`), not as a submission whose outcome is unknown,
-  and the error says it was the proxy. undici reports these only by message;
+  request answered 407), or whose TLS handshake with an `https://` proxy fails,
+  never reached Meshy: the transport records it as never sent
+  (`not_submitted`), not as a submission whose outcome is unknown, and the
+  error says it was the proxy. undici reports refusals only by message and
+  wraps only a certificate-name mismatch with the proxy (`UND_ERR_PRX_TLS`);
+  other certificate and connection errors with the proxy arrive as their own
+  errno, which the transport already counts as never sent.
   `tests/proxy.test.ts` pins the messages of the version in the lockfile.
 - undici is a dependency for this alone. Node's own `http.setGlobalProxyFromEnv`
   does the same, but Node 22 does not have it (24.20 does); one code path
