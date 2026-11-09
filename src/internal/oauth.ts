@@ -22,6 +22,7 @@ import type { CredentialAccount } from "./credentials.js";
 import { HintedError } from "./errors.js";
 import { USER_AGENT } from "./user-agent.js";
 import { renderCallbackPage } from "./oauth-page.js";
+import { fetchErrorMessage, PROXY_HINT, proxyFailure } from "./proxy.js";
 
 // ---------------------------------------------------------------------------
 // PKCE helpers
@@ -350,9 +351,9 @@ async function postToken(
     });
   } catch (err) {
     throw new HintedError({
-      message: `Network error contacting token endpoint: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Network error contacting token endpoint: ${fetchErrorMessage(err)}`,
       code: "oauth_network",
-      hint: "Run: meshy auth login",
+      hint: proxyFailure(err) ? PROXY_HINT : "Run: meshy auth login",
     });
   }
 

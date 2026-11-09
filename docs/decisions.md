@@ -1624,3 +1624,58 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Inside DeepSeek Harness the request still ends in `dsh` after the
   parentheses (D-087) while servers that read only that part are in use; the
   agent segment says `dsh` too.
+
+## D-093 Requests honor HTTPS_PROXY, HTTP_PROXY and NO_PROXY
+
+- Node's fetch ignores the proxy variables unless Node itself was started
+  with `NODE_USE_ENV_PROXY=1` (22.21+, 24+). Cursor's sandbox allows the
+  network only through a proxy it names in those variables, so every command
+  there failed at its first request (`oauth_network`), and the Meshy plugin
+  had to start the CLI with `NODE_USE_ENV_PROXY=1`, which needs a newer Node
+  than the CLI requires.
+- At start, before any request, the CLI reads `https_proxy`, `HTTPS_PROXY`,
+  `http_proxy`, `HTTP_PROXY` and `no_proxy`, `NO_PROXY` (lowercase first, as
+  curl and undici do). When either proxy is set it installs a global
+  dispatcher once, so every fetch goes through it: the API, sign-in,
+  downloads, input URL checks, and the update check's child process, which
+  starts through the same entry point. Without a proxy variable nothing
+  changes.
+- The dispatcher is undici's `EnvHttpProxyAgent`. `https:` URLs use
+  `HTTPS_PROXY` (a CONNECT tunnel) and fall back to `HTTP_PROXY`. `http:` URLs
+  go to an `http://` proxy as plain forwarded requests, as curl sends them, so
+  a proxy that only forwards still works. undici tunnels through an
+  `https://` proxy for every URL; curl would forward `http:` there, and the
+  only `http:` targets are a custom `MESHY_BASE_URL_*` (usually this machine,
+  which goes direct) and an input URL a user gives; Ark accepted this limit
+  on 2026-11-09 rather than a hand-written forwarding client. `NO_PROXY` is
+  passed as given, so `*` still means every host.
+- This machine always goes direct: `localhost`, `127.0.0.0/8` and `::1`, as
+  Go's `net/http` does (Ark, 2026-11-09). A custom `MESHY_BASE_URL_*` on
+  loopback is a development server, and its credential would otherwise cross
+  the proxy in the clear. `NO_PROXY` cannot express a range, so a thin
+  dispatcher in front sends loopback hosts to a plain agent and everything
+  else to `EnvHttpProxyAgent`.
+- A proxy value undici cannot use (not `http://` or `https://`, no host, a
+  query, a bad escape) does not fall back to going direct: every request
+  fails before it leaves, with an error that names the variable and never its
+  value, which may hold a password. The check builds the proxy agent undici
+  would build, so nothing it accepts is refused. Local commands still run.
+  Sign-in and downloads report the same message, and sign-in points at the
+  proxy variables rather than at another way to sign in.
+- A request the proxy refuses (a CONNECT answered other than 200, a forwarded
+  request answered 407), or whose `https://` proxy fails the certificate check
+  (a name mismatch, which undici wraps as `UND_ERR_PRX_TLS`; an untrusted or
+  expired certificate, which arrives as its own errno), never reached Meshy:
+  the transport records it as never sent (`not_submitted`), not as a
+  submission whose outcome is unknown, and the error says it was the proxy.
+  Other TLS failures with the proxy (an `https://` proxy URL pointing at a
+  plain HTTP port, say) are still recorded as unknown, the conservative side.
+  undici reports refusals only by message; `tests/proxy.test.ts` pins the
+  messages of the version in the lockfile.
+- undici is a dependency for this alone. Node's own `http.setGlobalProxyFromEnv`
+  does the same, but Node 22 does not have it (24.20 does); one code path
+  covers every Node the CLI supports (22.12+), and the global dispatcher is
+  what Node's built-in fetch uses on both 22 and 24.
+- The transport's own rules are unchanged: it still follows no redirect and
+  refuses a URL outside its base. The proxy only carries the request, and for
+  `https:` URLs it sees a CONNECT tunnel, not the request.
