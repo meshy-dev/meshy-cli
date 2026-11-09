@@ -7,7 +7,8 @@
  *   - turn SIGINT / SIGTERM / SIGHUP into a cooperative abort (exit 130) instead of a hard kill;
  *   - route every failure — including Commander parse errors — through one
  *     exit that renders the v1 error envelope in the format the command would have used;
- *   - flush stdout before exiting.
+ *   - flush stdout before exiting;
+ *   - route every request through the proxy HTTPS_PROXY / HTTP_PROXY name.
  */
 
 import type { Command } from "commander";
@@ -22,8 +23,11 @@ import { stopActiveProgress } from "./internal/progress.js";
 import { errorEnvelope } from "./internal/result.js";
 import { resolveFormat } from "./internal/runtime.js";
 import { refreshCache, shouldRunUpdateCheck } from "./internal/update-notifier.js";
+import { useProxyFromEnv } from "./internal/proxy.js";
 
 async function main(): Promise<number> {
+  // Before any request, the update check's included (D-093).
+  useProxyFromEnv();
   const argv = process.argv;
   if (argv.includes("--no-update-check")) {
     // Children (none today, but any future spawn) inherit the opt-out.

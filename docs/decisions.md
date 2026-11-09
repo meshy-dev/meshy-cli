@@ -1624,3 +1624,27 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - Inside DeepSeek Harness the request still ends in `dsh` after the
   parentheses (D-087) while servers that read only that part are in use; the
   agent segment says `dsh` too.
+
+## D-093 Requests honor HTTPS_PROXY, HTTP_PROXY and NO_PROXY
+
+- Node's fetch ignores the proxy variables unless Node itself was started
+  with `NODE_USE_ENV_PROXY=1` (22.21+, 24+). Cursor's sandbox allows the
+  network only through a proxy it names in those variables, so every command
+  there failed at its first request (`oauth_network`), and the Meshy plugin
+  had to start the CLI with `NODE_USE_ENV_PROXY=1`, which needs a newer Node
+  than the CLI requires.
+- At start, before any request, the CLI reads `https_proxy`, `HTTPS_PROXY`,
+  `http_proxy`, `HTTP_PROXY` and `no_proxy`, `NO_PROXY` (lowercase first, as
+  curl and undici do). When either proxy is set it installs undici's
+  `EnvHttpProxyAgent` as the global dispatcher once, so every fetch goes
+  through it: the API, sign-in, downloads, input URL checks, and the update
+  check's child process, which starts through the same entry point. `https:`
+  URLs use `HTTPS_PROXY` and fall back to `HTTP_PROXY`; hosts in `NO_PROXY` go
+  direct. Without a proxy variable nothing changes.
+- undici is a dependency for this alone. Node's own `http.setGlobalProxyFromEnv`
+  does the same, but Node 22 does not have it (24.20 does); one code path
+  covers every Node the CLI supports (22.12+), and the global dispatcher is
+  what Node's built-in fetch uses on both 22 and 24.
+- The transport's own rules are unchanged: it still follows no redirect and
+  refuses a URL outside its base. The proxy only carries the request, and for
+  `https:` URLs it sees a CONNECT tunnel, not the request.
