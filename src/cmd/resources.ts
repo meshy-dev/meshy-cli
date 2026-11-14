@@ -50,6 +50,7 @@ export const RESOURCES: ResourceEntry[] = [
   { name: "mesh", summary: "prepare-print: OBJ Y-up → Z-up, scale to height, centre, ground at Z=0" },
   { name: "slicer", summary: "detect installed slicers | open a model in one" },
   { name: "doctor", summary: "local environment diagnosis (no network by default)" },
+  { name: "view", summary: "show a local .glb/.gltf in an interactive 3D viewer in the browser (local only)" },
   { name: "auto-split", summary: "split a model into printable parts (auto / by named parts / by colour; optional connectors)" },
   { name: "usage", summary: "usage tasks: finished API tasks with the credits each consumed (Studio/Enterprise)" },
 ];

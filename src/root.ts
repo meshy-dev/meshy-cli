@@ -50,6 +50,7 @@ import { textToImageCommand } from "./cmd/text-to-image.js";
 import { textToMotionCommand } from "./cmd/text-to-motion.js";
 import { usageCommand } from "./cmd/usage.js";
 import { uvUnwrapCommand } from "./cmd/uv-unwrap.js";
+import { viewCommand } from "./cmd/view.js";
 
 /**
  * Commands that never need the authenticated API. The background update check
@@ -63,6 +64,7 @@ export const LOCAL_COMMANDS: ReadonlySet<string> = new Set([
   "slicer",
   "doctor",
   "download",
+  "view",
   REFRESH_COMMAND,
 ]);
 
@@ -200,6 +202,7 @@ export function buildRootCommand(): Command {
     doctorCommand,
     autoSplitCommand,
     usageCommand,
+    viewCommand,
   ]) {
     program.addCommand(cmd, { hidden: true });
   }

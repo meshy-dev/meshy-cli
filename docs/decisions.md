@@ -1679,3 +1679,39 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - The transport's own rules are unchanged: it still follows no redirect and
   refuses a URL outside its base. The proxy only carries the request, and for
   `https:` URLs it sees a CONNECT tunnel, not the request.
+
+## D-094 `meshy view` shows a local model in a browser viewer served on 127.0.0.1
+
+- Agents deliver a `.glb`, but some hosts cannot show one: an editor tab may
+  only say "binary file", and a terminal has nothing to render with. Hosts with
+  a browser panel or a default browser can show a page. `view` turns a local
+  `.glb`/`.gltf` into that page. It is local only, with no API call and no
+  credential, so it is in `LOCAL_COMMANDS`.
+- One server shows one model. `/` is the page, `/model.glb` (or
+  `/model.gltf`) is the file, and `/env.hdr` is the lighting environment. For a
+  `.gltf`, the buffers and textures beside it (`.bin`, `.png`, `.jpg`, `.jpeg`,
+  `.webp`, `.ktx2`) are also served, resolved with `realpath` and kept inside
+  the model's folder. Nothing else on disk is reachable: not the folder's
+  sidecars (which hold signed URLs), not other files, and not links out of the
+  folder. The server binds 127.0.0.1 and answers only GET and HEAD with a
+  `127.0.0.1` or `localhost` Host header, which blocks DNS rebinding. Its
+  responses carry no CORS headers, so other origins cannot read them.
+- The page aims for a neutral studio look rather than a debug view: Neutral
+  tone mapping, a studio environment, a key light with a soft ground shadow,
+  fills scaled to the model, a 35° camera framing the bounds, and a dark radial
+  backdrop. The numbers live in `viewerPage()`. Post-processing (AO, bloom) is
+  left out to keep the page small. The first animation clip, if any, plays.
+- three.js and its addons come from jsDelivr at a pinned version, and the
+  import map carries each file's SRI hash. Bundling three.js would add about
+  1 MB to the package for one command. The environment map ships in the
+  package instead (`assets/viewer-env.hdr`, 512×256, about 0.5 MB), so the
+  lighting works wherever jsDelivr does. It is built from Poly Haven's CC0 "Decor Shop" by
+  `scripts/make-viewer-env.mjs`.
+- `view` prints the envelope (`result.url`) once the server listens, then
+  keeps serving until Ctrl-C (exit 0) or 30 minutes without a request.
+  `--detach` starts the same server in a detached child, waits for its URL and
+  returns at once with `detached: true` and the child's `pid`. That is the form
+  an agent uses: one command, one URL to open in its browser panel.
+  `--no-open` skips the default browser (`MESHY_CLI_NO_BROWSER` does as well).
+- Reviewer check: a new route must not widen what the server reads beyond the
+  one model and its own referenced files.

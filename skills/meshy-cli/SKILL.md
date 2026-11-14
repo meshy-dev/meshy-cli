@@ -129,6 +129,7 @@ meshy inspect faces --model ./model.glb --max-faces 300000      # exit 0 pass | 
 meshy mesh prepare-print ./model.obj --height-mm 75              # writes ./model.print.obj (Y-up → Z-up, grounded)
 meshy slicer detect
 meshy slicer open --slicer OrcaSlicer --file ./model.print.obj  # launch only; not proof of import
+meshy view ./model.glb --detach --no-open --format json           # result.url: interactive 3D view on 127.0.0.1
 ```
 
 `download` needs an explicit selector when a task has several assets (it lists
@@ -137,7 +138,9 @@ faces` answers only the face-count question. The API does not report
 `face_count`, so measure the downloaded model with `--model <file.glb>`; a task
 source answers `unknown` (exit 13) — never treat that as a pass, and do not
 start a remesh unless the user agrees. `prepare-print` never edits the input unless
-`--in-place`.
+`--in-place`. `view` shows a local `.glb`/`.gltf` in a browser viewer served on
+127.0.0.1 (nothing is uploaded; the page loads three.js from jsDelivr) and stops
+after 30 minutes without a request; `--detach` returns the URL at once.
 
 ## Constraints that will bite
 
