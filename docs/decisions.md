@@ -1699,8 +1699,13 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
 - The page aims for a neutral studio look rather than a debug view: Neutral
   tone mapping, a studio environment, a key light with a soft ground shadow,
   fills scaled to the model, a 35° camera framing the bounds, and a dark radial
-  backdrop. The numbers live in `viewerPage()`. Post-processing (AO, bloom) is
-  left out to keep the page small. The first animation clip, if any, plays.
+  backdrop. The numbers live in `viewerPage()`, set so a white surface stays
+  below clipping. Post-processing (AO, bloom) is left out to keep the page
+  small. The first animation clip, if any, plays.
+- An untextured preview often has no material and no normals. glTF's default
+  material is white and fully metallic, which reads as a flat, overexposed
+  shape, so a file without materials renders as matte grey clay. Missing
+  normals are computed (smooth), as glTF asks of the viewer.
 - three.js and its addons come from jsDelivr at a pinned version, and the
   import map carries each file's SRI hash. Bundling three.js would add about
   1 MB to the package for one command. The environment map ships in the

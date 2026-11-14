@@ -101,6 +101,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 const note = document.getElementById("note");
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -110,7 +111,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
-scene.environmentIntensity = 2;
+scene.environmentIntensity = 1;
 scene.environmentRotation.y = THREE.MathUtils.degToRad(159);
 const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 1000);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -121,17 +122,26 @@ let mixer;
 new RGBELoader().load("/env.hdr", (t) => { t.mapping = THREE.EquirectangularReflectionMapping; scene.environment = t; });
 new GLTFLoader().load("/model${model.ext}", (gltf) => {
   const root = gltf.scene;
-  root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  // A file without materials (an untextured preview) would get glTF's default: white, fully metallic. Show it as matte clay.
+  const clay = !gltf.parser.json.materials?.length;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    // glTF asks the viewer to compute normals a file leaves out; smooth ones suit a sculpted mesh.
+    if (!o.geometry.attributes.normal) { o.geometry = o.geometry.index ? o.geometry : mergeVertices(o.geometry); o.geometry.computeVertexNormals(); }
+    if (clay) o.material = new THREE.MeshStandardMaterial({ color: 0xd4d4d4, roughness: 0.7, metalness: 0, vertexColors: !!o.geometry.attributes.color });
+  });
   const box = new THREE.Box3().setFromObject(root);
   root.position.sub(box.getCenter(new THREE.Vector3()));
   scene.add(root);
   const size = box.getSize(new THREE.Vector3()), r = size.length() / 2, floor = -size.y / 2 - 0.015 * r;
-  scene.add(new THREE.AmbientLight(0xffffff, 0.667));
-  const spot = new THREE.SpotLight(0xffffff, 4, 0, 0.6, 1, 0);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+  const spot = new THREE.SpotLight(0xffffff, 1.5, 0, 0.6, 1, 0);
   spot.position.set(r, 2 * r, r);
-  const point = new THREE.PointLight(0xffffff, 2, 0, 0);
+  const point = new THREE.PointLight(0xffffff, 1, 0, 0);
   point.position.set(-2 * r, -0.5 * r, -2 * r);
-  const key = new THREE.DirectionalLight(0xffffff, 1.8);
+  const key = new THREE.DirectionalLight(0xffffff, 2);
   key.position.set(-1.75, 15, 7).setLength(4 * r);
   key.castShadow = true;
   key.shadow.intensity = 0.45;
