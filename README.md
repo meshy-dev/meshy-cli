@@ -14,6 +14,7 @@ Requires Node 22.12+. No Python, no other runtime.
 ```bash
 npm i -g meshy-cli       # installs `meshy` and `meshy-cli`
 meshy doctor             # checks the environment, no network
+meshy view ./car.glb     # opens the model in a 3D viewer in the browser, local only
 ```
 
 The same build is published as [`@meshy-ai/cli`](https://www.npmjs.com/package/@meshy-ai/cli).
