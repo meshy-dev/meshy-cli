@@ -146,6 +146,7 @@ async function finishLogin(
 ): Promise<void> {
   const file = resolveFile(flags);
   const account = await fetchAccount(baseUrlV1, tok.access_token);
+  const issuedAt = Date.now();
   // Every login gets its own identifier: the operation journal binds a
   // submission to the account (user_id) when the token endpoint reports one,
   // and to this login otherwise — never to a token that rotates on refresh.
@@ -153,7 +154,8 @@ async function finishLogin(
     kind: "oauth" as const,
     access_token: tok.access_token,
     refresh_token: tok.refresh_token,
-    expires_at: Date.now() + tok.expires_in * 1000,
+    expires_at: issuedAt + tok.expires_in * 1000,
+    issued_at: issuedAt,
     ...(tok.user_id ? { user_id: tok.user_id } : {}),
     login_id: randomUUID(),
     ...(regionOf(baseUrlV1) ? { region: "cn" as const } : {}),

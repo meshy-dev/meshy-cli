@@ -83,6 +83,12 @@ export interface CredentialProfile {
   account?: CredentialAccount;
   /** Unix epoch millis. */
   expires_at?: number;
+  /**
+   * Unix epoch millis when the access token was received, so expires_at -
+   * issued_at is its lifetime (refreshSkewMs). Absent on a profile an older
+   * CLI saved.
+   */
+  issued_at?: number;
   user_id?: string;
   /**
    * Random identifier minted by `meshy auth login` for OAuth profiles. It

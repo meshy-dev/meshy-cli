@@ -65,13 +65,29 @@ export interface LocalRuntime {
 export const REFRESH_SKEW_MS = 30 * 60_000;
 
 /**
+ * How far ahead of expiry to refresh this profile's token: REFRESH_SKEW_MS,
+ * or two thirds of the token's lifetime when that is shorter. A token that
+ * lives less than REFRESH_SKEW_MS would otherwise be refreshed by every
+ * command, since it is always within the window: a 15-minute token is
+ * refreshed with 10 minutes left instead, still enough for the default
+ * 10-minute `wait`. The lifetime is expires_at - issued_at; a profile saved
+ * without issued_at keeps REFRESH_SKEW_MS until its next refresh records it.
+ */
+export function refreshSkewMs(profile: { expires_at?: number; issued_at?: number } | undefined): number {
+  const expiresAt = profile?.expires_at;
+  const issuedAt = profile?.issued_at;
+  if (!expiresAt || !issuedAt || expiresAt <= issuedAt) return REFRESH_SKEW_MS;
+  return Math.min(REFRESH_SKEW_MS, Math.floor(((expiresAt - issuedAt) * 2) / 3));
+}
+
+/**
  * Silently refresh an OAuth credential when it is near expiry or already
  * expired, then return the config to use (refreshed+reloaded, or original).
  *
  * No-ops unless:
  *   - credentialSource === "file"
  *   - the active profile is kind "oauth" with a refresh_token
- *   - the access_token expires within REFRESH_SKEW_MS (or is already past)
+ *   - the access_token expires within refreshSkewMs(profile) (or is already past)
  *
  * When the store cannot be written here (a sandboxed agent shell), the
  * refresh is skipped: the API rotates the refresh token on use, so a refresh
@@ -106,7 +122,7 @@ export async function refreshOAuthCredentialIfNeeded(
   if (!profile || profile.kind !== "oauth") return config;
 
   const expiresAt = profile.expires_at ?? 0;
-  const needsRefresh = expiresAt - Date.now() < REFRESH_SKEW_MS;
+  const needsRefresh = expiresAt - Date.now() < refreshSkewMs(profile);
   if (!needsRefresh) return config;
 
   const secrets = profileSecrets(credFile, profile);
@@ -134,17 +150,19 @@ export async function refreshOAuthCredentialIfNeeded(
   try {
     const current = readCredentials(credFile)?.profiles[profileName];
     const refreshToken = current?.kind === "oauth" ? profileSecrets(credFile, current).refresh_token : undefined;
-    if (current && (current.expires_at ?? 0) - Date.now() >= REFRESH_SKEW_MS) {
+    if (current && (current.expires_at ?? 0) - Date.now() >= refreshSkewMs(current)) {
       logger.debug("OAuth token already refreshed by another process");
     } else if (current && refreshToken) await withExitHeld(async () => {
       const tok = await refreshTokens({ baseUrlV1: config.baseUrlV1, refreshToken });
+      const issuedAt = Date.now();
       // Write back: preserve profile name, created_at, region and account.
       updateCredentialsHeld(credFile, (state) => {
         state.profiles[profileName] = {
           kind: "oauth",
           access_token: tok.access_token,
           refresh_token: tok.refresh_token,
-          expires_at: Date.now() + tok.expires_in * 1000,
+          expires_at: issuedAt + tok.expires_in * 1000,
+          issued_at: issuedAt,
           user_id: tok.user_id ?? current.user_id,
           ...(current.login_id ? { login_id: current.login_id } : {}),
           ...(current.region ? { region: current.region } : {}),
@@ -157,7 +175,7 @@ export async function refreshOAuthCredentialIfNeeded(
     // B3: Read-after-write — a CLI before 0.8.1 refreshes outside the lock
     // and may already have rotated the token (server-side refresh-token
     // rotation). Re-read the file; if the active profile now holds a
-    // DIFFERENT access token that is comfortably unexpired (>REFRESH_SKEW_MS),
+    // DIFFERENT access token that is comfortably unexpired (>refreshSkewMs),
     // adopt it and proceed rather than failing the command.
     const afterFailure = readCredentials(credFile);
     const afterProfile = profileName ? afterFailure?.profiles[profileName] : undefined;
@@ -165,7 +183,7 @@ export async function refreshOAuthCredentialIfNeeded(
     if (
       afterToken &&
       afterToken !== originalAccessToken &&
-      (afterProfile?.expires_at ?? 0) - Date.now() > REFRESH_SKEW_MS
+      (afterProfile?.expires_at ?? 0) - Date.now() > refreshSkewMs(afterProfile)
     ) {
       // Another process already rotated — adopt the new token.
       logger.debug("OAuth refresh failed but concurrent rotation detected; adopting new token");
@@ -201,7 +219,7 @@ export function configOverridesFrom(flags: GlobalFlags): ConfigOverrides {
  * Build the authenticated runtime for this invocation.
  *
  * When the active credential is an OAuth profile with a refresh_token and the
- * access_token is within REFRESH_SKEW_MS of expiry (or already expired), this
+ * access_token is within refreshSkewMs(profile) of expiry (or already expired), this
  * silently refreshes the token, writes the new tokens back to the credentials
  * file, and re-runs loadConfig so the client carries the fresh token.
  *

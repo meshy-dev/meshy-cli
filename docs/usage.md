@@ -74,10 +74,12 @@ older CLI on the same machine then finds no login and signs in once on its own;
 the two logins do not interfere afterwards.
 
 **OAuth token refresh:** when the stored OAuth access token is within 30 minutes
-of expiry (or already expired), the CLI silently refreshes it using the stored
-refresh token before running the command, so a command never starts with a
-token about to run out. A refresh failure with an unexpired token is swallowed
-(the existing token is used); a failure with an expired token exits `3` with a
+of expiry, or within two thirds of its lifetime for a token that lives less
+than 45 minutes (10 minutes for a 15-minute token), or already expired, the
+CLI silently refreshes it using the stored refresh token before running the
+command, so a command never starts with a token about to run out. A refresh
+failure with an unexpired token is swallowed (the existing token is used); a
+failure with an expired token exits `3` with a
 hint to run `meshy auth login`. Where the credentials directory cannot be
 written — a sandboxed agent shell — the CLI does not refresh at all: the API
 replaces the refresh token on every use, so a refresh it could not save would
