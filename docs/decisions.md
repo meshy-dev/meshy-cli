@@ -1743,4 +1743,3 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   before; refreshing during a wait is separate work.
 - Reviewer check: a change to the window must keep a fresh token outside it,
   or every command refreshes again.
-
