@@ -1446,7 +1446,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   before any flow starts, so nobody approves a login that cannot be kept.
 - The refresh window grows from 60 seconds to 30 minutes, so every command
   starts with at least that long left and a long `wait` does not outlive its
-  token. A refresh also keeps the profile's `region` (it used to drop it,
+  token. (D-095 narrows it to two thirds of the lifetime for a token that lives
+  less than 45 minutes.) A refresh also keeps the profile's `region` (it used to drop it,
   moving a China-site login to the global site an hour after sign-in) and
   `account`.
 - DeepSeek Harness lets a plugin add only `DSH_*` variables to a shell call, and
@@ -1720,3 +1721,25 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   `--no-open` skips the default browser (`MESHY_CLI_NO_BROWSER` does as well).
 - Reviewer check: a new route must not widen what the server reads beyond the
   one model and its own referenced files.
+
+## D-095 The refresh window follows the token's lifetime
+
+- D-088's 30-minute window assumed an access token that lives longer than 30
+  minutes. The API now also issues access tokens that live 15 minutes
+  (`expires_in: 900`). Such a token is always inside a 30-minute window, so
+  every command refreshed it before running, and a quick run of commands (an
+  agent working through a batch) hit the token endpoint's per-address limit
+  with HTTP 429.
+- The window is now 30 minutes or two thirds of the token's lifetime,
+  whichever is shorter (`refreshSkewMs`). A 15-minute token is refreshed with
+  10 minutes left, still enough for the default 10-minute `wait`; a token that
+  lives 45 minutes or more keeps the 30-minute window, so nothing changes for
+  it.
+- The lifetime is `expires_at - issued_at`. Logins and refreshes now record
+  `issued_at` in the profile. A profile saved by an older CLI has none and keeps
+  the 30-minute window until its next refresh records one; an older CLI that
+  refreshes the profile drops it again, which only costs one extra refresh.
+- A `wait` longer than the token's remaining life still ends on its 401, as
+  before; refreshing during a wait is separate work.
+- Reviewer check: a change to the window must keep a fresh token outside it,
+  or every command refreshes again.

@@ -67,6 +67,7 @@ function writeOauthCreds(
     accessToken: string;
     refreshToken: string;
     expiresAt: number;
+    issuedAt?: number;
     userId?: string;
   },
 ): void {
@@ -82,6 +83,7 @@ function writeOauthCreds(
           access_token: opts.accessToken,
           refresh_token: opts.refreshToken,
           expires_at: opts.expiresAt,
+          ...(opts.issuedAt ? { issued_at: opts.issuedAt } : {}),
           ...(opts.userId ? { user_id: opts.userId } : {}),
           created_at: Date.now() - 1000,
         },
@@ -599,6 +601,116 @@ test(
         !String(parsed["hint"]).includes("Session revoked"),
         `api_key 401 must NOT yield SESSION_REVOKED_HINT, got: ${String(parsed["hint"])}`,
       );
+    } finally {
+      await stub.close();
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// The refresh window follows the token's lifetime (refreshSkewMs): a token
+// that lives less than 30 minutes is not refreshed by every command.
+// ---------------------------------------------------------------------------
+
+/** A token endpoint that counts its calls and answers a 15-minute token. */
+async function startCountingTokenStub(): Promise<{ url: string; close: () => Promise<void>; calls: () => number }> {
+  let calls = 0;
+  const stub = await startStub((req: IncomingMessage, res: ServerResponse) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (url.pathname === "/oauth/token") {
+      calls++;
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          access_token: `refreshed-token-${calls}`,
+          token_type: "Bearer",
+          expires_in: 900,
+          refresh_token: `refreshed-refresh-${calls}`,
+        }));
+      });
+      return;
+    }
+    res.writeHead(404);
+    res.end("not found");
+  });
+  return { ...stub, calls: () => calls };
+}
+
+test(
+  "a 15-minute token with 13 minutes left is used as it is, not refreshed",
+  { timeout: 15_000 },
+  async () => {
+    const dir = makeTmpDir();
+    const credFile = join(dir, "credentials.json");
+    const issuedAt = Date.now() - 2 * 60_000;
+    writeOauthCreds(credFile, {
+      accessToken: "short-lived-token",
+      refreshToken: "short-lived-refresh",
+      issuedAt,
+      expiresAt: issuedAt + 15 * 60_000,
+    });
+    const stub = await startCountingTokenStub();
+    try {
+      const result = await runBuildRuntime({ credFile, baseUrlV1: stub.url, expectSuccess: true });
+      const parsed = JSON.parse(result.stdout.trim()) as { ok: boolean; apiKey?: string; message?: string };
+      assert.equal(parsed.ok, true, `expected success, got: ${parsed.message}\nstderr: ${result.stderr}`);
+      assert.equal(parsed.apiKey, "short-lived-token", "the stored token is used");
+      assert.equal(stub.calls(), 0, "no refresh: 13 minutes left is outside the 10-minute window of a 15-minute token");
+    } finally {
+      await stub.close();
+    }
+  },
+);
+
+test(
+  "a 15-minute token with 9 minutes left is refreshed, and the new token's lifetime is recorded",
+  { timeout: 15_000 },
+  async () => {
+    const dir = makeTmpDir();
+    const credFile = join(dir, "credentials.json");
+    const issuedAt = Date.now() - 6 * 60_000;
+    writeOauthCreds(credFile, {
+      accessToken: "short-lived-token",
+      refreshToken: "short-lived-refresh",
+      issuedAt,
+      expiresAt: issuedAt + 15 * 60_000,
+    });
+    const stub = await startCountingTokenStub();
+    try {
+      const before = Date.now();
+      const result = await runBuildRuntime({ credFile, baseUrlV1: stub.url, expectSuccess: true });
+      const parsed = JSON.parse(result.stdout.trim()) as { ok: boolean; apiKey?: string; message?: string };
+      assert.equal(parsed.ok, true, `expected success, got: ${parsed.message}\nstderr: ${result.stderr}`);
+      assert.equal(stub.calls(), 1, "one refresh");
+      assert.equal(parsed.apiKey, "refreshed-token-1");
+      const profile = openStoredProfile(credFile) as { issued_at?: number; expires_at?: number };
+      assert.ok(profile.issued_at !== undefined && profile.issued_at >= before, `issued_at recorded, got ${profile.issued_at}`);
+      assert.equal((profile.expires_at ?? 0) - (profile.issued_at ?? 0), 900_000, "expires_at - issued_at is the 900 s lifetime");
+    } finally {
+      await stub.close();
+    }
+  },
+);
+
+test(
+  "a profile saved without issued_at keeps the 30-minute window: 20 minutes left is refreshed",
+  { timeout: 15_000 },
+  async () => {
+    const dir = makeTmpDir();
+    const credFile = join(dir, "credentials.json");
+    writeOauthCreds(credFile, {
+      accessToken: "legacy-token",
+      refreshToken: "legacy-refresh",
+      expiresAt: Date.now() + 20 * 60_000,
+    });
+    const stub = await startCountingTokenStub();
+    try {
+      const result = await runBuildRuntime({ credFile, baseUrlV1: stub.url, expectSuccess: true });
+      const parsed = JSON.parse(result.stdout.trim()) as { ok: boolean; apiKey?: string; message?: string };
+      assert.equal(parsed.ok, true, `expected success, got: ${parsed.message}\nstderr: ${result.stderr}`);
+      assert.equal(stub.calls(), 1, "refreshed under the 30-minute window");
+      assert.equal(parsed.apiKey, "refreshed-token-1");
     } finally {
       await stub.close();
     }
