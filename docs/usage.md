@@ -73,10 +73,10 @@ first write, which moves the profiles into the encrypted file and deletes it. An
 older CLI on the same machine then finds no login and signs in once on its own;
 the two logins do not interfere afterwards.
 
-**OAuth token refresh:** when the stored OAuth access token is within 30 minutes
-of expiry, or within two thirds of its lifetime for a token that lives less
-than 45 minutes (10 minutes for a 15-minute token), or already expired, the
-CLI silently refreshes it using the stored refresh token before running the
+**OAuth token refresh:** when the stored OAuth access token has less than 30
+minutes left (for a token that lives less than 45 minutes: less than two thirds
+of its lifetime, so 10 minutes for a 15-minute token), or has already expired,
+the CLI silently refreshes it using the stored refresh token before running the
 command, so a command never starts with a token about to run out. A refresh
 failure with an unexpired token is swallowed (the existing token is used); a
 failure with an expired token exits `3` with a

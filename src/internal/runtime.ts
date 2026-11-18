@@ -57,10 +57,12 @@ export interface LocalRuntime {
 }
 
 /**
- * Refresh an OAuth credential this far ahead of expiry. Every command then
- * starts with at least this long left, so a long `wait` does not outlive its
- * token, and a host app that re-reads the token on a schedule shorter than
- * this always hands out one with time to spare.
+ * Refresh an OAuth credential this far ahead of expiry, or sooner for a token
+ * that lives less than 45 minutes (refreshSkewMs). Every command then starts
+ * with at least this long left, or two thirds of a shorter-lived token's
+ * lifetime, so a long `wait` does not outlive its token, and a host app that
+ * re-reads the token on a schedule shorter than that always hands out one
+ * with time to spare.
  */
 export const REFRESH_SKEW_MS = 30 * 60_000;
 

@@ -1446,7 +1446,8 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   before any flow starts, so nobody approves a login that cannot be kept.
 - The refresh window grows from 60 seconds to 30 minutes, so every command
   starts with at least that long left and a long `wait` does not outlive its
-  token. A refresh also keeps the profile's `region` (it used to drop it,
+  token. (D-095 narrows it to two thirds of the lifetime for a token that lives
+  less than 45 minutes.) A refresh also keeps the profile's `region` (it used to drop it,
   moving a China-site login to the global site an hour after sign-in) and
   `account`.
 - DeepSeek Harness lets a plugin add only `DSH_*` variables to a shell call, and
