@@ -1,6 +1,6 @@
 ---
 name: meshy-cli
-description: "Generate 3D models, motion clips, 2D images and Creative Lab print products with the Meshy API through the meshy-cli command — text-to-3D, image-to-3D, text-to-motion, remesh, UV unwrap, rigging, animation, retexture, printability, auto split into printable parts, per-task credit usage, selective downloads, face checks, OBJ print preparation and slicer launch. Use for any Meshy asset or 3D-printing request."
+description: "Generate 3D models, motion clips, 2D images, bas-reliefs and Creative Lab print products with the Meshy API through the meshy-cli command — text-to-3D, image-to-3D, text-to-motion, remesh, UV unwrap, rigging, animation, retexture, printability, auto split into printable parts, photo to relief model and depth map (3D print, laser engraving, CNC), per-task credit usage, selective downloads, face checks, OBJ print preparation and slicer launch. Use for any Meshy asset or 3D-printing request."
 license: MIT
 compatibility: Requires meshy-cli on PATH (Node 22.12+, no Python) and a stored credential, MESHY_API_KEY or --api-key-file for API commands; network access to api.meshy.ai. Local helpers work offline.
 metadata:
@@ -117,6 +117,40 @@ made through this API with the same key (web-app prototypes → 404). Lamp build
 output `lamp_stl`/`base_stl` or `bundle_zip`; keychain/fridge-magnet `obj` and
 keycap `obj_zip` are ZIP bundles saved as `.zip`; fidget-pixel builds a 3MF.
 Never call `showcases` in a health check.
+
+## Relief (photo → bas-relief model and depth map)
+
+```bash
+meshy relief create --image-url ./photo.jpg -o out/relief/              # GLB + STL + depth_map.png + preview
+meshy relief create --image-url ./photo.jpg --variant high --size-mm 120 --target-formats 3mf -o out/plaque/
+meshy relief create --image-url ./photo.jpg --depth-only -o heightmap.png   # the 16-bit depth map alone
+```
+
+Use `relief` when the user wants a photo turned into a relief, plaque, medallion
+or engraving, or a height map for laser or CNC software; the Creative Lab
+keychain and fridge magnet are styled products with a prototype stage, not this.
+Every task costs 20 credits, a depth-map-only task too, and needs a paid plan
+(exit 9 on the free plan or without credits: relay it, do not retry).
+
+- `--variant low` (default) is shallow, for laser engraving, CNC and thin
+  plaques; `high` is deeper, for 3D-printed pieces.
+- `--depth-only` returns only `depth_map_url` (a 16-bit grayscale PNG, relative
+  heights): no model, no preview. Use it when the user asked for a height or
+  depth map only. Model settings are refused with it.
+- `--target-formats` (default `glb,stl`) is the only set generated: `glb`, `obj`
+  (+ MTL), `fbx`, `stl`, `usdz`, `3mf`. STL and 3MF are in real millimetres, for
+  printing. `--color-mapping true` colors GLB/OBJ/FBX/USDZ only; STL and 3MF stay
+  white. Ask only for the formats the user needs: an STL is 80-105 MB at the
+  default `--mesh-resolution 1024` and about 300 MB at 2048 (more with a bend).
+- `--remove-base true` cuts the background away (then `--base-thickness-mm` is
+  left out or 0); `--bend-mode convex|concave` curves it. Ranges and the
+  combinations the API would ignore are refused before the request (exit 2).
+- `-o <dir>` saves the models, `depth_map.png` and the preview;
+  `meshy download --task-json <file> --asset depth_map --output <file.png>`
+  fetches the depth map alone. It is never converted to another image format.
+- **A relief task cannot feed another command** (`remesh`, `convert`, `resize`,
+  `auto-split`, `multi-color-print` …: 403). Pick the formats, size and depth at
+  create time; to change them, create a new relief.
 
 ## Downloads, printing (local, no key)
 

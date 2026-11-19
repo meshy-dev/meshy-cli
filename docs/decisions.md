@@ -1743,3 +1743,46 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   before; refreshing during a wait is separate work.
 - Reviewer check: a change to the window must keep a fresh token outside it,
   or every command refreshes again.
+
+## D-096 Relief: one v1 resource, a depth map asset, and the API's rules checked before the request
+
+- `relief` is a task resource on `/openapi/v1/relief` with the full verb set
+  and task type `relief`. Its `image_url` takes the photo formats the API
+  accepts (JPG/JPEG, PNG, WebP), the same list as the Creative Lab photos
+  (`PHOTO_FORMATS`). The 20 MB, 32 × 32 px and aspect-ratio limits are left to
+  the API, which answers 400 without charging.
+- Flags follow D-076: the API booleans are `--remove-base <bool>` and
+  `--color-mapping <bool>`. `should_generate_model: false` is `--depth-only`,
+  a presence flag: `--should-generate-model false` would read backwards for
+  the one value anyone sends, and `--data` still reaches the field. Nothing is
+  pinned; a flag left out is left out of the request, so the API's defaults
+  (low, 60 mm, GLB + STL) apply.
+- Every documented range is checked on the merged payload, `--data` included.
+  `--mesh-resolution` is parsed as a number and must be an integer, so 1500.5
+  is refused rather than truncated. `target_formats` must be a non-empty list
+  of the documented lowercase values without repeats. `base_thickness_mm` is
+  0.1-10, or left out or 0 with `remove_base: true`.
+- Refused as D-076 refuses settings the API would not use: `removal_threshold`
+  without `remove_base: true`, `bend_axis` / `bend_angle` without a convex or
+  concave bend, and every model setting with `--depth-only` (the variant
+  stays: it shapes the depth map). `carving_depth_mm: 0` with
+  `remove_base: true` is a request the API documents and runs (an empty
+  model, still billed), so it is sent with an `empty_model` warning rather
+  than refused.
+- `--color-mapping true` with only STL / 3MF formats is sent as asked, with a
+  `color_not_in_formats` warning: those formats carry no color, but the API
+  still returns the texture.
+- The TaskView gains `depth_map_url` (null for other resources), so a v1
+  envelope saved without `--include-raw` still names the depth map. The asset
+  is `depth_map` (kind `depth_map`, file `depth_map.png`); `-o` saves it with
+  the models, and a depth-only task saves it alone. It is never transcoded:
+  sharp would flatten its 16 bits to 8, so a request for `.jpg` keeps the PNG
+  under its own extension (`extension_corrected`).
+- `--model-format` naming a format the task lacks now lists the formats it has
+  (or says it has no model file). The 402 hint names both causes the API gives
+  it, no credits or a plan without the endpoint.
+- A relief task cannot be the input of another endpoint (403); the help, the
+  usage guide and the skill say so. Its own `relief delete` is the documented
+  delete; the shared `meshy delete` was not checked against relief tasks.
+- Reviewer check: a new rule must come from the API reference, and must hold
+  for the same field in `--data`.

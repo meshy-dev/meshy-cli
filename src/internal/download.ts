@@ -511,7 +511,8 @@ async function placeFetched(
   } else if (!requestedExt && actualExt) {
     finalPath = `${planned}.${actualExt}`;
   } else if (requestedExt && actualExt && requestedExt !== actualExt && !extEquivalent(requestedExt, actualExt)) {
-    if (CONVERTIBLE_IMAGE_EXTS.has(actualExt) && CONVERTIBLE_IMAGE_EXTS.has(requestedExt)) {
+    // A depth map is never transcoded: its 16-bit levels would be flattened to 8 bits, so it keeps its own extension.
+    if (asset.kind !== "depth_map" && CONVERTIBLE_IMAGE_EXTS.has(actualExt) && CONVERTIBLE_IMAGE_EXTS.has(requestedExt)) {
       const converted = `${tmp}.conv`;
       await convertImage(readFileSync(tmp), requestedExt, converted);
       removeQuietly(tmp);

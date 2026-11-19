@@ -12,16 +12,18 @@
  *   - keychain / fridge-magnet build: `model_urls.obj` is a ZIP bundle
  *     (model.obj + model.mtl + texture.png), delivered as `.zip`, unextracted;
  *   - keycap build: `model_urls.obj_zip` is the same kind of bundle;
+ *   - relief: `depth_map_url` is a 16-bit grayscale PNG, an asset of its own
+ *     (`depth_map`) and the only one of a depth-only task;
  *   - motion clips carry their format in `result.motion_format`.
  */
 
 import type { TaskResourceDescriptor } from "../client/resource-registry.js";
 import { safeExtension, safeSegment } from "./paths.js";
 
-export type AssetKind = "model" | "image" | "texture" | "thumbnail" | "rig" | "animation" | "motion" | "report";
+export type AssetKind = "model" | "image" | "texture" | "thumbnail" | "depth_map" | "rig" | "animation" | "motion" | "report";
 
 export interface Asset {
-  /** Stable selector, e.g. `model.glb`, `thumbnail.primary`, `result.basic_animations.walking_glb_url`. */
+  /** Stable selector, e.g. `model.glb`, `thumbnail.primary`, `depth_map`, `result.basic_animations.walking_glb_url`. */
   key: string;
   kind: AssetKind;
   url: string | null;
@@ -113,6 +115,11 @@ export function enumerateAssets(task: Record<string, unknown>, descriptor?: Task
     if (a.key === "model.obj" && a.containerFormat === null) {
       a.dependencies = hasMtl ? ["model.mtl", ...textureKeys(task)] : [];
     }
+  }
+
+  // Relief: the height map the model is built from — the whole output of a depth-only task.
+  if (isUrl(task["depth_map_url"])) {
+    assets.push({ key: "depth_map", kind: "depth_map", url: task["depth_map_url"], format: "png", containerFormat: null, modelFormat: null, sourcePath: "depth_map_url", filename: "depth_map.png", dependencies: [] });
   }
 
   if (isUrl(task["thumbnail_url"])) {
@@ -269,7 +276,10 @@ export function selectAssets(enumeration: AssetEnumeration, sel: Selection, opts
   } else if (sel.modelFormat) {
     const fmt = sel.modelFormat.toLowerCase();
     selected = assets.filter((a) => a.kind === "model" && (a.key === `model.${fmt}` || a.modelFormat === fmt || a.format === fmt));
-    if (selected.length === 0) throw new SelectionError(`no model asset in format '${sel.modelFormat}'`, assets);
+    if (selected.length === 0) {
+      const has = [...new Set(assets.filter((a) => a.kind === "model").map((a) => a.modelFormat ?? a.format ?? a.key.replace(/^model\./, "")))];
+      throw new SelectionError(`no model asset in format '${sel.modelFormat}' (${has.length > 0 ? `the task has ${has.join(", ")}` : "the task has no model file"})`, assets);
+    }
   } else if (sel.kind) {
     selected = assets.filter((a) => a.kind === sel.kind);
     if (selected.length === 0) throw new SelectionError(`no asset of kind '${sel.kind}'`, assets);
@@ -317,7 +327,7 @@ const RESULT_PAIR = /^result\.(rigged_character|animation)_(glb|fbx)_url$/;
 
 /**
  * The default `-o` set: every model format the task produced, the primary
- * thumbnail, images, motion, post-process outputs and reports, the rig /
+ * thumbnail, the relief depth map, images, motion, post-process outputs and reports, the rig /
  * animation result in GLB. Left on the server: the rig's bundled
  * walking/running clips, the FBX copy of a result that also came as GLB,
  * texture maps a delivered model already embeds, the pre-remesh GLB and the

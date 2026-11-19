@@ -120,7 +120,8 @@ export const CREATIVE_LAB_PRODUCTS: readonly CreativeLabProduct[] = [
   "fidget-pixel",
 ];
 export const CREATIVE_LAB_STAGES: readonly CreativeLabStage[] = ["prototype", "build"];
-const CREATIVE_LAB_IMAGE_FORMATS = ["jpg", "jpeg", "png", "webp"] as const;
+/** The photo inputs of Creative Lab and Relief: JPG/JPEG, PNG or WebP. */
+const PHOTO_FORMATS = ["jpg", "jpeg", "png", "webp"] as const;
 
 function creativeLab(product: CreativeLabProduct, stage: CreativeLabStage, summary: string): TaskResourceDescriptor {
   const relativePath = `/${product}/v1/${stage}`;
@@ -131,7 +132,7 @@ function creativeLab(product: CreativeLabProduct, stage: CreativeLabStage, summa
     relativePath,
     endpoint: `/openapi/creative-lab${relativePath}`,
     supports: ALL_VERBS,
-    mediaFields: stage === "prototype" ? [image("image_url", false, CREATIVE_LAB_IMAGE_FORMATS)] : [],
+    mediaFields: stage === "prototype" ? [image("image_url", false, PHOTO_FORMATS)] : [],
     taskTypes: [`creative-lab-${product}-${stage}`],
     billing: { create: "may-charge" },
     automaticRetry: false,
@@ -150,7 +151,7 @@ function creativeLabSingle(product: CreativeLabSingleProduct, summary: string): 
     relativePath,
     endpoint: `/openapi/creative-lab${relativePath}`,
     supports: ALL_VERBS,
-    mediaFields: [image("image_url", false, CREATIVE_LAB_IMAGE_FORMATS)],
+    mediaFields: [image("image_url", false, PHOTO_FORMATS)],
     taskTypes: [`creative-lab-${product}`],
     billing: { create: "may-charge" },
     automaticRetry: false,
@@ -189,6 +190,7 @@ export const TASK_RESOURCES: readonly TaskResourceDescriptor[] = [
   v1("repair-printability", "/print/repair", { mediaFields: [inlineModel("model_url")], taskTypes: ["print-repair"], summary: "fix non-watertight / non-manifold geometry" }),
   v1("auto-split", "/print/split", { taskTypes: ["print-split"], summary: "split a model into printable parts (auto / by named parts / by colour; optional connectors)" }),
   v1("uv-unwrap", "/uv-unwrap", { mediaFields: [model("model_url", ["glb"])], taskTypes: ["uv-unwrap"], summary: "generate fresh UVs for a GLB (≤40k faces) — a UV white model for external texturing" }),
+  v1("relief", "/relief", { mediaFields: [image("image_url", false, PHOTO_FORMATS)], taskTypes: ["relief"], summary: "photo → bas-relief model + 16-bit depth map (3D print, laser engraving, CNC)" }),
   creativeLab("figure", "prototype", "Creative Lab figure: photo → styled concept image"),
   creativeLab("figure", "build", "Creative Lab figure: prototype → textured GLB/OBJ/MTL"),
   creativeLab("lamp", "prototype", "Creative Lab lamp: photo → concept image + lampshade GLB"),
