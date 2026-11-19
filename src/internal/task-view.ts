@@ -30,6 +30,8 @@ export interface TaskView {
   thumbnail_url: string | null;
   thumbnail_urls: Record<string, string | null> | null;
   alpha_thumbnail_url: string | null;
+  /** Relief: the 16-bit grayscale depth map (a depth-only task's whole output). */
+  depth_map_url: string | null;
   result: Record<string, unknown> | null;
   printability: Record<string, unknown> | null;
   task_error: { message: string | null; [k: string]: unknown } | null;
@@ -96,6 +98,7 @@ export function toTaskView(raw: unknown, opts: TaskViewOptions = {}): TaskView {
     thumbnail_url: str(r["thumbnail_url"]),
     thumbnail_urls: strRecord(r["thumbnail_urls"]),
     alpha_thumbnail_url: str(r["alpha_thumbnail_url"]),
+    depth_map_url: str(r["depth_map_url"]),
     result: r["result"] && typeof r["result"] === "object" && !Array.isArray(r["result"]) ? (r["result"] as Record<string, unknown>) : null,
     printability: r["printability"] && typeof r["printability"] === "object" ? (r["printability"] as Record<string, unknown>) : null,
     task_error:

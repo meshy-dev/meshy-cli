@@ -30,7 +30,7 @@ import { buildLocalRuntime, buildRuntime } from "../internal/runtime.js";
 import { extractTaskObject } from "../internal/task-view.js";
 
 const TASK_JSON_MAX_BYTES = 16 * 1024 * 1024;
-const KINDS: readonly AssetKind[] = ["model", "image", "texture", "thumbnail", "rig", "animation", "motion", "report"];
+const KINDS: readonly AssetKind[] = ["model", "image", "texture", "thumbnail", "depth_map", "rig", "animation", "motion", "report"];
 
 interface DownloadOpts {
   taskJson?: string;
@@ -92,7 +92,7 @@ export const downloadCommand = new Command("download")
   .option("--url <url>", "download exactly one asset URL (no task context)")
   .option("--resource <id>", "with --task-id: fetch the task from the API first (one GET)")
   .option("--task-id <id>", "with --resource: the task to fetch")
-  .option("--asset <key>", "stable asset key to download (repeatable), e.g. model.glb, thumbnail.primary, result.basic_animations.walking_glb_url", collect)
+  .option("--asset <key>", "stable asset key to download (repeatable), e.g. model.glb, thumbnail.primary, depth_map, result.basic_animations.walking_glb_url", collect)
   .option("--model-format <fmt>", "select the model of this format (glb, obj, fbx, usdz, stl, 3mf, …)")
   .addOption(new Option("--kind <kind>", "select every asset of one kind").choices([...KINDS]))
   .option("--all", "select every asset")

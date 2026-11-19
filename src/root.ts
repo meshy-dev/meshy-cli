@@ -37,6 +37,7 @@ import { meshCommand } from "./cmd/mesh.js";
 import { multiColorPrintCommand } from "./cmd/multi-color-print.js";
 import { multiImageTo3dCommand } from "./cmd/multi-image-to-3d.js";
 import { operationsCommand } from "./cmd/operations.js";
+import { reliefCommand } from "./cmd/relief.js";
 import { remeshCommand } from "./cmd/remesh.js";
 import { repairPrintabilityCommand } from "./cmd/repair-printability.js";
 import { resizeCommand } from "./cmd/resize.js";
@@ -201,6 +202,7 @@ export function buildRootCommand(): Command {
     slicerCommand,
     doctorCommand,
     autoSplitCommand,
+    reliefCommand,
     usageCommand,
     viewCommand,
   ]) {

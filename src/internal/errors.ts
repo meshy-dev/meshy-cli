@@ -201,7 +201,8 @@ function hintForApiError(err: MeshyApiError): { hint?: string; docs?: string } {
       return { hint: SESSION_REVOKED_HINT, docs: DOCS_AUTH };
     case "credit":
       return {
-        hint: "Out of credits. Confirm with: meshy balance — then top up at https://www.meshy.ai/pricing",
+        // 402 also answers a create on the free plan; the error message says which.
+        hint: "Out of credits, or this request needs a paid plan (the message says which). Confirm with: meshy balance — then top up or upgrade at https://www.meshy.ai/pricing",
       };
     case "rate_limit":
       return { hint: "Rate limited. Pause before retrying, or lower request concurrency." };

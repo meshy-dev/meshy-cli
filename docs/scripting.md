@@ -97,8 +97,8 @@ one JSON document (`ndjson` streams emit one line per event plus a final
   in every output format, and in `ndjson` the final `outcome` line carries the
   download manifest.
 - `-o` on `get`/`wait`/`stream`/`make` saves the primary files of a SUCCEEDED
-  task: the model formats it produced, the primary thumbnail, images and
-  reports, and the rig or animation result in GLB. `result.downloads.files` is a
+  task: the model formats it produced, the primary thumbnail, the relief depth
+  map, images and reports, and the rig or animation result in GLB. `result.downloads.files` is a
   per-file manifest (stable `key` as `meshy download --asset` takes it, real
   `path`, bytes, sha256, status). `result.downloads.skipped` lists
   `{key, reason}` for what stayed on the server: `embedded_textures`,

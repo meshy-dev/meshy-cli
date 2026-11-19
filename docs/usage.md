@@ -217,6 +217,11 @@ meshy animate create --rig-task-id <rig-id> --motion-task-id <text-to-motion-id>
 meshy auto-split create --input-task-id <id> --mode by_parts --prompt "head, torso, legs" --connectors true
 meshy usage tasks --start-time 2026-08-01T00:00:00Z --endpoints image-to-3d --page-size 100
 
+# photo → bas-relief model + 16-bit depth map (3D print, laser engraving, CNC); 20 credits, paid plan
+meshy relief create --image-url ./photo.jpg -o out/relief/                      # GLB, STL, depth map, preview
+meshy relief create --image-url ./photo.jpg --variant high --size-mm 120 --target-formats 3mf
+meshy relief create --image-url ./photo.jpg --depth-only -o heightmap.png       # the depth map alone
+
 # Enterprise showcases (billed per request)
 meshy showcases list --search car --page-size 3 --model-format glb
 
@@ -295,6 +300,7 @@ local commands with their kind.
 | `analyze-printability` | `/print/analyze` | [docs](https://docs.meshy.ai/en/api/analyze-printability) |
 | `repair-printability` | `/print/repair` | [docs](https://docs.meshy.ai/en/api/repair-printability) |
 | `auto-split` | `/print/split` | [docs](https://docs.meshy.ai/en/api/auto-split) |
+| `relief` | `/relief` | [docs](https://docs.meshy.ai/en/api/relief) |
 | `creative-lab <product> prototype\|build` | `/openapi/creative-lab/<product>/v1/<stage>` | [figure](https://docs.meshy.ai/en/api/creative-lab-figure) · [vinyl-figure](https://docs.meshy.ai/en/api/creative-lab-vinyl-figure) · [brick-figure](https://docs.meshy.ai/en/api/creative-lab-brick-figure) · [lamp](https://docs.meshy.ai/en/api/creative-lab-lamp) · [keychain](https://docs.meshy.ai/en/api/creative-lab-keychain) · [fridge-magnet](https://docs.meshy.ai/en/api/creative-lab-fridge-magnet) · [keycap](https://docs.meshy.ai/en/api/creative-lab-keycap) · [fidget-pixel](https://docs.meshy.ai/en/api/creative-lab-fidget-pixel) |
 | `creative-lab fidget-collapsible` | `/openapi/creative-lab/fidget-collapsible/v1` | [docs](https://docs.meshy.ai/en/api/creative-lab-fidget-collapsible) |
 | `animation-catalog list` | `GET /animations/library` (free) | [docs](https://docs.meshy.ai/en/api/animation#list-animations) |
@@ -369,6 +375,55 @@ in the web app are rejected by the server (404).
 a printable STL (plus a preview GLB when available), with the same
 get/list/wait/stream/delete verbs.
 
+### Relief
+
+`relief` turns one photo into a bas-relief model and a 16-bit grayscale depth
+map, for 3D printing, laser engraving and CNC carving. A task costs 20 credits,
+depth map only included, and needs a paid plan (`402` on the free plan). The
+photo is a JPG, PNG or WebP of at most 20 MB and at least 32 × 32 px; a local
+file is sent inline.
+
+```bash
+meshy relief create --image-url ./photo.jpg -o out/relief/
+meshy relief create --image-url ./photo.jpg --variant high --carving-depth-mm 10 \
+  --bend-mode convex --bend-angle 90 --color-mapping true --target-formats glb,obj,stl -o out/plaque/
+meshy relief create --image-url ./logo.png --remove-base true --removal-threshold 0.05 --target-formats stl
+meshy relief create --image-url ./photo.jpg --depth-only -o heightmap.png
+```
+
+- `--variant low` (the default) carves shallow, for laser engraving, CNC and
+  thin plaques; `high` carves deeper, for printed pieces. The variant shapes the
+  depth map and sets the default `--carving-depth-mm` (3 or 6).
+- `--depth-only` returns only the depth map: no model, no preview image, the
+  same price. The model settings do not apply to it, so the CLI refuses them.
+- `--size-mm` (20-250, default 60) is the photo's longer side on the model.
+  `--carving-mode engrave` cuts the subject in instead of raising it.
+  `--remove-base true` cuts the background away and builds no plate; with it,
+  `--base-thickness-mm` is left out or 0 and `--removal-threshold` (0.01-1)
+  sets what counts as background. `--bend-mode convex|concave` with
+  `--bend-axis` and `--bend-angle` curves the relief.
+- `--target-formats` (default `glb,stl`) lists the only formats generated:
+  `glb`, `obj` (with its MTL), `fbx`, `stl`, `usdz`, `3mf`. STL and 3MF keep the
+  real size in millimetres. `--color-mapping true` colors GLB, OBJ, FBX and
+  USDZ with the photo and returns the texture; STL and 3MF stay white.
+- Files are large: at the default `--mesh-resolution 1024` a GLB is about
+  40-50 MB and an STL 80-105 MB; at 2048 about 150 MB and 300 MB, and a bend
+  makes them larger still. List only the formats you need.
+
+Every documented range and rule is checked before the request, also for the
+same fields in `--data`. A parameter the API would ignore in the combination
+asked for (a threshold without `--remove-base true`, a bend angle with no bend)
+is refused rather than sent, and so is `--carving-depth-mm 0` with
+`--remove-base true`, which builds an empty model that is still billed.
+
+`-o <dir>` saves every model format, the depth map (`depth_map.png`), the
+preview and, when an OBJ or FBX needs it, the texture; `meshy download
+--asset depth_map` fetches the depth map alone. The depth map is never
+converted to another image format: that would drop its 16-bit levels.
+
+A relief task cannot be the input of another command (`remesh`, `convert`,
+`resize`, `auto-split` …): the API answers 403.
+
 ## Saving artifacts with `-o` and `meshy download` (selective)
 
 When `-o` is set on a `create`/`wait`/`get`/`stream` or on `make`, the CLI
@@ -383,8 +438,8 @@ The primary files are:
 
 - every model format the task produced. That is GLB unless `--target-formats`
   asked for more.
-- the primary thumbnail, the generated images, motion clips, `processed_*`
-  outputs and reports (`printability.json`).
+- the primary thumbnail, the relief depth map, the generated images, motion
+  clips, `processed_*` outputs and reports (`printability.json`).
 - the rig or animation result in GLB (`rigged_character.glb`, `animation_glb.glb`).
 
 Left on the server by default, and listed under `result.downloads.skipped`
