@@ -413,8 +413,9 @@ meshy relief create --image-url ./photo.jpg --depth-only -o heightmap.png
 Every documented range and rule is checked before the request, also for the
 same fields in `--data`. A parameter the API would ignore in the combination
 asked for (a threshold without `--remove-base true`, a bend angle with no bend)
-is refused rather than sent, and so is `--carving-depth-mm 0` with
-`--remove-base true`, which builds an empty model that is still billed.
+is refused rather than sent. `--carving-depth-mm 0` with `--remove-base true`
+is sent, with an `empty_model` warning: it builds an empty model that is still
+billed.
 
 `-o <dir>` saves every model format, the depth map (`depth_map.png`), the
 preview and, when an OBJ or FBX needs it, the texture; `meshy download
