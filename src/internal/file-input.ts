@@ -173,7 +173,8 @@ async function preflightUrl(url: string, flagLabel: string, limits: MediaLimits,
   let resp: Response;
   try {
     resp = await fetchImpl(url, { method: "HEAD", redirect: "follow", headers, signal });
-    if (resp.status === 405 || resp.status === 501) {
+    // A URL signed for GET alone (an S3 presigned link) answers HEAD 403: ask with GET, as the API will.
+    if (resp.status === 403 || resp.status === 405 || resp.status === 501) {
       const controller = new AbortController();
       const getSignal = AbortSignal.any([controller.signal, signal]);
       resp = await fetchImpl(url, { method: "GET", redirect: "follow", headers, signal: getSignal });

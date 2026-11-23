@@ -100,6 +100,21 @@ test("image field — URL preflighted with HEAD, accepted on 2xx", async () => {
   }
 });
 
+test("image field — a URL signed for GET alone (HEAD 403) is accepted on its GET", async () => {
+  const calls: string[] = [];
+  const restore = installFetch((_url, init) => {
+    const method = init.method ?? "GET";
+    calls.push(method);
+    return new Response(null, { status: method === "HEAD" ? 403 : 200 });
+  });
+  try {
+    assert.equal(await normalized(IMAGE, "https://bucket.example.com/ref.png?X-Amz-Signature=x"), "https://bucket.example.com/ref.png?X-Amz-Signature=x");
+    assert.deepEqual(calls, ["HEAD", "GET"]);
+  } finally {
+    restore();
+  }
+});
+
 test("image field — URL returning 404 fails fast", async () => {
   const restore = installFetch(() => new Response(null, { status: 404, statusText: "Not Found" }));
   try {

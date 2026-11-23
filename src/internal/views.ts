@@ -156,6 +156,7 @@ function assetSummary(task: TaskView): string {
   const parts: string[] = [];
   const models = Object.entries(task.model_urls).filter(([, u]) => u).map(([k]) => k);
   if (models.length) parts.push(models.join(", "));
+  if (task.depth_map_url) parts.push("depth map");
   const sets = task.texture_urls.filter((s) => Object.values(s).some(Boolean));
   if (sets.length === 1) parts.push(`textures: ${Object.keys(sets[0]!).filter((k) => sets[0]![k]).join(", ")}`);
   else if (sets.length > 1) parts.push(`${sets.length} texture sets`);

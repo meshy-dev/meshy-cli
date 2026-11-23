@@ -92,6 +92,8 @@ export const TaskSchema = z
     thumbnail_url: z.string().nullable().optional(),
     thumbnail_urls: z.record(z.string(), z.string().nullable()).nullable().optional(),
     alpha_thumbnail_url: z.string().nullable().optional(),
+    /** Relief: the 16-bit grayscale depth map the model is built from ("" until it exists). */
+    depth_map_url: z.string().nullable().optional(),
 
     image_urls: z.array(z.string()).nullable().optional(),
 

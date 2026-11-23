@@ -52,6 +52,7 @@ export const RESOURCES: ResourceEntry[] = [
   { name: "doctor", summary: "local environment diagnosis (no network by default)" },
   { name: "view", summary: "show a local .glb/.gltf in an interactive 3D viewer in the browser (local only)" },
   { name: "auto-split", summary: "split a model into printable parts (auto / by named parts / by colour; optional connectors)" },
+  { name: "relief", summary: "photo → bas-relief model + 16-bit depth map (3D print, laser engraving, CNC)" },
   { name: "usage", summary: "usage tasks: finished API tasks with the credits each consumed (Studio/Enterprise)" },
 ];
 
