@@ -187,6 +187,16 @@ export function authRequiredError(detail?: string): HintedError {
   });
 }
 
+/** What a 402 tells the user to do next, without a link. */
+const CREDIT_HINT_TEXT =
+  "Out of credits, or this request needs a paid plan (the message says which). Confirm with: meshy balance";
+
+/** CREDIT_HINT_TEXT plus the subscription page, which offers both an upgrade and a credit pack. */
+export const CREDIT_HINT =
+  CREDIT_HINT_TEXT +
+  ". Upgrade your plan for more monthly credits, or buy a credit pack: " +
+  "https://www.meshy.ai/settings/subscription?utm_source=meshy-cli&utm_medium=insufficient_credits";
+
 /**
  * Remedies for API failures, keyed by MeshyApiError.code so the mapping lives
  * in one place instead of at every call site.
@@ -200,9 +210,10 @@ function hintForApiError(err: MeshyApiError): { hint?: string; docs?: string } {
       // oauth or unknown → session-revoked hint
       return { hint: SESSION_REVOKED_HINT, docs: DOCS_AUTH };
     case "credit":
+      // Some API answers link the subscription page already: never show two links.
       return {
         // 402 also answers a create on the free plan; the error message says which.
-        hint: "Out of credits, or this request needs a paid plan (the message says which). Confirm with: meshy balance — then top up or upgrade at https://www.meshy.ai/pricing",
+        hint: /https?:\/\//.test(err.message) ? CREDIT_HINT_TEXT : CREDIT_HINT,
       };
     case "rate_limit":
       return { hint: "Rate limited. Pause before retrying, or lower request concurrency." };

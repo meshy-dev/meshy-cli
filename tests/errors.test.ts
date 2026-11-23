@@ -9,7 +9,7 @@ process.env["MESHY_CLI_NO_UPDATE_NOTIFIER"] = "1";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MeshyApiError, mapHttpError } from "../src/client/errors.js";
-import { classifyError, exitCodeFor, EXIT_CODES, HintedError, SESSION_REVOKED_HINT, UsageError } from "../src/internal/errors.js";
+import { classifyError, CREDIT_HINT, exitCodeFor, EXIT_CODES, HintedError, SESSION_REVOKED_HINT, UsageError } from "../src/internal/errors.js";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -35,6 +35,22 @@ test("mapHttpError — 400 and 422 → validation", async () => {
 test("mapHttpError — 402 → credit", async () => {
   const err = await mapHttpError(jsonResponse(402, { message: "no credits" }), "/x");
   assert.equal(err.code, "credit");
+});
+
+test("classifyError — 402 hint links the subscription page", async () => {
+  const err = await mapHttpError(jsonResponse(402, { message: "Insufficient funds" }), "/x");
+  const classified = classifyError(err);
+  assert.equal(classified.hint, CREDIT_HINT);
+  assert.match(classified.hint ?? "", /settings\/subscription\?utm_source=meshy-cli&utm_medium=insufficient_credits$/);
+});
+
+test("classifyError — 402 that already carries a link gets no second one", async () => {
+  const err = await mapHttpError(
+    jsonResponse(402, { message: "Insufficient funds. Upgrade your plan at https://www.meshy.ai/settings/subscription to continue using the API." }),
+    "/x",
+  );
+  const classified = classifyError(err);
+  assert.equal(classified.hint, "Out of credits, or this request needs a paid plan (the message says which). Confirm with: meshy balance");
 });
 
 test("mapHttpError — 404 → not_found", async () => {
