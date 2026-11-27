@@ -98,8 +98,9 @@ func (c *Command) Validate(req Request) ([]output.Warning, error) {
 }
 
 // isSent says whether a value counts as sent for an exclusive group: null and
-// a blank string do not, as the API treats them (a prompt of only spaces
-// counts as not sent).
+// a blank string do not. The API reads an empty string, and a prompt of only
+// spaces, as not sent; a blank ID or URL it may still refuse, which this
+// leaves to it rather than refusing a request the API would accept.
 func isSent(v any) bool {
 	if s, ok := v.(string); ok {
 		return strings.TrimSpace(s) != ""
