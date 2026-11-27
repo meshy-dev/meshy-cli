@@ -96,8 +96,6 @@ const fixtureOverlay = `
 cli_flags:
   - name: help
   - name: format
-  - name: wait
-    on: ["*.create"]
 commands:
   - schema
 operations:
@@ -165,11 +163,11 @@ func TestBuildFixture(t *testing.T) {
 		t.Errorf("count = %+v, want required with its minimum kept", p)
 	}
 	style := create.Param("style")
-	if style.Description != "The style." || style.Schema["description"] != nil || len(style.Enum()) != 2 {
+	if style.Description != "The style." || style.Schema["description"] != nil || len(style.Schema["enum"].([]any)) != 2 {
 		t.Errorf("style = %+v, want the $ref inlined and its description moved out", style)
 	}
-	if got := create.Param("model_url").Help(); got != "A model." {
-		t.Errorf("model_url help = %q", got)
+	if got := create.Param("model_url").Description; got != "A model. More text." {
+		t.Errorf("model_url description = %q", got)
 	}
 	if create.BodyDescription != "Send model_url or input_task_id." {
 		t.Errorf("body description = %q", create.BodyDescription)
@@ -275,13 +273,12 @@ func TestBuildRejects(t *testing.T) {
 			paths(s)["/v2/widgets"].(obj)["get"].(obj)["x-meshy-pagination"].(obj)["cursor"] = "c"
 		}, want: "x-meshy-pagination"},
 		{name: "flag clashes with a CLI flag", spec: func(s obj) { createProps(s)["format"] = obj{"type": "string"} }, want: "has the name of the CLI's own --format"},
-		{name: "flag clashes with a scoped CLI flag", spec: func(s obj) { createProps(s)["wait"] = obj{"type": "boolean"} }, want: "CLI's own --wait"},
 		{name: "hand-written command clash", overlay: strings.Replace(fixtureOverlay, "  - schema\n", "  - schema\n  - widgets get\n", 1), want: `"widgets get" has the path of a generated command`},
 		{name: "unknown operation", overlay: fixtureOverlay + "  createGadget:\n    exclusive: [[a, b]]\n", want: "createGadget is not an operation"},
 		{name: "unknown exclusive field", overlay: strings.Replace(fixtureOverlay, "[model_url, input_task_id]", "[model_url, image_url]", 1), want: "exclusive field image_url is not a parameter"},
 		{name: "exclusive of one", overlay: strings.Replace(fixtureOverlay, "[model_url, input_task_id]", "[model_url]", 1), want: "two or more fields"},
 		{name: "unknown overlay key", overlay: fixtureOverlay + "aliases: {}\n", want: "field aliases not found"},
-		{name: "bad pattern", overlay: strings.Replace(fixtureOverlay, `["*.create"]`, `["["]`, 1), want: "bad pattern"},
+		{name: "per-command flag key", overlay: strings.Replace(fixtureOverlay, "  - name: format\n", "  - name: format\n    on: [\"*.create\"]\n", 1), want: "field on not found"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

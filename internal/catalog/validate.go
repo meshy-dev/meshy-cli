@@ -69,7 +69,7 @@ func (c *Command) Validate(req Request) ([]output.Warning, error) {
 		var sent []string
 		for _, field := range group {
 			if p := c.Param(field); p != nil {
-				if v, ok := lookup(req, p); ok && v != nil {
+				if v, ok := lookup(req, p); ok && isSent(v) {
 					sent = append(sent, "--"+p.Name)
 				}
 			}
@@ -97,6 +97,16 @@ func (c *Command) Validate(req Request) ([]output.Warning, error) {
 	}
 }
 
+// isSent says whether a value counts as sent for an exclusive group: null and
+// a blank string do not, as the API treats them (a prompt of only spaces
+// counts as not sent).
+func isSent(v any) bool {
+	if s, ok := v.(string); ok {
+		return strings.TrimSpace(s) != ""
+	}
+	return v != nil
+}
+
 func lookup(req Request, p *Param) (any, bool) {
 	var m map[string]any
 	switch p.In {
@@ -113,52 +123,15 @@ func lookup(req Request, p *Param) (any, bool) {
 
 // checkType reports where v does not have the JSON type s asks for, and a
 // missing required property of a nested object. It reads type, items,
-// properties, required, oneOf, anyOf and allOf; every other keyword
-// (enum, minimum, maxLength, format, …) is left to the server.
+// properties and required; a schema without a type, and every other keyword
+// (enum, minimum, maxLength, format, …), is left to the server.
 func checkType(s map[string]any, v any, at string) []string {
 	if v == nil {
-		if nullable(s) || len(schemaTypes(s)) == 0 && !hasComposition(s) {
+		if nullable(s) || len(schemaTypes(s)) == 0 {
 			return nil
 		}
 		return []string{at + "must not be null"}
 	}
-	if bs, ok := s["allOf"].([]any); ok {
-		var out []string
-		for _, b := range bs {
-			if b, ok := b.(map[string]any); ok {
-				out = append(out, checkType(b, v, at)...)
-			}
-		}
-		if len(out) > 0 {
-			return out
-		}
-	}
-	for _, k := range []string{"oneOf", "anyOf"} {
-		bs, ok := s[k].([]any)
-		if !ok {
-			continue
-		}
-		var first []string
-		matched := false
-		for _, b := range bs {
-			b, ok := b.(map[string]any)
-			if !ok {
-				continue
-			}
-			errs := checkType(b, v, at)
-			if len(errs) == 0 {
-				matched = true
-				break
-			}
-			if first == nil {
-				first = errs
-			}
-		}
-		if !matched {
-			return first
-		}
-	}
-
 	types := schemaTypes(s)
 	if len(types) == 0 {
 		return nil
@@ -243,15 +216,6 @@ func checkEnum(s map[string]any, v any, at string) []string {
 		return out
 	}
 	return nil
-}
-
-func hasComposition(s map[string]any) bool {
-	for _, k := range []string{"oneOf", "anyOf", "allOf"} {
-		if _, ok := s[k]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 func prefix(at string) string {

@@ -7,9 +7,7 @@
 # flag already uses.
 
 # Flags the CLI defines itself. No generated parameter may take one of these
-# names on a command the flag applies to. `on` limits a flag to commands whose
-# dotted name matches a path.Match pattern ("*.create"); without it the flag
-# is on every command.
+# names.
 cli_flags:
   - name: help
   - name: version
@@ -24,9 +22,11 @@ commands:
 
 # Per operation:
 #   exclusive: groups of fields of which a request may send at most one. Only
-#     pairs the API refuses outright (the API reference says sending both
-#     returns 400); a pair it accepts, using one and ignoring the other, is
-#     not listed.
+#     groups the API reference says it refuses whatever else the request
+#     holds. Not listed: a pair it accepts, using one and ignoring the other,
+#     and a conflict that depends on another field's value (Image to 3D and
+#     Multi-Image to 3D refuse texture_prompt with texture_image_url only when
+#     should_texture is true; Text to 3D only with some modes).
 operations:
   createAnimationTask:
     exclusive:
@@ -34,9 +34,6 @@ operations:
   createConvertTask:
     exclusive:
       - [input_task_id, model_url]
-  createImageTo3DTask:
-    exclusive:
-      - [texture_prompt, texture_image_url]
   createPrintAnalyzeTask:
     exclusive:
       - [input_task_id, model_url]
@@ -57,6 +54,7 @@ operations:
   createRetextureTask:
     exclusive:
       - [input_task_id, model_url]
+      - [texture_prompt, texture_image_url, multiview_image_urls]
   createRiggingTask:
     exclusive:
       - [input_task_id, model_url]

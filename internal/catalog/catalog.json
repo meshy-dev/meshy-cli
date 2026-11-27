@@ -624,12 +624,6 @@
         }
       ],
       "body_description": "Image to 3D request. Send `image_url` or `input_task_id`. If you send both, `input_task_id` is used; if you send neither, the request returns `400`.",
-      "exclusive": [
-        [
-          "texture_prompt",
-          "texture_image_url"
-        ]
-      ],
       "response": {
         "status": 202,
         "kind": "object",
@@ -2242,6 +2236,11 @@
         [
           "input_task_id",
           "model_url"
+        ],
+        [
+          "texture_prompt",
+          "texture_image_url",
+          "multiview_image_urls"
         ]
       ],
       "response": {

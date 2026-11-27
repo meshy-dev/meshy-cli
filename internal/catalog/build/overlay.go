@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path"
 	"slices"
 	"strings"
 
@@ -18,8 +17,8 @@ import (
 // name operations and fields, never restate a type, an enum, a required flag
 // or a limit; those come only from the spec.
 type overlay struct {
-	// CLIFlags are flags the CLI itself defines. A generated parameter may
-	// not take the same name on any command a flag applies to.
+	// CLIFlags are flags the CLI itself defines. No generated parameter may
+	// take one of their names.
 	CLIFlags []cliFlag `yaml:"cli_flags"`
 	// Commands are the paths of hand-written commands ("schema",
 	// "tasks wait"). A generated command may not take one.
@@ -30,9 +29,6 @@ type overlay struct {
 
 type cliFlag struct {
 	Name string `yaml:"name"`
-	// On limits the flag to commands whose dotted name matches one of these
-	// path.Match patterns ("*.create"); empty means every command.
-	On []string `yaml:"on"`
 }
 
 type operationOverlay struct {
@@ -49,18 +45,6 @@ func parseOverlay(b []byte) (*overlay, error) {
 		return nil, fmt.Errorf("overlay/cli.yaml: %w", err)
 	}
 	return &o, nil
-}
-
-func (f cliFlag) appliesTo(name string) bool {
-	if len(f.On) == 0 {
-		return true
-	}
-	for _, pat := range f.On {
-		if ok, _ := path.Match(pat, name); ok {
-			return true
-		}
-	}
-	return false
 }
 
 // applyOverlay checks the overlay against the generated commands and adds
@@ -83,16 +67,8 @@ func applyOverlay(o *overlay, cmds []catalog.Command) []string {
 			problems = append(problems, fmt.Sprintf("overlay cli_flags: %s is listed twice", f.Name))
 		}
 		seenFlag[f.Name] = true
-		for _, pat := range f.On {
-			if _, err := path.Match(pat, ""); err != nil {
-				problems = append(problems, fmt.Sprintf("overlay cli_flags: %s: bad pattern %q", f.Name, pat))
-			}
-		}
 		for i := range cmds {
 			c := &cmds[i]
-			if !f.appliesTo(c.Name()) {
-				continue
-			}
 			for _, p := range c.Params {
 				if p.Name == f.Name {
 					problems = append(problems, fmt.Sprintf("%s: generated flag --%s (%s %s) has the name of the CLI's own --%s", c.Name(), p.Name, p.In, p.Field, f.Name))
@@ -148,22 +124,19 @@ func applyOverlay(o *overlay, cmds []catalog.Command) []string {
 	return problems
 }
 
-// Reserved returns what an overlay reserves for the CLI's own use: the flags
-// it puts on every command and the paths of its hand-written commands (words
-// joined by spaces). Tests use it to keep the overlay in step with the
-// command tree.
-func Reserved(b []byte) (globalFlags, commands []string, err error) {
+// Reserved returns what an overlay reserves for the CLI's own use: its flag
+// names and the paths of its hand-written commands (words joined by spaces).
+// Tests use it to keep the overlay in step with the command tree.
+func Reserved(b []byte) (flags, commands []string, err error) {
 	o, err := parseOverlay(b)
 	if err != nil {
 		return nil, nil, err
 	}
 	for _, f := range o.CLIFlags {
-		if len(f.On) == 0 {
-			globalFlags = append(globalFlags, f.Name)
-		}
+		flags = append(flags, f.Name)
 	}
 	for _, c := range o.Commands {
 		commands = append(commands, strings.Join(strings.Fields(c), " "))
 	}
-	return globalFlags, commands, nil
+	return flags, commands, nil
 }

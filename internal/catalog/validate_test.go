@@ -58,6 +58,10 @@ func TestValidateAccepts(t *testing.T) {
 			r.Body["model_url"] = "https://x/y.glb"
 			r.Body["input_task_id"] = nil
 		}},
+		{"a blank string does not count as sent", func(r *Request) {
+			r.Body["model_url"] = "https://x/y.glb"
+			r.Body["input_task_id"] = "  "
+		}},
 		{"query and header", func(r *Request) {
 			r.Query = obj{"page": 2}
 			r.Header = obj{"X-Meshy-Metadata": "a=b"}
@@ -197,5 +201,18 @@ func TestEmbeddedCatalogValidates(t *testing.T) {
 	get := cat.Find([]string{"tasks", "get"})
 	if _, err := get.Validate(Request{}); err == nil {
 		t.Fatal("tasks get without <id> passed")
+	}
+
+	// Retexture takes one texture source; the API refuses any two.
+	re := cat.Find([]string{"retexture", "create"})
+	_, err = re.Validate(Request{Body: obj{"input_task_id": "t0", "texture_model": "meshy-7", "texture_prompt": "wood", "multiview_image_urls": []any{"https://x/a.png"}}})
+	if e, ok := errors.AsType[*output.Error](err); !ok || !strings.Contains(e.Message, "send at most one of --texture-prompt, --multiview-image-urls") {
+		t.Fatalf("retexture with a prompt and multiview images: Validate = %v", err)
+	}
+	// Image to 3D ignores its texture fields when should_texture is false, so
+	// the CLI does not refuse a prompt and an image together.
+	i23 := cat.Find([]string{"image-to-3d", "create"})
+	if _, err := i23.Validate(Request{Body: obj{"image_url": "https://x/a.png", "should_texture": false, "texture_prompt": "wood", "texture_image_url": "https://x/b.png"}}); err != nil {
+		t.Fatalf("image-to-3d without texturing: Validate = %v", err)
 	}
 }

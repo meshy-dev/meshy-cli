@@ -140,45 +140,6 @@ func (c *Command) Param(field string) *Param {
 	return nil
 }
 
-// Help is the first sentence of the description, for one-line help.
-func (p *Param) Help() string { return FirstSentence(p.Description) }
-
-// Types are the JSON types the parameter accepts, without "null".
-func (p *Param) Types() []string { return schemaTypes(p.Schema) }
-
-// Nullable says whether the parameter accepts null.
-func (p *Param) Nullable() bool { return nullable(p.Schema) }
-
-// Enum is the parameter's known values: its own enum, or for an array its
-// items' enum. Known values are a hint; the server decides.
-func (p *Param) Enum() []any {
-	if e, ok := p.Schema["enum"].([]any); ok {
-		return e
-	}
-	if items, ok := p.Schema["items"].(map[string]any); ok {
-		if e, ok := items["enum"].([]any); ok {
-			return e
-		}
-	}
-	return nil
-}
-
-// Default is the documented default, or nil.
-func (p *Param) Default() any { return p.Schema["default"] }
-
-// Deprecated says whether the spec marks the parameter deprecated.
-func (p *Param) Deprecated() bool { d, _ := p.Schema["deprecated"].(bool); return d }
-
-// FirstSentence returns s up to and including its first ". ", with runs of
-// whitespace collapsed.
-func FirstSentence(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if i := strings.Index(s, ". "); i >= 0 {
-		return s[:i+1]
-	}
-	return s
-}
-
 var (
 	loadOnce sync.Once
 	loaded   *Catalog
@@ -237,15 +198,6 @@ func nullable(s map[string]any) bool {
 		for _, x := range t {
 			if x == "null" {
 				return true
-			}
-		}
-	}
-	for _, k := range []string{"oneOf", "anyOf"} {
-		if bs, ok := s[k].([]any); ok {
-			for _, b := range bs {
-				if b, ok := b.(map[string]any); ok && nullable(b) {
-					return true
-				}
 			}
 		}
 	}

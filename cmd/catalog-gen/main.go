@@ -1,17 +1,12 @@
 // Command catalog-gen writes internal/catalog/catalog.json from
-// spec/openapi.v2.json, spec/lock.json and overlay/cli.yaml.
-//
-//	go run ./cmd/catalog-gen          write the catalog
-//	go run ./cmd/catalog-gen -check   fail if the committed catalog is stale
-//
-// Paths are relative to the module root, found by walking up from the
-// working directory to go.mod, so `go generate ./internal/catalog` works.
+// spec/openapi.v2.json, spec/lock.json and overlay/cli.yaml. Paths are
+// relative to the module root, found by walking up from the working
+// directory to go.mod, so `go generate ./internal/catalog` works. A test in
+// this package fails when the committed catalog is stale.
 package main
 
 import (
-	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,15 +23,13 @@ const (
 )
 
 func main() {
-	check := flag.Bool("check", false, "fail if "+catalogFile+" differs from a fresh build instead of writing it")
-	flag.Parse()
-	if err := run(*check); err != nil {
+	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "catalog-gen:", err)
 		os.Exit(1)
 	}
 }
 
-func run(check bool) error {
+func run() error {
 	root, err := moduleRoot()
 	if err != nil {
 		return err
@@ -45,18 +38,7 @@ func run(check bool) error {
 	if err != nil {
 		return err
 	}
-	dst := filepath.Join(root, catalogFile)
-	if check {
-		cur, err := os.ReadFile(dst)
-		if err != nil {
-			return err
-		}
-		if !bytes.Equal(cur, out) {
-			return fmt.Errorf("%s is stale; run go generate ./internal/catalog", catalogFile)
-		}
-		return nil
-	}
-	return os.WriteFile(dst, out, 0o644)
+	return os.WriteFile(filepath.Join(root, catalogFile), out, 0o644)
 }
 
 // generate builds the catalog from the files under root.
