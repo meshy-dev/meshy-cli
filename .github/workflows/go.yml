@@ -1,0 +1,51 @@
+name: go
+
+# Checks for the Go CLI. This file exists only on the refactor branch and the
+# branches cut from it, so it runs on pushes to refactor and on pull requests
+# from those branches; pull requests into main never see it, and the
+# TypeScript checks in ci.yml are unchanged.
+on:
+  push:
+    branches: [refactor]
+  pull_request:
+
+# A new push to a PR makes the previous run irrelevant.
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, platform: windows/amd64 }
+          - { os: ubuntu-latest, platform: linux/amd64 }
+          - { os: macos-latest, platform: darwin/arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # The leg must test the platform it is named after.
+      - name: Runner is ${{ matrix.platform }}
+        shell: bash
+        run: test "$(go env GOOS)/$(go env GOARCH)" = "${{ matrix.platform }}"
+
+      # Once is enough; Windows checkouts may carry CRLF line endings.
+      - name: gofmt and go.mod are clean
+        if: runner.os == 'Linux'
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; echo "::error::run gofmt -w"; exit 1; }
+          go mod tidy -diff
+
+      - run: go vet ./...
+      - run: go test ./...

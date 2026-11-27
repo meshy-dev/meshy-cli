@@ -171,6 +171,9 @@ func asGroups(root *cobra.Command) {
 }
 
 func asGroup(c *cobra.Command) {
+	if c.SuggestionsMinimumDistance <= 0 {
+		c.SuggestionsMinimumDistance = 2 // cobra's default for the root
+	}
 	c.Args = func(c *cobra.Command, args []string) error {
 		if len(args) == 0 {
 			return nil
