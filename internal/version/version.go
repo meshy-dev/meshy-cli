@@ -11,7 +11,7 @@ import (
 // A plain `go build` reports 0.0.0-dev.
 var Version = "0.0.0-dev"
 
-// UserAgent is the User-Agent of every request:
+// UserAgent is the User-Agent the CLI sends:
 //
 //	meshy-cli/<version> (<platform> <arch>; go<version>)
 //

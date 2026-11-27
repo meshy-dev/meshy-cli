@@ -1,5 +1,6 @@
-// Package output prints the CLI's one machine contract: every command writes
-// exactly one envelope to stdout, with the same six top-level keys.
+// Package output prints the CLI's one machine contract: a command run writes
+// exactly one envelope to stdout, with the same six top-level keys. (--help
+// and --version print plain text.)
 //
 //	{
 //	  "schema_version": "meshy.cli/v2",

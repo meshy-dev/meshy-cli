@@ -28,7 +28,8 @@ type Globals struct {
 	Profile string
 	// Format is --format as typed; empty when it was not given.
 	Format string
-	// Workspace, when set, confines every file the CLI writes.
+	// Workspace, when set, is the directory the files the CLI writes must
+	// stay inside; the commands that write files enforce it.
 	Workspace string
 	// Debug logs request and decision details to stderr.
 	Debug bool
