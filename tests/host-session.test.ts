@@ -26,6 +26,11 @@ interface Envelope {
 }
 const envelope = (stdout: string): Envelope => parseSingleJson(stdout) as Envelope;
 
+/** An access token as the API issues it: a JWT, whose header says `typ: at+jwt`. */
+const accessToken = (name: string): string =>
+  `${Buffer.from('{"alg":"RS256","typ":"at+jwt"}').toString("base64url")}.${Buffer.from(JSON.stringify({ sub: name })).toString("base64url")}.c2ln`;
+const FRESH = accessToken("fresh");
+
 function oauthStore(expiresAt: number, extra: Partial<CredentialProfile> = {}): string {
   const file = join(tmpDir("meshy-host-"), "credentials.v2.json");
   saveProfile(file, "default", {
@@ -49,7 +54,7 @@ function blockWrites(file: string): void {
 async function api(): Promise<MockApi> {
   return startMockApi((req, res) => {
     if (req.path.endsWith("/oauth/token")) {
-      return jsonReply(res, 200, { access_token: "msy_at_fresh", token_type: "Bearer", expires_in: 3600, refresh_token: "msy_rt_fresh" });
+      return jsonReply(res, 200, { access_token: FRESH, token_type: "Bearer", expires_in: 3600, refresh_token: "msy_rt_fresh" });
     }
     if (req.path.endsWith("/oauth/device_authorization")) {
       return jsonReply(res, 200, {
@@ -111,7 +116,7 @@ test("a writable store refreshes 30 minutes ahead and keeps the region and the a
     assert.equal(run.code, 0, run.stderr);
     assert.equal(tokenRequests(m), 1);
     const stored = openStoredProfile(file);
-    assert.equal(stored.access_token, "msy_at_fresh");
+    assert.equal(stored.access_token, FRESH);
     assert.equal(stored.region, "cn", "a refresh must not move a China-site login to the global site");
     assert.deepEqual(stored.account, { name: "Ada Lovelace" });
     assert.equal(stored.login_id, "login-1");
@@ -127,14 +132,14 @@ test("a host credential outranks the stored profile, is never refreshed, and --s
     const env = m.env({
       MESHY_API_KEY: undefined,
       MESHY_CREDENTIALS_PATH: file,
-      DSH_MESHY_CREDENTIAL: "msy_at_host_token",
+      DSH_MESHY_CREDENTIAL: accessToken("host"),
       DSH_MESHY_SUBJECT: "user-9",
     });
     const run = await runCli(["auth", "status", "--show-token", "--format", "json"], { env });
     const out = envelope(run.stdout).result!;
     assert.equal(run.code, 0, run.stderr);
     assert.equal(out["source"], "host");
-    assert.equal(out["token"], "msy_at_host_token");
+    assert.equal(out["token"], accessToken("host"));
     assert.equal(out["subject"], "user-9");
     assert.deepEqual(out["account"], { name: "Ada Lovelace", email: "ada@example.com" });
     assert.equal(tokenRequests(m), 0, "the stored profile is not touched while a host credential is set");
@@ -268,10 +273,10 @@ test("a host credential another process replaced is retried once with the stored
   try {
     const file = oauthStore(Date.now() + 3_600_000);
     const run = await runCli(["balance", "--format", "json"], {
-      env: m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file, DSH_MESHY_CREDENTIAL: "msy_at_replaced", DSH_MESHY_SUBJECT: "login-1" }),
+      env: m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file, DSH_MESHY_CREDENTIAL: accessToken("replaced"), DSH_MESHY_SUBJECT: "login-1" }),
     });
     assert.equal(run.code, 0, run.stderr);
-    assert.deepEqual(m.requests.map(authOf), ["Bearer msy_at_replaced", "Bearer msy_at_stored_token"]);
+    assert.deepEqual(m.requests.map(authOf), [`Bearer ${accessToken("replaced")}`, "Bearer msy_at_stored_token"]);
   } finally {
     await m.close();
   }
@@ -282,10 +287,25 @@ test("a 401 is not retried with another account's stored token", async () => {
   try {
     const file = oauthStore(Date.now() + 3_600_000);
     const run = await runCli(["balance", "--format", "json"], {
-      env: m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file, DSH_MESHY_CREDENTIAL: "msy_at_replaced", DSH_MESHY_SUBJECT: "someone-else" }),
+      env: m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file, DSH_MESHY_CREDENTIAL: accessToken("replaced"), DSH_MESHY_SUBJECT: "someone-else" }),
     });
     assert.equal(run.code, 3);
     assert.equal(m.requests.length, 1);
+  } finally {
+    await m.close();
+  }
+});
+
+test("a host API key is an API key: a 401 is not retried with the stored token, and status asks no userinfo", async () => {
+  const m = await rejectingApi("msy_at_stored_token");
+  try {
+    const file = oauthStore(Date.now() + 3_600_000);
+    const env = m.env({ MESHY_API_KEY: undefined, MESHY_CREDENTIALS_PATH: file, DSH_MESHY_CREDENTIAL: "msy_host_api_key_0123456789", DSH_MESHY_SUBJECT: "login-1" });
+    const run = await runCli(["balance", "--format", "json"], { env });
+    assert.equal(run.code, 3);
+    assert.equal(m.requests.length, 1);
+    await runCli(["auth", "status", "--format", "json"], { env });
+    assert.equal(m.requests.some((r) => r.path.endsWith("/userinfo")), false);
   } finally {
     await m.close();
   }

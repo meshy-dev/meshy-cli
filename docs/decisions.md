@@ -1786,3 +1786,20 @@ behind it, and what a reviewer should check. IDs are stable; append, do not renu
   delete; the shared `meshy delete` was not checked against relief tasks.
 - Reviewer check: a new rule must come from the API reference, and must hold
   for the same field in `--data`.
+
+## D-097 A JWT is an access token, whatever its prefix
+
+- The API's access tokens used to start with `msy_at_`, and the CLI told one
+  from an API key by that prefix. The API now issues every access token as a
+  JWT (`typ: at+jwt`) and no longer accepts `msy_at_` tokens, so the prefix
+  matched nothing: a login stored no `account`, and a host credential
+  (`DSH_MESHY_CREDENTIAL`) was taken for an API key. A 401 on it gave the API
+  key hint, was not retried with the stored token of the same login (D-089),
+  and its journal records were bound to the token, which rotates, instead of
+  `DSH_MESHY_SUBJECT`.
+- A host credential is an access token when it has the shape of a JWT: three
+  base64url segments joined by dots. API keys (`msy_…`) have no dot. The header
+  is not decoded: the shape is enough to tell the two apart.
+- `fetchAccount` no longer checks the token. Its callers know the kind: a login
+  has just received an access token, and `auth status` asks only when the
+  credential in use is one.

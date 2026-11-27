@@ -17,7 +17,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
-import { OAUTH_ACCESS_TOKEN_PREFIX } from "./config.js";
 import type { CredentialAccount } from "./credentials.js";
 import { HintedError } from "./errors.js";
 import { USER_AGENT } from "./user-agent.js";
@@ -85,7 +84,6 @@ export function buildAuthorizeUrl(params: BuildAuthorizeUrlParams): string {
  * because the account is shown, never relied on.
  */
 export async function fetchAccount(baseUrlV1: string, accessToken: string): Promise<CredentialAccount | null> {
-  if (!accessToken.startsWith(OAUTH_ACCESS_TOKEN_PREFIX)) return null;
   try {
     const res = await fetch(`${new URL(baseUrlV1).origin}/openapi/oauth/userinfo`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json", "User-Agent": USER_AGENT },
