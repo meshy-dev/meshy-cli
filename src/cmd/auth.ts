@@ -694,7 +694,7 @@ const statusCommand = new Command("status")
     let verified: boolean | undefined;
     let verifyHint: string | undefined;
     if (!opts.offline) {
-      const live = fetchAccount(config.baseUrlV1, config.apiKey);
+      const live = config.credentialKind === "oauth" ? fetchAccount(config.baseUrlV1, config.apiKey) : Promise.resolve(null);
       try {
         balance = await new MeshyClient(config).balance.get();
         verified = true;

@@ -34,8 +34,13 @@ import { authRequiredError, CliError, UsageError } from "./errors.js";
 import { setLogLevel, type LogLevel } from "./logger.js";
 
 const PLACEHOLDER_KEYS = new Set(["", "YOUR_MESHY_API_KEY_HERE"]);
-/** Browser-login access tokens carry this prefix; static API keys do not. */
-export const OAUTH_ACCESS_TOKEN_PREFIX = "msy_at_";
+/**
+ * A browser-login access token is a JWT: three base64url segments joined by
+ * dots. An API key (`msy_…`) has no dot. See D-097.
+ */
+export function isOAuthAccessToken(credential: string): boolean {
+  return /^[\w-]+\.[\w-]+\.[\w-]+$/.test(credential);
+}
 
 /** Meshy's two sites share accounts; only the API and sign-in hosts differ. */
 export const REGIONS = {
@@ -113,7 +118,7 @@ export interface MeshyConfig {
    * The kind of credential in use — "oauth" for browser-login tokens, "api_key" for static keys.
    * "api_key" when credentialSource is "flag", "env" or "env-file" (those paths only accept static keys).
    * Derived from the stored profile kind when credentialSource is "file", and
-   * from the token prefix when it is "host".
+   * from the token's form (isOAuthAccessToken) when it is "host".
    */
   credentialKind: CredentialKind;
   /**
@@ -244,7 +249,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): MeshyConfig {
   } else if (hostCredential()) {
     apiKey = hostCredential();
     credentialSource = "host";
-    credentialKind = apiKey.startsWith(OAUTH_ACCESS_TOKEN_PREFIX) ? "oauth" : "api_key";
+    credentialKind = isOAuthAccessToken(apiKey) ? "oauth" : "api_key";
     credentialSubject = process.env["DSH_MESHY_SUBJECT"]?.trim() || undefined;
   } else {
     // A corrupt credentials file throws out of resolveStoredCredential rather

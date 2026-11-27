@@ -372,8 +372,9 @@ test(
       let body = "";
       req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
       req.on("end", () => {
-        capturedBody = body;
         if (url.pathname.endsWith("/token")) {
+          // Only the exchange: the login then asks userinfo, a GET with no body.
+          capturedBody = body;
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(GOOD_TOKEN_RESPONSE));
           return;
