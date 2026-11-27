@@ -1,10 +1,10 @@
 name: go
 
-# Checks for the Go CLI. This file is on the refactor branch and the branches
-# cut from it, so it runs on pushes to refactor and on pull requests from
-# those branches; a pull request from a branch without it (the TypeScript
-# work on main) does not run it. The TypeScript checks in ci.yml are
-# unchanged.
+# Checks for the Go CLI, on pushes to refactor and on pull requests. A pull
+# request runs the workflows of its merge commit, so this runs for pull
+# requests into refactor (or into a branch cut from it) and not for pull
+# requests into main from branches without this file. The TypeScript checks
+# in ci.yml are unchanged.
 on:
   push:
     branches: [refactor]
