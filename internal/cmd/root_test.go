@@ -123,7 +123,7 @@ func TestUsageErrors(t *testing.T) {
 		{[]string{"--format", "yaml", "bogus"}, "meshy", `unknown command "bogus"`},
 	}
 	for _, c := range cases {
-		// On a terminal too: a typed --format, valid or not, keeps JSON.
+		// On a terminal too: an invalid typed --format falls back to JSON.
 		for _, terminal := range []bool{false, true} {
 			args := c.args
 			if terminal {
@@ -146,6 +146,19 @@ func TestUsageErrors(t *testing.T) {
 				t.Errorf("%q: stderr %q, want an error line", args, r.stderr)
 			}
 		}
+	}
+}
+
+// A run that fails before its action still prints in a valid typed --format.
+func TestUsageErrorKeepsTypedFormat(t *testing.T) {
+	r := runCLI(t, true, []string{"--format", "ndjson", "bogus"})
+	if r.code != output.ExitUsage || strings.Count(r.stdout, "\n") != 1 ||
+		!strings.HasPrefix(r.stdout, `{"schema_version":"meshy.cli/v2","command":"meshy","ok":false,`) {
+		t.Errorf("ndjson on a terminal: exit %d, stdout %q; want one envelope line", r.code, r.stdout)
+	}
+	r = runCLI(t, false, []string{"--format", "pretty", "bogus"})
+	if r.code != output.ExitUsage || r.stdout != "" || !strings.HasPrefix(r.stderr, "error: unknown command") {
+		t.Errorf("pretty in a pipe: exit %d, stdout %q, stderr %q; want only the error on stderr", r.code, r.stdout, r.stderr)
 	}
 }
 
