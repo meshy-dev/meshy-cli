@@ -1,0 +1,3323 @@
+{
+  "spec": {
+    "version": "v0.162.0+982d7df90",
+    "sha256": "4951461977efcbc906b76b07b77b0a643f52e992ac4484161ad718db6e913dff"
+  },
+  "scopes": [
+    "account:balance:read",
+    "account:usage:read",
+    "task:task:create",
+    "task:task:delete",
+    "task:task:read"
+  ],
+  "commands": [
+    {
+      "path": [
+        "animations",
+        "create"
+      ],
+      "operation_id": "createAnimationTask",
+      "method": "POST",
+      "http_path": "/v2/animations",
+      "summary": "Create an Animation task",
+      "description": "Makes a rigged character move: applies one animation from the library (`action_id`), several of them joined into one file (`action_ids`), or a clip from Text to Motion (`motion_task_id`). Find library IDs with `GET /v2/animations/library`. Each animation in a task is charged, so a task with `action_ids` costs more than one with `action_id` or `motion_task_id`. Returns the task object (`type: animate`) with 202; read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "action-id",
+          "field": "action_id",
+          "in": "body",
+          "description": "One animation from the library, by its `action_id` (see `GET /v2/animations/library`). An ID that isn't in the library returns 400. The animation's `rig_type` must match the rig; another returns 400. A few library animations can't be applied to some `biped` rigs; those return 400 `This animation is no longer available`.",
+          "schema": {
+            "maximum": 32767,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "action-ids",
+          "field": "action_ids",
+          "in": "body",
+          "description": "Two to ten library animations, by `action_id`, with no repeats. They're joined into one file, in the order you send them, and each clip in it is named by the animation's `key`, such as `Big_Wave_Hello`. One ID works like `action_id`. Each animation's `rig_type` must match the rig; another returns 400.",
+          "schema": {
+            "items": {
+              "maximum": 32767,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "motion-task-id",
+          "field": "motion_task_id",
+          "in": "body",
+          "description": "A `SUCCEEDED` Text to Motion task of yours, to play its clip on the character. The rig must be a `biped`. Use it within 3 days of the Text to Motion task finishing: after that its clip is deleted, like other task files, and this returns 404. Enterprise accounts keep their files.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "post-process",
+          "field": "post_process",
+          "in": "body",
+          "description": "One extra file to make from the animation's FBX, returned in the matching `output` field. With `motion_task_id`, the clip may come back as GLB only; then a `post_process` operation fails the task, and its credits are refunded.",
+          "schema": {
+            "properties": {
+              "fps": {
+                "default": 30,
+                "description": "The frame rate for `change_fps`.",
+                "enum": [
+                  24,
+                  25,
+                  30,
+                  60
+                ],
+                "type": "integer"
+              },
+              "operation_type": {
+                "description": "`change_fps` makes an FBX at another frame rate (`output.processed_animation_fps_fbx_url`), `fbx2usdz` a USDZ file (`output.processed_usdz_url`), and `extract_armature` an FBX with the skeleton only (`output.processed_armature_fbx_url`). Without it, no extra file is made.",
+                "enum": [
+                  "change_fps",
+                  "fbx2usdz",
+                  "extract_armature"
+                ],
+                "type": "string"
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "rig-task-id",
+          "field": "rig_task_id",
+          "in": "body",
+          "required": true,
+          "description": "A `SUCCEEDED` Rigging task of yours. An unknown rig returns 404 (code `input_task_not_found`); a rig that hasn't succeeded returns 400 (code `input_task_not_ready`), and another task type returns 400 (code `input_task_unsupported`).",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Send `rig_task_id` and exactly one of `action_id`, `action_ids` or `motion_task_id`. Sending more than one returns 400; sending none returns 400 `action_id is required`.",
+      "exclusive": [
+        [
+          "action_id",
+          "action_ids",
+          "motion_task_id"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "AnimateTask"
+      }
+    },
+    {
+      "path": [
+        "animations",
+        "library",
+        "list"
+      ],
+      "operation_id": "listAnimationLibrary",
+      "method": "GET",
+      "http_path": "/v2/animations/library",
+      "summary": "List library animations",
+      "description": "Returns the animations in the library, with the `action_id` to send when you create an Animation task. The filters combine; without any, you get the whole library. The response is a bare array ordered by `action_id`, not a page: there is no `data` wrapper and no pagination. Calling it is free.",
+      "params": [
+        {
+          "name": "action-ids",
+          "field": "action_ids",
+          "in": "query",
+          "description": "Only these animations: up to 200 comma-separated integer IDs, such as `28,92`. Unknown IDs are left out of the response. More than 200 items, or an item that isn't an integer, returns `400`.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "category",
+          "field": "category",
+          "in": "query",
+          "description": "Animations in this category, an exact match, such as `DailyActions`, `WalkAndRun`, `Fighting`, `BodyMovements` or `Dancing`. An unknown category returns an empty list.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "search",
+          "field": "search",
+          "in": "query",
+          "description": "Animations whose `name` or `key` contains this text, ignoring case.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "sub-category",
+          "field": "sub_category",
+          "in": "query",
+          "description": "Animations in this subcategory, an exact match, such as `Walking` or `Interacting`. Works without `category`.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "response": {
+        "status": 200,
+        "kind": "list",
+        "schema": "AnimationLibraryEntry[]"
+      }
+    },
+    {
+      "path": [
+        "balance",
+        "get"
+      ],
+      "operation_id": "getBalance",
+      "method": "GET",
+      "http_path": "/v2/balance",
+      "summary": "Get your credit balance",
+      "description": "Returns the credit balance of the account that owns the API key. On a team with a shared credit pool, the values are the pool's. Calling it is free.",
+      "scopes": [
+        "account:balance:read"
+      ],
+      "response": {
+        "status": 200,
+        "kind": "object",
+        "schema": "Balance"
+      }
+    },
+    {
+      "path": [
+        "convert",
+        "create"
+      ],
+      "operation_id": "createConvertTask",
+      "method": "POST",
+      "http_path": "/v2/convert",
+      "summary": "Create a Convert task",
+      "description": "Converts a 3D model to other file formats, from a Meshy task (`input_task_id`) or your own model file (`model_url`). On v2, a `model_url` upload keeps its size, and STL and 3MF files are scaled down to at most 150 mm on the longest side for a model Meshy generated (see `target_formats`). Returns the task object (`type: convert`) with 202; read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A `SUCCEEDED` task of yours, created with the API, that produced a 3D model, such as Text to 3D, Image to 3D, Remesh, Resize or Retexture. A task with quad topology (such as a `quad` remesh) keeps its quads in OBJ, FBX and Blend; other formats are triangles. Required unless `model_url` is sent.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-url",
+          "field": "model_url",
+          "in": "body",
+          "description": "The model to convert, as a public http(s) URL or a data URI. Supported formats: `.glb`, `.gltf`, `.obj`, `.fbx` and `.stl`, up to 400 MB from a URL or 100 MB as a `data:` URI. A data URI must hold a GLB or glTF file (`data:model/gltf-binary;base64,...`). A GLB, glTF, FBX, or OBJ file over 100 MB can have at most 10,000,000 faces. Faces are counted as triangles (a quad counts as 2), and a mesh drawn more than once counts once per copy. Over 100 MB, an FBX file must be binary FBX 7.1 or newer, and a GLB or glTF file must not use Draco compression. The result keeps the file's size, but not its position: it comes back as one centered mesh, without rigs or animations. To keep a model's exact position, convert a Meshy task with `input_task_id`. Required unless `input_task_id` is sent.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "target-formats",
+          "field": "target_formats",
+          "in": "body",
+          "required": true,
+          "description": "The formats to produce, at least one. Every format keeps the size of the model it's converted from, except that STL and 3MF files of a model Meshy generated are scaled down to at most 150 mm on the longest side. Uploaded models, and models you resized with `resize_height` or `resize_longest_side`, keep their own size. A scaled-down STL file, and every 3MF file, has its origin at the bottom.",
+          "schema": {
+            "items": {
+              "enum": [
+                "glb",
+                "obj",
+                "fbx",
+                "stl",
+                "usdz",
+                "blend",
+                "3mf"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        }
+      ],
+      "body_description": "Send `input_task_id` or `model_url`; sending both returns `400` (`parameters_conflict`). `target_formats` is required.",
+      "exclusive": [
+        [
+          "input_task_id",
+          "model_url"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "ConvertTask"
+      }
+    },
+    {
+      "path": [
+        "image-to-3d",
+        "create"
+      ],
+      "operation_id": "createImageTo3DTask",
+      "method": "POST",
+      "http_path": "/v2/image-to-3d",
+      "summary": "Create an Image to 3D task",
+      "description": "Turns one image into a 3D model, textured or untextured, in the formats you choose. Returns the task object with `202 Accepted`; its `type` is `image-to-3d`. The task runs in the background: read its result with `GET /v2/tasks/{id}`, stream it with `GET /v2/tasks/{id}/stream`, or get it by webhook.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "ai-model",
+          "field": "ai_model",
+          "in": "body",
+          "description": "Pick the model from what the user is making. See the \"Choose by project\" table at https://docs.meshy.ai/api/v2/models.md. For a game asset, a character to rig, or a face-count budget, send `meshy-t2.5` (or `meshy-t2`) with `target_polycount`.\n\nThe model to use. It's the only model setting on v2.\n\n- `latest` (Meshy 7.1), `meshy-7.1`, `meshy-6`, `meshy-6-lite`.\n- `meshy-standard-latest`: works like `latest`.\n- `meshy-t2.5` and `meshy-t2`: Smart Topology, a clean triangle mesh at the face count\n  you set with `target_polycount`. `meshy-t2.5` has sharper detail for game assets.\n- `meshy-smart-topology-latest`: Meshy T2.5, the newest Smart Topology model. Its\n  results can change; send `meshy-t2.5` for results that don't.",
+          "schema": {
+            "default": "latest",
+            "enum": [
+              "latest",
+              "meshy-standard-latest",
+              "meshy-7.1",
+              "meshy-6",
+              "meshy-6-lite",
+              "meshy-t2.5",
+              "meshy-t2",
+              "meshy-smart-topology-latest",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "auto-size",
+          "field": "auto_size",
+          "in": "body",
+          "description": "Estimate the object's real-world height and scale the model to it.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "decimation-mode",
+          "field": "decimation_mode",
+          "in": "body",
+          "description": "Adaptive face count, from `1` (ultra) to `4` (low). Replaces `target_polycount` when set. Ignored with Smart Topology models.",
+          "schema": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "type": "integer"
+          }
+        },
+        {
+          "name": "enable-pbr",
+          "field": "enable_pbr",
+          "in": "body",
+          "description": "Also generate metallic, roughness, and normal maps. `true` with `texture_model: meshy-n1` returns `400`.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "geometry-resolution",
+          "field": "geometry_resolution",
+          "in": "body",
+          "description": "Geometry detail. `2k` adds the Ultra pass, and `4k` adds a super-resolution pass after it. Both need `meshy-7.1` or `latest`; with another model they return `400`.",
+          "schema": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "2k",
+              "4k",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "image-enhancement",
+          "field": "image_enhancement",
+          "in": "body",
+          "description": "Clean up the input image first. Set it to `false` to keep the image exactly as it is. Ignored with `meshy-6-lite` and Smart Topology models.",
+          "schema": {
+            "default": true,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "image-url",
+          "field": "image_url",
+          "in": "body",
+          "description": "The image to turn into a model, as a public http(s) URL or a data URI (`data:image/png;base64,...`). JPEG, PNG, or WebP, up to 20 MB and at least 32 pixels on each side and at most 178,956,970 pixels (width x height). Required unless you send `input_task_id`.",
+          "schema": {
+            "examples": [
+              "https://docs.meshy.ai/images/api/quick-start/source-photo.webp"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A `SUCCEEDED` Text to Image or Image to Image task of yours, created with the API, that produced exactly one image. Its image is used as the input. Multi-view image tasks return `400` here; use them with Multi-Image to 3D. An ID that doesn't match a task of yours returns `404`. Required unless you send `image_url`.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "moderation",
+          "field": "moderation",
+          "in": "body",
+          "description": "Screen the input image, `texture_image_url`, and `texture_prompt` for harmful content before generating. Flagged content returns `400`.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "multi-view-thumbnails",
+          "field": "multi_view_thumbnails",
+          "in": "body",
+          "description": "Also render front, right, back, and left previews, as `output.thumbnail_urls`. Adds about 5 seconds.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "origin-at",
+          "field": "origin_at",
+          "in": "body",
+          "description": "Where the origin goes when `auto_size` is true.",
+          "schema": {
+            "default": "bottom",
+            "enum": [
+              "bottom",
+              "center"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "pose-mode",
+          "field": "pose_mode",
+          "in": "body",
+          "description": "Generate a character in a pose. Leave it out for no pose.",
+          "schema": {
+            "enum": [
+              "a-pose",
+              "t-pose"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "remove-lighting",
+          "field": "remove_lighting",
+          "in": "body",
+          "description": "Remove highlights and shadows from the base color texture. Ignored, because the texture models that `texture_model` takes don't use it.",
+          "schema": {
+            "default": true,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "save-pre-remeshed-model",
+          "field": "save_pre_remeshed_model",
+          "in": "body",
+          "description": "Also keep the GLB from before the remesh, as `output.model_urls.pre_remeshed_glb`. Needs `should_remesh: true`. Ignored with Smart Topology models.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "should-remesh",
+          "field": "should_remesh",
+          "in": "body",
+          "description": "Whether to remesh the model after generation. The default is `true` with `meshy-6-lite` and `false` with every other model. Ignored with Smart Topology models.",
+          "schema": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "should-texture",
+          "field": "should_texture",
+          "in": "body",
+          "description": "Whether to generate textures. `false` returns an untextured mesh, and `texture_model` and the other texture fields are ignored.",
+          "schema": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "target-formats",
+          "field": "target_formats",
+          "in": "body",
+          "description": "The files to produce. Only these formats are generated. Leaving it out, or sending `null` or an empty list, gives `[\"glb\"]`. STL and 3MF files are scaled down to at most 150 mm on the longest side; a smaller model keeps its size.",
+          "schema": {
+            "default": [
+              "glb"
+            ],
+            "items": {
+              "enum": [
+                "glb",
+                "obj",
+                "fbx",
+                "stl",
+                "usdz",
+                "3mf"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "name": "target-polycount",
+          "field": "target_polycount",
+          "in": "body",
+          "description": "For a game asset at a set face count, use a Smart Topology model (`meshy-t2.5` or `meshy-t2`) instead of a remesh of a standard model. Target face count. With a remesh: 100 to 300,000, default 30,000. With `meshy-t2.5` or `meshy-smart-topology-latest`: 100 to 30,000, default 15,000. With `meshy-t2`: 100 to 15,000, default 4,000. A value out of the model's range returns `400`.",
+          "schema": {
+            "maximum": 300000,
+            "minimum": 100,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "texture-image-url",
+          "field": "texture_image_url",
+          "in": "body",
+          "description": "An image that guides the texture, as a public http(s) URL or a data URI, in the same formats and sizes as `image_url`. Used only when `should_texture` is true. With `texture_model` `meshy-n1`, it's the front view to texture from (the input image when you leave it out).",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-model",
+          "field": "texture_model",
+          "in": "body",
+          "description": "The model that textures the 3D model, in the same task. Required unless `should_texture` is `false`: a textured request without it returns `400` (`parameter_missing`). Every `ai_model` takes each value. `meshy-7` makes PBR maps and textures up to 8K. `meshy-n1` makes a 2K base color texture from reference images only: `texture_prompt`, `enable_pbr: true`, `4k` or `8k`, and a `quad` remesh return `400` with it, and a generated model over 7,999,999 triangles fails the task. `meshy-6-lite` makes a 2K texture: `4k` and `8k` return `400` with it.",
+          "schema": {
+            "enum": [
+              "meshy-7",
+              "meshy-n1",
+              "meshy-6-lite"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-prompt",
+          "field": "texture_prompt",
+          "in": "body",
+          "description": "Text that guides the texture, up to 800 characters. Send either `texture_prompt` or `texture_image_url`, not both: sending both returns `400`. Returns `400` with `texture_model: meshy-n1`.",
+          "schema": {
+            "maxLength": 800,
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-resolution",
+          "field": "texture_resolution",
+          "in": "body",
+          "description": "Base color texture size. `4k` and `8k` need `texture_model: meshy-7`, and return `400` with `meshy-n1` or `meshy-6-lite`. `8k` with `topology: quad` needs `should_remesh: true`, or it returns `400`.",
+          "schema": {
+            "default": "2k",
+            "enum": [
+              "2k",
+              "4k",
+              "8k",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "topology",
+          "field": "topology",
+          "in": "body",
+          "description": "Mesh topology of the remeshed model. Smart Topology makes triangles only, so `quad` with a Smart Topology model returns `400`. A `quad` remesh with `texture_model` `meshy-n1` also returns `400`.",
+          "schema": {
+            "default": "triangle",
+            "enum": [
+              "triangle",
+              "quad"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Image to 3D request. Send `image_url` or `input_task_id`. If you send both, `input_task_id` is used; if you send neither, the request returns `400`.",
+      "exclusive": [
+        [
+          "texture_prompt",
+          "texture_image_url"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "ImageTo3DTask"
+      }
+    },
+    {
+      "path": [
+        "image-to-image",
+        "create"
+      ],
+      "operation_id": "createImageToImageTask",
+      "method": "POST",
+      "http_path": "/v2/image-to-image",
+      "summary": "Create an Image to Image task",
+      "description": "Generates a new image from one to five reference images and a prompt. By default a single image comes back as a PNG with a transparent background; send `background: opaque` to keep the generated background. Sending v1's `remove_background` returns `400`. Returns `202` with the task object (`type` `image-to-image`, also for multi-view tasks). Read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "ai-model",
+          "field": "ai_model",
+          "in": "body",
+          "required": true,
+          "description": "The image model. `nano-banana-2-1` costs 4 credits per request. `nano-banana-pro` needs a Pro plan or higher (`402` otherwise). `gpt-image-2` is OpenAI GPT Image 2; `gpt-image-2-5-flare` and `gpt-image-2-5-sunburst` are OpenAI GPT Image 2.5; `gpt-image-2-6-flare` and `gpt-image-2-6-sunburst` are OpenAI GPT Image 2.6. Names are case-sensitive; any other value returns `400`.",
+          "schema": {
+            "enum": [
+              "nano-banana",
+              "nano-banana-2",
+              "nano-banana-2-lite",
+              "nano-banana-2-1",
+              "nano-banana-pro",
+              "gpt-image-2",
+              "gpt-image-2-5-flare",
+              "gpt-image-2-5-sunburst",
+              "gpt-image-2-6-flare",
+              "gpt-image-2-6-sunburst"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "aspect-ratio",
+          "field": "aspect_ratio",
+          "in": "body",
+          "description": "The image's shape. The `nano-banana` models take `1:1`, `16:9`, `9:16`, `4:3` and `3:4`; `3:2` and `2:3` return `400` for them. The GPT Image models take all seven. Can't be sent with `generate_multi_view: true` (`400`). The result doesn't follow the shape of the reference images, so set this to match them if you need to.",
+          "schema": {
+            "default": "1:1",
+            "enum": [
+              "1:1",
+              "16:9",
+              "9:16",
+              "4:3",
+              "3:4",
+              "3:2",
+              "2:3"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "background",
+          "field": "background",
+          "in": "body",
+          "description": "`transparent` removes the background and returns a transparent PNG; `opaque` returns the image with the background it was generated with. Multi-view images always have a transparent background: `opaque` with `generate_multi_view: true` returns `400` (`background cannot be opaque when generate_multi_view is true`).",
+          "schema": {
+            "default": "transparent",
+            "enum": [
+              "transparent",
+              "opaque"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "generate-multi-view",
+          "field": "generate_multi_view",
+          "in": "body",
+          "description": "Generate the subject from the front, the side and the back, returned as separate images with a transparent background in `output.image_urls`: usually three, fewer if the views can't all be separated (the task still succeeds). Leave `aspect_ratio` out when this is `true`, and don't send `background: opaque` with it.",
+          "schema": {
+            "default": false,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A SUCCEEDED Text to Image or Image to Image task of yours, created with the API, whose images become the references. Every image it produced is used: one, or up to three for a multi-view task. A task that isn't yours or was deleted returns `404` (code `input_task_not_found`), and one past its retention period returns `404` (code `input_task_expired`); another task type, or a task that hasn't succeeded, returns `400`.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "prompt",
+          "field": "prompt",
+          "in": "body",
+          "required": true,
+          "description": "What to make from the reference images, such as `turn it into a clay figurine`. A prompt of only whitespace returns `400`.",
+          "schema": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        {
+          "name": "reference-image-urls",
+          "field": "reference_image_urls",
+          "in": "body",
+          "description": "One to five images to work from, used in order. Each must be a JPEG, PNG or WebP file (read from the content, not the extension) of up to 20 MB (20,000,000 bytes), at least 32 pixels on each side. An image that can't be downloaded or isn't supported returns `400` (code `input_download_failed` or `input_file_invalid`; the message names the image and why). An empty array also returns `400`.",
+          "schema": {
+            "items": {
+              "description": "A public http(s) URL or a base64 data URI (`data:image/png;base64,...`).",
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          }
+        }
+      ],
+      "body_description": "Image to Image request. Send `reference_image_urls` or `input_task_id`; sending neither returns `400` (`Either reference_image_urls or input_task_id must be provided`). If you send both, `input_task_id` is used and `reference_image_urls` is ignored.",
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "ImageToImageTask"
+      }
+    },
+    {
+      "path": [
+        "multi-image-to-3d",
+        "create"
+      ],
+      "operation_id": "createMultiImageTo3DTask",
+      "method": "POST",
+      "http_path": "/v2/multi-image-to-3d",
+      "summary": "Create a Multi-Image to 3D task",
+      "description": "Turns one to four images of the same object, taken from different angles, into one 3D model. Returns the task object with `202 Accepted`; its `type` is `multi-image-to-3d`. The task runs in the background: read its result with `GET /v2/tasks/{id}`, stream it with `GET /v2/tasks/{id}/stream`, or get it by webhook.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "ai-model",
+          "field": "ai_model",
+          "in": "body",
+          "description": "Pick the model from what the user is making. See the \"Choose by project\" table at https://docs.meshy.ai/api/v2/models.md. The model to use: `latest` (Meshy 7.1), `meshy-7.1`, `meshy-6`, `meshy-6-lite`, or `meshy-standard-latest`, which works like `latest`. Smart Topology models aren't available for Multi-Image to 3D: `meshy-smart-topology-latest` returns `400`.",
+          "schema": {
+            "default": "latest",
+            "enum": [
+              "latest",
+              "meshy-standard-latest",
+              "meshy-7.1",
+              "meshy-6",
+              "meshy-6-lite"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "auto-size",
+          "field": "auto_size",
+          "in": "body",
+          "description": "Estimate the object's real-world height and scale the model to it.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "decimation-mode",
+          "field": "decimation_mode",
+          "in": "body",
+          "description": "Adaptive face count, from `1` (ultra) to `4` (low). Replaces `target_polycount` when set.",
+          "schema": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "type": "integer"
+          }
+        },
+        {
+          "name": "enable-pbr",
+          "field": "enable_pbr",
+          "in": "body",
+          "description": "Also generate metallic, roughness, and normal maps. `true` with `texture_model: meshy-n1` returns `400`.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "geometry-resolution",
+          "field": "geometry_resolution",
+          "in": "body",
+          "description": "Geometry detail. `2k` adds the Ultra pass, and needs `meshy-7.1` or `latest`; with another model it returns `400`. `4k` isn't available for Multi-Image to 3D and returns `400`.",
+          "schema": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "2k",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "image-enhancement",
+          "field": "image_enhancement",
+          "in": "body",
+          "description": "Clean up the input images first. Set it to `false` to keep the images exactly as they are. Ignored with `meshy-6-lite`.",
+          "schema": {
+            "default": true,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "image-urls",
+          "field": "image_urls",
+          "in": "body",
+          "description": "One to four images of the same object, each a public http(s) URL or a data URI (`data:image/png;base64,...`). JPEG, PNG, or WebP, each up to 20 MB and at least 32 pixels on each side and at most 178,956,970 pixels (width x height). Required unless you send `input_task_id`.",
+          "schema": {
+            "items": {
+              "description": "A public http(s) URL or a data URI.",
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A `SUCCEEDED` Text to Image or Image to Image task of yours, created with the API, including multi-view ones. Its images, one to four, are used as the input. An ID that doesn't match a task of yours returns `404`. Required unless you send `image_urls`.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "moderation",
+          "field": "moderation",
+          "in": "body",
+          "description": "Screen the input images, the texture images, and `texture_prompt` for harmful content before generating. Flagged content returns `400`.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "multi-view-thumbnails",
+          "field": "multi_view_thumbnails",
+          "in": "body",
+          "description": "Also render front, right, back, and left previews, as `output.thumbnail_urls`. Adds about 5 seconds.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "origin-at",
+          "field": "origin_at",
+          "in": "body",
+          "description": "Where the origin goes when `auto_size` is true.",
+          "schema": {
+            "default": "bottom",
+            "enum": [
+              "bottom",
+              "center"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "pose-mode",
+          "field": "pose_mode",
+          "in": "body",
+          "description": "Generate a character in a pose. Leave it out for no pose.",
+          "schema": {
+            "enum": [
+              "a-pose",
+              "t-pose"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "remove-lighting",
+          "field": "remove_lighting",
+          "in": "body",
+          "description": "Remove highlights and shadows from the base color texture. Ignored, because the texture models that `texture_model` takes don't use it.",
+          "schema": {
+            "default": true,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "save-pre-remeshed-model",
+          "field": "save_pre_remeshed_model",
+          "in": "body",
+          "description": "Also keep the GLB from before the remesh, as `output.model_urls.pre_remeshed_glb`. Needs `should_remesh: true`.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "should-remesh",
+          "field": "should_remesh",
+          "in": "body",
+          "description": "Whether to remesh the model after generation. The default is `true` with `meshy-6-lite` and `false` with every other model.",
+          "schema": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "should-texture",
+          "field": "should_texture",
+          "in": "body",
+          "description": "Whether to generate textures. `false` returns an untextured mesh, and `texture_model` and the other texture fields are ignored.",
+          "schema": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "target-formats",
+          "field": "target_formats",
+          "in": "body",
+          "description": "The files to produce. Only these formats are generated. Leaving it out, or sending `null` or an empty list, gives `[\"glb\"]`. STL and 3MF files are scaled down to at most 150 mm on the longest side; a smaller model keeps its size.",
+          "schema": {
+            "default": [
+              "glb"
+            ],
+            "items": {
+              "enum": [
+                "glb",
+                "obj",
+                "fbx",
+                "stl",
+                "usdz",
+                "3mf"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "name": "target-polycount",
+          "field": "target_polycount",
+          "in": "body",
+          "description": "The face count to aim for when remeshing, from 100 to 300,000.",
+          "schema": {
+            "default": 30000,
+            "maximum": 300000,
+            "minimum": 100,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "texture-image-url",
+          "field": "texture_image_url",
+          "in": "body",
+          "description": "One image that guides the texture, as a public http(s) URL or a data URI, in the same formats and sizes as `image_urls`. Used only when `should_texture` is true. Sending it with `texture_prompt` or `texture_image_urls` returns `400`.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-image-urls",
+          "field": "texture_image_urls",
+          "in": "body",
+          "description": "One to four images of the object that guide the texture, in the same formats and sizes as `image_urls`. They can differ from `image_urls`. The first image is the main reference. An empty list, or sending it with `texture_prompt` or `texture_image_url`, returns `400`.",
+          "schema": {
+            "items": {
+              "description": "A public http(s) URL or a data URI.",
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        {
+          "name": "texture-model",
+          "field": "texture_model",
+          "in": "body",
+          "description": "The model that textures the 3D model, in the same task. Required unless `should_texture` is `false`: a textured request without it returns `400` (`parameter_missing`). Every `ai_model` takes both values, and any other value returns `400`. `meshy-7` makes PBR maps and textures up to 8K. `meshy-n1` makes a 2K base color texture from reference images only: `texture_prompt`, `enable_pbr: true`, `4k` or `8k`, and a `quad` remesh return `400` with it.",
+          "schema": {
+            "enum": [
+              "meshy-7",
+              "meshy-n1"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-prompt",
+          "field": "texture_prompt",
+          "in": "body",
+          "description": "Text that guides the texture, up to 800 characters. Sending it with `texture_image_url` or `texture_image_urls`, or with `texture_model` `meshy-n1`, returns `400`.",
+          "schema": {
+            "maxLength": 800,
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-resolution",
+          "field": "texture_resolution",
+          "in": "body",
+          "description": "Base color texture size. `4k` and `8k` need `texture_model: meshy-7`, and return `400` with `meshy-n1`. `8k` with `topology: quad` needs `should_remesh: true`, or it returns `400`.",
+          "schema": {
+            "default": "2k",
+            "enum": [
+              "2k",
+              "4k",
+              "8k",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "topology",
+          "field": "topology",
+          "in": "body",
+          "description": "Mesh topology of the remeshed model.",
+          "schema": {
+            "default": "triangle",
+            "enum": [
+              "triangle",
+              "quad"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Multi-Image to 3D request. Send `image_urls` or `input_task_id`. If you send both, `input_task_id` is used; if you send neither, the request returns `400`. Send at most one of `texture_prompt`, `texture_image_url`, and `texture_image_urls`.",
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "MultiImageTo3DTask"
+      }
+    },
+    {
+      "path": [
+        "print",
+        "analyze",
+        "create"
+      ],
+      "operation_id": "createPrintAnalyzeTask",
+      "method": "POST",
+      "http_path": "/v2/print/analyze",
+      "summary": "Create an Analyze Printability task",
+      "description": "Checks whether a 3D model is ready to print: holes, non-manifold edges, degenerate faces, and walls too thin for your printer. Wall thickness is always checked, by default for an FDM print 150 mm tall (see `PrintAnalyzeRequest`). It never changes the model. The endpoint is free (`consumed_credits` is 0) and works on every plan, including the free plan, so it never returns `402`. Returns `202` with the task object (`type` `print-analyze`). If `input_task_id` names a task Meshy has already analyzed at the same printer type and print size, the task is created already SUCCEEDED, the `202` body has the result in `output` and there is no `Retry-After` header; a webhook is still sent. Check `status` before you poll `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A SUCCEEDED task of yours, or a task in a workspace you belong to, made with Meshy 5.3 or a newer Meshy model, including Smart Topology. That covers Text to 3D, Image to 3D, Multi-Image to 3D and Retexture tasks, and Remesh tasks of those. A Repair Printability task works too. A task with no Meshy model behind it, such as Convert, Resize, Multi-Color Print, or a Remesh of an uploaded file, returns `404` (`Printability not available for this model`). An unknown task and someone else's task outside your workspaces both return `404` (code `input_task_not_found`), a bas-relief task returns `403`, and a task that hasn't succeeded returns `400` (code `input_task_not_ready`).",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "intended-print-height-mm",
+          "field": "intended_print_height_mm",
+          "in": "body",
+          "description": "The print's height in millimeters, rounded to a whole millimeter. Only GLB input has a known up direction (any `input_task_id`, or a `.glb` `model_url`); a height for another `model_url` format returns `400`, so use `intended_print_longest_side_mm` there. A height that puts the model's longest side outside 1 to 1000 mm returns `400`. Send this or `intended_print_longest_side_mm`, not both (`400`).",
+          "schema": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "intended-print-longest-side-mm",
+          "field": "intended_print_longest_side_mm",
+          "in": "body",
+          "description": "The print's longest side in millimeters, rounded to a whole millimeter, for any input format. Send this or `intended_print_height_mm`, not both (`400`).",
+          "schema": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-url",
+          "field": "model_url",
+          "in": "body",
+          "description": "The model to analyze, as a public URL whose path ends in `.glb`, `.stl`, `.obj`, `.fbx` or `.gltf`, or a base64 data URI of a GLB or glTF file (`data:model/gltf-binary;base64,...` or `data:model/gltf+json;base64,...`; any other data URI returns `400`), up to 400 MB from a URL, downloaded within 120 seconds, or 100 MB as a `data:` URI. A GLB, glTF, FBX, or OBJ file over 100 MB can have at most 10,000,000 faces. Faces are counted as triangles (a quad counts as 2), and a mesh drawn more than once counts once per copy. Over 100 MB, an FBX file must be binary FBX 7.1 or newer, and a GLB or glTF file must not use Draco compression. A Meshy download URL is signed and stops working at its task's `expires_at`; reading the task again doesn't renew it, so send that task as `input_task_id` or send your own copy.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "printer-type",
+          "field": "printer_type",
+          "in": "body",
+          "description": "The printer, which sets the thinnest wall that prints: `fdm` (1.0 mm), `sla` (0.8 mm) or `full_color` (2.0 mm). Any other value returns `400` (`unknown printer type \"<value>\"`).",
+          "schema": {
+            "default": "fdm",
+            "enum": [
+              "fdm",
+              "sla",
+              "full_color"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Analyze Printability request. Send `input_task_id` or `model_url`; sending neither returns `400` (`Either input_task_id or model_url must be provided`). Sending both returns `400` (`parameters_conflict`). Every analysis checks for walls too thin to print. Send `printer_type`, a size, or both to judge walls at your own print. The size only sets how big the print will be; the model isn't scaled, and the analysis stays free. With no size, the print is checked at 150 mm tall for a task or a `.glb` file, at 150 mm on the longest side for `.obj`, `.fbx` and `.gltf` files, and at an `.stl` file's own size read in millimeters, or 150 mm on the longest side if that size can't be read or is outside 1 to 1000 mm. When a 150 mm tall print can't be worked out (the model can't be measured, or its longest side would be over 1000 mm), 150 mm on the longest side is used.",
+      "exclusive": [
+        [
+          "input_task_id",
+          "model_url"
+        ],
+        [
+          "intended_print_height_mm",
+          "intended_print_longest_side_mm"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "PrintAnalyzeTask"
+      }
+    },
+    {
+      "path": [
+        "print",
+        "multi-color",
+        "create"
+      ],
+      "operation_id": "createPrintMultiColorTask",
+      "method": "POST",
+      "http_path": "/v2/print/multi-color",
+      "summary": "Create a Multi-Color Print task",
+      "description": "Turns a textured 3D model into a multi-color 3MF file, with the model's colors reduced to a filament palette and a slicer preset for your printer brand. The model must have color: a base color texture, or vertex colors for the `cartoon` style. Most inputs are checked when you create the task and return `400` if they lack the color that `style` needs; some, such as an `.fbx` upload, are only checked once the task runs, and the task then fails with `model_missing_texture`. The 3MF file has its origin at the bottom. For a model Meshy generated, it's scaled down to at most 150 mm on the longest side; uploaded and resized models keep their own size. Returns `202` with the task object (`type` `print-multi-color`). Read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A SUCCEEDED task of yours, created with the API, that produced a 3D model, such as Text to 3D, Image to 3D, Retexture or Remesh. Multi-Color Print reads the task's GLB, which can have at most 8,000,000 faces. A task that isn't yours or doesn't exist returns `404` (code `input_task_not_found`); a bas-relief task returns `403`; a task not created with the API, not succeeded, without a GLB, or whose GLB was deleted returns `400`.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "max-colors",
+          "field": "max_colors",
+          "in": "body",
+          "description": "The most colors in the printed model.",
+          "schema": {
+            "default": 4,
+            "maximum": 16,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "max-depth",
+          "field": "max_depth",
+          "in": "body",
+          "description": "How finely the texture is sampled onto the mesh. Higher values keep finer color detail and make a larger file. Only used with `realistic`.",
+          "schema": {
+            "default": 4,
+            "maximum": 6,
+            "minimum": 3,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-url",
+          "field": "model_url",
+          "in": "body",
+          "description": "The model to print, as a public URL of a `.glb` or `.fbx` file, or a base64 data URI of a GLB file (`data:model/gltf-binary;base64,...`), up to 400 MB from a URL or 100 MB as a `data:` URI. A file over 100 MB can have at most 8,000,000 faces, counted as triangles (a quad counts as 2, and a mesh drawn more than once counts once per copy); over 100 MB, an FBX file must be binary FBX 7.1 or newer, and a GLB file must not use Draco compression. Any other extension, a file that can't be downloaded, or one that's too large, has too many faces, or has a header that can't be read or is too complex to check returns `400`. The 3MF file keeps the upload's size.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "printer-brand",
+          "field": "printer_brand",
+          "in": "body",
+          "description": "The printer brand whose slicer preset is saved in the 3MF, so the file opens with a matching printer, filament and process profile. Each brand uses its default printer with a 0.4 mm nozzle. Left out, the 3MF carries the Bambu Lab preset.",
+          "schema": {
+            "default": "bambu",
+            "enum": [
+              "bambu",
+              "anycubic",
+              "creality",
+              "flashforge",
+              "snapmaker",
+              "elegoo",
+              "prusa",
+              "qidi",
+              "ankermake"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "style",
+          "field": "style",
+          "in": "body",
+          "description": "How colors are placed on the model. `realistic` samples the texture for fine detail and makes a larger file; it needs one base color texture, with UVs, on every part of the model. `cartoon` makes flat, uniform color regions and a smaller file, and also works with vertex colors.",
+          "schema": {
+            "default": "realistic",
+            "enum": [
+              "realistic",
+              "cartoon"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Multi-Color Print request. Send `input_task_id` or `model_url`. Sending both returns `400` (`parameters_conflict`). Sending neither returns `400` with code `parameter_missing`.",
+      "exclusive": [
+        [
+          "input_task_id",
+          "model_url"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "PrintMultiColorTask"
+      }
+    },
+    {
+      "path": [
+        "print",
+        "repair",
+        "create"
+      ],
+      "operation_id": "createPrintRepairTask",
+      "method": "POST",
+      "http_path": "/v2/print/repair",
+      "summary": "Create a Repair Printability task",
+      "description": "Repairs a 3D model for printing: closes holes, fixes broken geometry, and thickens walls too thin for your printer. Wall thickness is always checked, by default for an FDM print 150 mm tall (see `PrintRepairRequest`). The model is never scaled. A repair takes about 20 seconds, or about 100 seconds when walls are thickened. Returns `202` with the task object (`type` `print-repair`); the top-level `intended_print` is already in that response. Read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A SUCCEEDED task of yours, created with the API, that has a GLB model, such as Text to 3D, Image to 3D, Remesh or Retexture. An Analyze Printability task works too, if it analyzed a task or a `.glb` or `.obj` file; the repair uses that analysis's printer type and print size unless you send your own, and the defaults if the analysis checked no print size. A task that isn't yours or doesn't exist returns `404` (code `input_task_not_found`); a bas-relief task returns `403`; a task not created with the API, not succeeded, without a GLB, or whose GLB was deleted (code `input_task_expired`) returns `400`.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "intended-print-height-mm",
+          "field": "intended_print_height_mm",
+          "in": "body",
+          "description": "The print's height in millimeters, rounded to a whole millimeter. Only GLB input has a known up direction (any `input_task_id`, or a `.glb` `model_url`); a height for another `model_url` format returns `400`, so use `intended_print_longest_side_mm` there. A height that puts the input task's longest side outside 1 to 1000 mm returns `400`. Send this or `intended_print_longest_side_mm`, not both (`400`).",
+          "schema": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "intended-print-longest-side-mm",
+          "field": "intended_print_longest_side_mm",
+          "in": "body",
+          "description": "The print's longest side in millimeters, rounded to a whole millimeter, for any input format. Send this or `intended_print_height_mm`, not both (`400`).",
+          "schema": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-url",
+          "field": "model_url",
+          "in": "body",
+          "description": "The model to repair, as a public URL of a `.glb`, `.stl`, `.obj`, `.fbx` or `.gltf` file, or a base64 data URI of a GLB or glTF file (`data:model/gltf-binary;base64,...`), up to 400 MB from a URL or 100 MB as a `data:` URI. A GLB, glTF, FBX, or OBJ file over 100 MB can have at most 10,000,000 faces. Faces are counted as triangles (a quad counts as 2), and a mesh drawn more than once counts once per copy. Over 100 MB, an FBX file must be binary FBX 7.1 or newer, and a GLB or glTF file must not use Draco compression. An `.fbx` data URI returns `400`: send an `.fbx` as a URL. A Meshy download URL is signed and stops working at its task's `expires_at`; reading the task again doesn't renew it, so send that task as `input_task_id` or send your own copy.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "printer-type",
+          "field": "printer_type",
+          "in": "body",
+          "description": "The printer, which sets the thinnest wall that prints: `fdm` (1.0 mm), `sla` (0.8 mm) or `full_color` (2.0 mm). Any other value returns `400` (`unknown printer type \"<value>\"`).",
+          "schema": {
+            "default": "fdm",
+            "enum": [
+              "fdm",
+              "sla",
+              "full_color"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Repair Printability request. Send `input_task_id` or `model_url`; sending neither returns `400` (`Either input_task_id or model_url is required`). Sending both returns `400` (`parameters_conflict`). Every repair checks for thin walls: when more than 5% of the surface is thinner than the printer's thinnest printable wall, the walls are thickened and the repaired model has about 1,000,000 faces; otherwise only the geometry is repaired. Send `printer_type`, a size, or both to judge walls at your own print. The size only sets how big the print will be; the model isn't scaled. To scale the repaired model, send the repair task as `input_task_id` to `POST /openapi/v2/resize`, which takes sizes in meters (100 mm is `0.1`). With no size, the print is checked at 150 mm tall for a task or a `.glb` file, at 150 mm on the longest side for `.obj`, `.fbx` and `.gltf` files, and at an `.stl` file's own size read in millimeters, or 150 mm on the longest side if that size can't be read or is outside 1 to 1000 mm. When a 150 mm tall print can't be worked out (the model can't be measured, or its longest side would be over 1000 mm), 150 mm on the longest side is used.",
+      "exclusive": [
+        [
+          "input_task_id",
+          "model_url"
+        ],
+        [
+          "intended_print_height_mm",
+          "intended_print_longest_side_mm"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "PrintRepairTask"
+      }
+    },
+    {
+      "path": [
+        "print",
+        "split",
+        "create"
+      ],
+      "operation_id": "createPrintSplitTask",
+      "method": "POST",
+      "http_path": "/v2/print/split",
+      "summary": "Create an Auto Split task",
+      "description": "Cuts a generated model into parts you can print separately, either where Meshy chooses or along the parts or colors you name, with optional connectors so the pieces fit back together. By default the parts come back as flat-colored geometry, without the input's texture; `keep_texture: true` keeps a textured input's texture on every part. With `mode` `by_parts` or `by_color`, Meshy reads your prompt before it answers, so the create request can take up to about a minute. Returns `202` with the task object (`type` `print-split`), plus top-level `prompt_ignored: true` when Meshy used the parts it identified instead of your prompt. Read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "connector-height",
+          "field": "connector_height",
+          "in": "body",
+          "description": "How far the connector sticks out of the cut, in the model's own units (those of the `glb`). Only used when `connectors` is `true`, but checked even when it is `false`.",
+          "schema": {
+            "default": 0.1,
+            "maximum": 0.8,
+            "minimum": 0.1,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "connector-size",
+          "field": "connector_size",
+          "in": "body",
+          "description": "The connector's size, as a fraction of the widest circle that fits in the cut face. Only used when `connectors` is `true`, but checked even when it is `false`.",
+          "schema": {
+            "default": 0.5,
+            "maximum": 0.8,
+            "minimum": 0.1,
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "connector-type",
+          "field": "connector_type",
+          "in": "body",
+          "description": "The connector's shape. Only used when `connectors` is `true`.",
+          "schema": {
+            "default": "cube",
+            "enum": [
+              "cube",
+              "cylinder"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "connectors",
+          "field": "connectors",
+          "in": "body",
+          "description": "Add mortise-and-tenon connectors at each cut so the printed parts fit together. If Meshy can't place them, the split still succeeds without them, and the response doesn't say so.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "required": true,
+          "description": "A SUCCEEDED task of yours whose model to split: Image to 3D, Multi-Image to 3D, Text to 3D (a preview, refine, or one-call task), or a Retexture, Remesh, Convert or Resize of one of those. The model must be generated with Meshy 6 or Meshy 7, including `meshy-6-lite`. Smart Topology models return `400`, and so does a Retexture, Remesh, Convert or Resize of an uploaded model: pass the generation task instead. It can have at most 8,000,000 faces. A textured model is accepted; its texture stays on the parts only with `keep_texture: true`. A task that isn't yours or doesn't exist returns `404` (code `input_task_not_found`); a bas-relief task returns `403`.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "keep-texture",
+          "field": "keep_texture",
+          "in": "body",
+          "description": "Whether to keep the input model's texture on the parts. `true` gives every part the input's texture and lists the maps in `output.texture_urls`; `glb`, `fbx`, `usdz` and `blend` hold it, an `obj` comes with an `mtl`, and `stl` and `3mf` hold geometry only. It takes about twice as long, and the credit cost doesn't change. An untextured input splits as with `false`. If Meshy can't keep the texture, the task fails with `task_error.code` `textured_split_refused`. `false` gives each part a flat color.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "layout",
+          "field": "layout",
+          "in": "body",
+          "description": "How the parts are arranged in every file and in the preview. `assembled`: the parts stay where they were in the model. `on_plate`: the parts are laid flat and spread out on a build plate, ready to slice; an `obj` file in this layout is Z-up, in millimeters, and also scaled to at most 150 mm on its longest side.",
+          "schema": {
+            "default": "assembled",
+            "enum": [
+              "assembled",
+              "on_plate"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "mode",
+          "field": "mode",
+          "in": "body",
+          "description": "How to divide the model. `auto`: Meshy chooses the cuts. `by_parts`: cut into the parts you name in `prompt`, such as head, torso and legs. `by_color`: cut along the color regions you name in `prompt`; the regions come from the image the model was generated from, so the input must come from Image to 3D or Multi-Image to 3D (the first image is used), else `400`.",
+          "schema": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "by_parts",
+              "by_color"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "prompt",
+          "field": "prompt",
+          "in": "body",
+          "description": "The parts to split into, in any language, such as `head, torso, left arm, right arm, legs`. Required when `mode` is `by_parts` or `by_color` (`400` if missing or blank); not used with `auto`, though the 600-character limit still applies. Name 1 to 10 parts. If the parts you name don't cover the whole model, the rest becomes one more part, which counts toward the 10. A prompt that asks for no split or names more than 10 parts returns `400`. If Meshy can't find any part in the prompt, it splits the model into the parts it identifies in the model's reference image instead, in the same mode, still charges the task, and sets `prompt_ignored: true`; with no reference image, or fewer than 2 parts found in it, the request returns `400` (`Could not understand the split description`). Nothing is charged for a `400`. A prompt blocked by content moderation returns `403`. Prompts are limited to 12 per minute per user, shared with splits made in the Meshy web app (`429`).",
+          "schema": {
+            "maxLength": 600,
+            "type": "string"
+          }
+        },
+        {
+          "name": "target-formats",
+          "field": "target_formats",
+          "in": "body",
+          "description": "The formats to export, in addition to `glb`, which always comes back. Duplicates are dropped. In `3mf`, each part is its own object, ready for a slicer. `stl` can't hold separate objects, so it fuses the parts into one solid. An STL or 3MF file longer than 150 mm on its longest side is scaled down to 150 mm; a smaller model keeps its size.",
+          "schema": {
+            "default": [
+              "glb"
+            ],
+            "items": {
+              "enum": [
+                "glb",
+                "obj",
+                "fbx",
+                "stl",
+                "usdz",
+                "blend",
+                "3mf"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        }
+      ],
+      "body_description": "Auto Split request.",
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "PrintSplitTask"
+      }
+    },
+    {
+      "path": [
+        "relief",
+        "create"
+      ],
+      "operation_id": "createReliefTask",
+      "method": "POST",
+      "http_path": "/v2/relief",
+      "summary": "Create a Relief task",
+      "description": "Turns one photo into a bas-relief model (by default a GLB in meters; `target_formats` picks the formats, and `color_mapping` colors the GLB, OBJ, FBX, and USDZ with the photo) and a 16-bit grayscale depth map (PNG), for 3D printing, laser engraving and CNC carving. With `should_generate_model` `false`, the task makes the depth map only. Returns `202` with the task object (`type` `relief`). A Relief task can't be canceled, and endpoints that take a model as input (Remesh, Convert, Auto Split and others) refuse its ID with `403`. Read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "base-thickness-mm",
+          "field": "base_thickness_mm",
+          "in": "body",
+          "description": "The thickness of the base plate, from `0.1` to `10` millimeters. Defaults to `1`, or `0` with `remove_base` `true`. With `remove_base` `true`, leave it out or send `0`; any other value returns `400`.",
+          "schema": {
+            "maximum": 10,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        {
+          "name": "bend-angle",
+          "field": "bend_angle",
+          "in": "body",
+          "description": "The arc the bend spans, in degrees. Below `1`, the relief stays flat. Only used when `bend_mode` isn't `off`, but checked even when it is `off`.",
+          "schema": {
+            "default": 60,
+            "maximum": 360,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        {
+          "name": "bend-axis",
+          "field": "bend_axis",
+          "in": "body",
+          "description": "Which edges the bend curls. `xz`: the left and right edges. `yz`: the top and bottom edges. Only used when `bend_mode` isn't `off`, but checked even when it is `off`.",
+          "schema": {
+            "default": "xz",
+            "enum": [
+              "xz",
+              "yz"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "bend-mode",
+          "field": "bend_mode",
+          "in": "body",
+          "description": "Whether to bend the relief. `off`: flat. `convex`: the front bulges outward. `concave`: the front curves inward.",
+          "schema": {
+            "default": "off",
+            "enum": [
+              "off",
+              "convex",
+              "concave"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "carving-depth-mm",
+          "field": "carving_depth_mm",
+          "in": "body",
+          "description": "How deep the relief is carved, in millimeters. Defaults to `6` for `high` and `3` for `low`. With `remove_base` `true`, `0` leaves an empty model; the task still succeeds and is charged.",
+          "schema": {
+            "maximum": 60,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        {
+          "name": "carving-mode",
+          "field": "carving_mode",
+          "in": "body",
+          "description": "`emboss`: the nearer parts of the photo stand out. `engrave`: the depth is inverted, so the nearer parts are cut in. The depth map is the same in both modes.",
+          "schema": {
+            "default": "emboss",
+            "enum": [
+              "emboss",
+              "engrave"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "color-mapping",
+          "field": "color_mapping",
+          "in": "body",
+          "description": "Whether to color the model with the photo. The GLB, OBJ, FBX, and USDZ files carry color. STL and 3MF files stay white. The texture is returned in `output.texture_urls`.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "image-url",
+          "field": "image_url",
+          "in": "body",
+          "required": true,
+          "description": "The photo to turn into a relief, as a public http(s) URL or a data URI (`data:image/png;base64,...`). JPG, JPEG, PNG, or WebP, up to 20 MB and at least 32 x 32 pixels, with the longer side at most about 16 times the shorter side; any other image returns `400`. Transparent areas are filled with black.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "mesh-resolution",
+          "field": "mesh_resolution",
+          "in": "body",
+          "description": "The number of mesh points along the photo's longer side. A higher value keeps finer detail and makes larger files. At the default `1024`, the GLB file is about 40 to 50 MB and the STL file about 80 to 105 MB, and a square photo gives the larger sizes; at `2048`, about 150 MB and 300 MB. A bend makes them larger, and the STL file can reach about 800 MB at `2048`.",
+          "schema": {
+            "default": 1024,
+            "maximum": 2048,
+            "minimum": 512,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "removal-threshold",
+          "field": "removal_threshold",
+          "in": "body",
+          "description": "The depth below which `remove_base` cuts the background away, where the depth map runs from `0` to `1`. Only used when `remove_base` is `true`, but checked even when it is `false`. A high value can cut away the whole relief and leave an empty model; the task still succeeds and is charged.",
+          "schema": {
+            "default": 0.01,
+            "maximum": 1,
+            "minimum": 0.01,
+            "type": "number"
+          }
+        },
+        {
+          "name": "remove-base",
+          "field": "remove_base",
+          "in": "body",
+          "description": "Whether to cut away the background below `removal_threshold` and build no base plate.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "should-generate-model",
+          "field": "should_generate_model",
+          "in": "body",
+          "description": "Whether to build the relief model. `false` makes the depth map only, with `model_urls` `{}` and `thumbnail_url` `null`. The geometry parameters are still checked, but unused. It doesn't change the credit cost.",
+          "schema": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "size-mm",
+          "field": "size_mm",
+          "in": "body",
+          "description": "The length of the photo's longer side on the model, measured flat before any bend, in millimeters. With `remove_base`, the model can be smaller.",
+          "schema": {
+            "default": 60,
+            "maximum": 250,
+            "minimum": 20,
+            "type": "number"
+          }
+        },
+        {
+          "name": "target-formats",
+          "field": "target_formats",
+          "in": "body",
+          "description": "The file formats to generate and return in `model_urls`; listing fewer can shorten the task. An `obj` comes with an `mtl`. STL and 3MF files keep the relief's real size.",
+          "schema": {
+            "default": [
+              "glb"
+            ],
+            "items": {
+              "enum": [
+                "glb",
+                "obj",
+                "fbx",
+                "stl",
+                "usdz",
+                "3mf"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "name": "variant",
+          "field": "variant",
+          "in": "body",
+          "description": "The relief style; it shapes the depth map and sets the default `carving_depth_mm`. `high`: deeper carving, for 3D-printed pieces. `low`: shallow carving, for laser engraving, CNC carving and thin plaques. Any other non-empty value returns `400`.",
+          "schema": {
+            "default": "low",
+            "enum": [
+              "high",
+              "low"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Relief request. `base_thickness_mm` must be `0.1` to `10`, or omitted or `0` with `remove_base` `true`; anything else returns `400`.",
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "ReliefTask"
+      }
+    },
+    {
+      "path": [
+        "remesh",
+        "create"
+      ],
+      "operation_id": "createRemeshTask",
+      "method": "POST",
+      "http_path": "/v2/remesh",
+      "summary": "Create a Remesh task",
+      "description": "Rebuilds a model's mesh with a new topology and face count, from a Meshy task (`input_task_id`) or your own model file (`model_url`), and returns it in the formats listed in `target_formats` (GLB by default). A `quad` mesh keeps its quads in OBJ and FBX files. For a real-world size, run Resize on the result. The v1 keys `resize_height`, `resize_longest_side`, `origin_at`, `auto_size` and `convert_format_only` were removed: a body that contains any of them returns 400, even when the value is `null` or `false`. Returns the task object (`type: remesh`) with 202; read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "decimation-mode",
+          "field": "decimation_mode",
+          "in": "body",
+          "description": "Adaptive face count, from `1` (ultra) to `4` (low): the face count follows the model's surface area. Replaces `target_polycount` when set.",
+          "schema": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "type": "integer"
+          }
+        },
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A `SUCCEEDED` task of yours, created with the API, that produced a 3D model, such as Text to 3D, Image to 3D, Retexture or another Remesh. Remesh reads the task's GLB. Required unless `model_url` is sent.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-url",
+          "field": "model_url",
+          "in": "body",
+          "description": "The model to remesh, as a public http(s) URL or a data URI. Supported formats: `.glb`, `.gltf`, `.obj`, `.fbx` and `.stl`, up to 400 MB from a URL or 100 MB as a `data:` URI. A data URI must hold a GLB or glTF file (`data:model/gltf-binary;base64,...`). A GLB, glTF, FBX, or OBJ file over 100 MB can have at most 10,000,000 faces. Faces are counted as triangles (a quad counts as 2), and a mesh drawn more than once counts once per copy. Over 100 MB, an FBX file must be binary FBX 7.1 or newer, and a GLB or glTF file must not use Draco compression. The result keeps the file's size, but not its position: it comes back as one centered mesh, without rigs, animations, or morph targets. Required unless `input_task_id` is sent.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "target-formats",
+          "field": "target_formats",
+          "in": "body",
+          "description": "The files to produce. Only these formats are generated. Leaving it out, or sending `null` or an empty list, gives `[\"glb\"]`. A `quad` mesh keeps its quads in OBJ and FBX files. STL and 3MF files of a model Meshy generated are scaled down to at most 150 mm on the longest side; uploaded and resized models keep their own size.",
+          "schema": {
+            "default": [
+              "glb"
+            ],
+            "items": {
+              "enum": [
+                "glb",
+                "obj",
+                "fbx",
+                "stl",
+                "usdz",
+                "blend",
+                "3mf"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "name": "target-polycount",
+          "field": "target_polycount",
+          "in": "body",
+          "description": "The face count to aim for.",
+          "schema": {
+            "default": 30000,
+            "maximum": 300000,
+            "minimum": 100,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "topology",
+          "field": "topology",
+          "in": "body",
+          "description": "The face type of the new mesh. GLB files store triangles only, so a `quad` mesh is saved in a GLB with each quad split into two triangles. To keep the quads, add `obj` or `fbx` to `target_formats`.",
+          "schema": {
+            "default": "triangle",
+            "enum": [
+              "triangle",
+              "quad"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Send `input_task_id` or `model_url`; sending both returns `400` (`parameters_conflict`). The removed v1 keys `resize_height`, `resize_longest_side`, `origin_at`, `auto_size` and `convert_format_only` return 400 (`parameter_unknown`) when present, even as `null` or `false` (for example `resize_height is not supported on v2 remesh. Use /openapi/v2/convert or /openapi/v2/resize instead.`).",
+      "exclusive": [
+        [
+          "input_task_id",
+          "model_url"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "RemeshTask"
+      }
+    },
+    {
+      "path": [
+        "resize",
+        "create"
+      ],
+      "operation_id": "createResizeTask",
+      "method": "POST",
+      "http_path": "/v2/resize",
+      "summary": "Create a Resize task",
+      "description": "Scales a 3D model to a real-world size, in meters, and sets where its origin goes, from a Meshy task (`input_task_id`) or your own model file (`model_url`). Returns the task object (`type: resize`) with 202; read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "auto-size",
+          "field": "auto_size",
+          "in": "body",
+          "description": "Estimate the object's real-world height and scale the model to it. If no estimate can be made, the task still succeeds without resizing.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A `SUCCEEDED` task of yours, created with the API, that produced a 3D model, such as Text to 3D, Image to 3D, Remesh or Retexture. Resize returns a GLB. A quad model (such as a `quad` remesh) is resized with it, so a Convert of the Resize task keeps the quads. Required unless `model_url` is sent.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-url",
+          "field": "model_url",
+          "in": "body",
+          "description": "The model to resize, as a public http(s) URL or a data URI. Supported formats: `.glb`, `.gltf`, `.obj`, `.fbx` and `.stl`, up to 400 MB from a URL or 100 MB as a `data:` URI. A data URI must hold a GLB or glTF file (`data:model/gltf-binary;base64,...`). A GLB, glTF, FBX, or OBJ file over 100 MB can have at most 10,000,000 faces. Faces are counted as triangles (a quad counts as 2), and a mesh drawn more than once counts once per copy. Over 100 MB, an FBX file must be binary FBX 7.1 or newer, and a GLB or glTF file must not use Draco compression. The result has the same format as the file, except that `.gltf` files and data URIs come back as GLB. Tasks that take the Resize task as `input_task_id` use the resized model. Required unless `input_task_id` is sent.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "origin-at",
+          "field": "origin_at",
+          "in": "body",
+          "description": "Where the origin goes. Sent without a size, it moves only the origin and the model keeps its size (a `model_url` file its own size). The default applies only with a size.",
+          "schema": {
+            "default": "bottom",
+            "enum": [
+              "bottom",
+              "center"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "resize-height",
+          "field": "resize_height",
+          "in": "body",
+          "description": "The model's new height in meters.",
+          "schema": {
+            "exclusiveMinimum": 0,
+            "format": "float",
+            "type": "number"
+          }
+        },
+        {
+          "name": "resize-longest-side",
+          "field": "resize_longest_side",
+          "in": "body",
+          "description": "The new length of the model's longest side in meters: the largest of its bounding-box width, height and depth, such as the arm span of a character in a T-pose.",
+          "schema": {
+            "exclusiveMinimum": 0,
+            "format": "float",
+            "type": "number"
+          }
+        }
+      ],
+      "body_description": "Send `input_task_id` or `model_url`; sending both returns `400` (`parameters_conflict`). To change the size, send one of `resize_height`, `resize_longest_side` or `auto_size`: two of them together, or a negative size, returns 400. To move only the origin, send `origin_at` alone: the model keeps its size. A request with no size and no `origin_at` returns 400.",
+      "exclusive": [
+        [
+          "input_task_id",
+          "model_url"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "ResizeTask"
+      }
+    },
+    {
+      "path": [
+        "retexture",
+        "create"
+      ],
+      "operation_id": "createRetextureTask",
+      "method": "POST",
+      "http_path": "/v2/retexture",
+      "summary": "Create a Retexture task",
+      "description": "Generates new textures for an existing 3D model from a text prompt, a reference image, or up to four views of the object. Returns the task object with `202 Accepted`; its `type` is `retexture`. The task runs in the background: read its result with `GET /v2/tasks/{id}`, stream it with `GET /v2/tasks/{id}/stream`, or get it by webhook.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "enable-pbr",
+          "field": "enable_pbr",
+          "in": "body",
+          "description": "Also generate metallic, roughness, and normal maps. `true` with `meshy-n1` returns `400`.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A `SUCCEEDED` task you created with the API that produced a 3D model, such as Text to 3D, Image to 3D, Remesh, or another Retexture. Its GLB is the model to texture. An ID that doesn't match a task of yours returns `404`. Required unless you send `model_url`.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-url",
+          "field": "model_url",
+          "in": "body",
+          "description": "The model to texture, as a public http(s) URL or a data URI. Supported formats: `.glb`, `.gltf`, `.obj`, `.fbx`, and `.stl`, up to 400 MB from a URL or 100 MB as a `data:` URI. A data URI must hold a GLB or glTF file (`data:model/gltf-binary;base64,...`). A GLB, glTF, FBX, or OBJ file over 100 MB can have at most 10,000,000 faces. Faces are counted as triangles (a quad counts as 2), and a mesh drawn more than once counts once per copy. Over 100 MB, an FBX file must be binary FBX 7.1 or newer, and a GLB or glTF file must not use Draco compression. The result keeps the file's size, but not its position: it comes back as one centered mesh, without rigs or animations. Required unless you send `input_task_id`.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "multiview-image-urls",
+          "field": "multiview_image_urls",
+          "in": "body",
+          "description": "One to four reference images of the same object, in the same formats and sizes as `texture_image_url`. The first image is the main reference. Needs `texture_model` `meshy-7` or `meshy-n1`: `meshy-6-lite` returns `400`. An empty list returns `400`.",
+          "schema": {
+            "items": {
+              "description": "A public http(s) URL or a data URI.",
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        {
+          "name": "remove-lighting",
+          "field": "remove_lighting",
+          "in": "body",
+          "description": "Remove highlights and shadows from the base color texture. Ignored, because the texture models that `texture_model` takes don't use it.",
+          "schema": {
+            "default": true,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "target-formats",
+          "field": "target_formats",
+          "in": "body",
+          "description": "The files to produce. Only these formats are generated. Leaving it out, or sending `null` or an empty list, gives `[\"glb\"]`. STL and 3MF files of a model Meshy generated are scaled down to at most 150 mm on the longest side; uploaded and resized models keep their own size.",
+          "schema": {
+            "default": [
+              "glb"
+            ],
+            "items": {
+              "enum": [
+                "glb",
+                "obj",
+                "fbx",
+                "stl",
+                "usdz",
+                "3mf"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "name": "texture-image-url",
+          "field": "texture_image_url",
+          "in": "body",
+          "description": "An image whose style the texture follows, as a public http(s) URL or a data URI (`data:image/png;base64,...`). JPEG, PNG, or WebP, up to 20 MB and at least 32 pixels on each side.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-model",
+          "field": "texture_model",
+          "in": "body",
+          "required": true,
+          "description": "The model that generates the texture. A request without it, or with any other value, returns `400`. `meshy-7` makes PBR maps and textures up to 8K. `meshy-n1` makes a 2K base color texture from images only, for 3D models of up to 7,999,999 faces (counted as triangles, so a quad counts as 2). With `meshy-n1`, sending `texture_prompt`, `enable_pbr: true`, or a `texture_resolution` of `4k` or `8k` returns `400`. `meshy-6-lite` makes a 2K texture.",
+          "schema": {
+            "enum": [
+              "meshy-7",
+              "meshy-n1",
+              "meshy-6-lite"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-prompt",
+          "field": "texture_prompt",
+          "in": "body",
+          "description": "Text that describes the new texture, up to 800 characters. A prompt of only spaces counts as not sent.",
+          "schema": {
+            "maxLength": 800,
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-resolution",
+          "field": "texture_resolution",
+          "in": "body",
+          "description": "Base color texture size. `4k` and `8k` aren't available with `meshy-6-lite` or `meshy-n1` and return `400`.",
+          "schema": {
+            "default": "2k",
+            "enum": [
+              "2k",
+              "4k",
+              "8k",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "uv-mode",
+          "field": "uv_mode",
+          "in": "body",
+          "description": "How to handle the model's UV layout. `auto` keeps the model's UVs when they're usable and generates new ones otherwise. `preserve` keeps the model's UVs; if they all fit in a box smaller than 5% of the UV square, the task fails with `model_insufficient_uv`. `regenerate` always generates new UVs. A model with no UVs gets new ones in every mode. With `input_task_id` and kept UVs, the mesh keeps its size and position; otherwise it keeps its size but is re-centered.",
+          "schema": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "preserve",
+              "regenerate"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Retexture request. Send `input_task_id` or `model_url`; sending both returns `400` (`parameters_conflict`). Send exactly one of `texture_prompt`, `texture_image_url`, and `multiview_image_urls`: none, or two of them, returns `400`. `texture_model` is required.",
+      "exclusive": [
+        [
+          "input_task_id",
+          "model_url"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "RetextureTask"
+      }
+    },
+    {
+      "path": [
+        "rigging",
+        "check",
+        "create"
+      ],
+      "operation_id": "createRiggingCheckTask",
+      "method": "POST",
+      "http_path": "/v2/rigging/check",
+      "summary": "Create a Rigging Check task",
+      "description": "Creates a task that checks whether Meshy can rig and animate the model of one of your tasks, and which `animation_type` it fits, from the task's preview image. Returns `202` with the task object (`type` `rig-check`); read the answer in `output` with `GET /v2/tasks/{id}` when the task is SUCCEEDED. The check is optional: a Rigging task doesn't read it.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "required": true,
+          "description": "A `SUCCEEDED` task of yours, created with the API, that produced a 3D model with a preview image, such as Text to 3D, Image to 3D, Remesh or Retexture. A task that isn't yours or doesn't exist returns 400 (code `input_task_not_found`). A task that hasn't succeeded returns 400 (code `input_task_not_ready`). One with no preview image, such as Convert, returns 404 (code `input_task_unsupported`), as does one whose files were deleted (code `input_task_expired`).",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        }
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "RiggingCheckTask"
+      }
+    },
+    {
+      "path": [
+        "rigging",
+        "create"
+      ],
+      "operation_id": "createRiggingTask",
+      "method": "POST",
+      "http_path": "/v2/rigging",
+      "summary": "Create a Rigging task",
+      "description": "Adds a skeleton to a character model so it can be animated. Every rigged character also comes with a walking and a running animation. To animate the rig, pass the task's `id` to `POST /v2/animations`. Returns 422 when the model can't be rigged, for example when no character is found in it. Returns the task object (`type: rig`) with 202; read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "animation-type",
+          "field": "animation_type",
+          "in": "body",
+          "description": "The kind of character to rig, `biped` (a humanoid) or `quadruped` (a four-legged animal). A quadruped rig takes no `skeleton_template` or `include_fingers` set to `true` (each returns 400 `parameters_conflict`).",
+          "schema": {
+            "default": "biped",
+            "enum": [
+              "biped",
+              "quadruped"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "height-meters",
+          "field": "height_meters",
+          "in": "body",
+          "description": "The model's height in meters. Meshy scales the rigged model to this height. Without it, or with 0, the model keeps its own size. A negative value returns 400.",
+          "schema": {
+            "format": "float",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        {
+          "name": "include-fingers",
+          "field": "include_fingers",
+          "in": "body",
+          "description": "Whether to add finger bones to the character's hands. A quadruped rig or a quad-topology input task returns 400.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A `SUCCEEDED` task of yours, created with the API, that produced a 3D model with a preview image, such as Text to 3D, Image to 3D, Remesh or Retexture. A task that isn't yours or doesn't exist returns 400 (code `input_task_not_found`). A task that hasn't succeeded returns 400 (code `input_task_not_ready`). One with no preview image, such as Convert, or Resize without `auto_size`, returns 404 (code `input_task_unsupported`), as does one whose files were deleted (code `input_task_expired`). The model can have at most 380,000 triangles (a quad counts as 2); if it has more, run Remesh with a `target_polycount` of 300,000 or less (150,000 or less with quad `topology`) first. Required unless `model_url` is sent.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-url",
+          "field": "model_url",
+          "in": "body",
+          "description": "The character to rig, as a public URL whose path ends in `.glb`, or a data URI of a GLB file, up to 400 MB from a URL or 100 MB as a `data:` URI. The model can have at most 380,000 triangles (a quad counts as 2), and a model with more returns `400`; run Remesh with a `target_polycount` of 300,000 or less (150,000 or less with quad `topology`) first. A file over 100 MB with more than 10,000,000 faces also returns `400`. Faces are counted as triangles, and a mesh drawn more than once counts once per copy. A GLB over 100 MB must not use Draco compression. The character must face +Z, the glTF forward direction; one that faces another axis can get a wrong skeleton even when the task succeeds, or fail with `422`. Required unless `input_task_id` is sent.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "skeleton-template",
+          "field": "skeleton_template",
+          "in": "body",
+          "description": "The skeleton for the rigged character. If the model can't be rigged on it, the task fails. Animation tasks follow the rig's skeleton. Biped rigs only; a quadruped rig with it returns 400.",
+          "schema": {
+            "default": "mixamo",
+            "enum": [
+              "meshyrig",
+              "mixamo",
+              "ue5_mannequin",
+              "max_biped",
+              "unity_humanoid",
+              "maya_human_ik",
+              "blender_rigify_basic_human",
+              "cc5_hd_neutral_base",
+              "daz_genesis9"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Send `input_task_id` or `model_url`; sending both returns `400` (`parameters_conflict`).",
+      "exclusive": [
+        [
+          "input_task_id",
+          "model_url"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "RigTask"
+      }
+    },
+    {
+      "path": [
+        "tasks",
+        "delete"
+      ],
+      "operation_id": "deleteTask",
+      "method": "DELETE",
+      "http_path": "/v2/tasks/{id}",
+      "summary": "Delete a task",
+      "description": "Deletes a task. This can't be undone, and the task then returns `404` on every route. Deleting a `PENDING` task refunds its credits. An `IN_PROGRESS` task can't be deleted (`409`): wait for a final status, then delete it. Creative Lab tasks can't be deleted here and return `404`. Returns `200` with an empty body.",
+      "scopes": [
+        "task:task:delete"
+      ],
+      "args": [
+        {
+          "name": "id",
+          "field": "id",
+          "in": "path",
+          "required": true,
+          "description": "The task ID from the create response.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ],
+      "response": {
+        "status": 200,
+        "kind": "empty"
+      }
+    },
+    {
+      "path": [
+        "tasks",
+        "get"
+      ],
+      "operation_id": "getTask",
+      "method": "GET",
+      "http_path": "/v2/tasks/{id}",
+      "summary": "Get a task",
+      "description": "Returns one task of any type, including tasks created on v1. Read every v2 task here: there are no per-endpoint read routes on v2. While the task is `PENDING` or `IN_PROGRESS`, the `Retry-After` header says how many seconds to wait before you get it again. Creative Lab tasks, and tasks that were not created through the API, return `404`.",
+      "scopes": [
+        "task:task:read"
+      ],
+      "args": [
+        {
+          "name": "id",
+          "field": "id",
+          "in": "path",
+          "required": true,
+          "description": "The task ID from the create response.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ],
+      "response": {
+        "status": 200,
+        "kind": "object",
+        "schema": "Task"
+      }
+    },
+    {
+      "path": [
+        "tasks",
+        "list"
+      ],
+      "operation_id": "listTasks",
+      "method": "GET",
+      "http_path": "/v2/tasks",
+      "summary": "List tasks",
+      "description": "Returns one page of your API tasks of every type, newest first by default, as `{\"data\": [...], \"has_more\": ...}`. Each item is a full task object, the same one `GET /v2/tasks/{id}` returns, except that `preceding_tasks` is always `0`. Tasks created on v1 are included. Creative Lab tasks are not, and neither are tasks whose files a team content check already withheld. There is no total count: request the next page while `has_more` is `true`.",
+      "scopes": [
+        "task:task:read"
+      ],
+      "pagination": {
+        "kind": "PAGE",
+        "max": 100,
+        "params": [
+          "page_num",
+          "page_size",
+          "sort_by"
+        ]
+      },
+      "params": [
+        {
+          "name": "page-num",
+          "field": "page_num",
+          "in": "query",
+          "description": "The page to return, from 1 to 255. `0` means the first page.",
+          "schema": {
+            "default": 1,
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "page-size",
+          "field": "page_size",
+          "in": "query",
+          "description": "Items per page, up to 100. A larger value, up to 255, returns 100 items, and `0` means the default.",
+          "schema": {
+            "default": 10,
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "sort-by",
+          "field": "sort_by",
+          "in": "query",
+          "description": "`-created_at` (newest first) or `+created_at` (oldest first). In a URL, encode `+` as `%2B`; otherwise it is read as a space and returns `400`.",
+          "schema": {
+            "default": "-created_at",
+            "enum": [
+              "-created_at",
+              "+created_at"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "type",
+          "field": "type",
+          "in": "query",
+          "description": "Only tasks of this type. `text-to-3d` matches all three Text to 3D types (`text-to-3d`, `text-to-3d-preview` and `text-to-3d-refine`). Leave it out to include every type. An unknown value returns `400` with the list of valid values.",
+          "schema": {
+            "enum": [
+              "text-to-3d-preview",
+              "text-to-3d-refine",
+              "text-to-3d",
+              "image-to-3d",
+              "multi-image-to-3d",
+              "remesh",
+              "convert",
+              "resize",
+              "uv-unwrap",
+              "rig",
+              "rig-check",
+              "animate",
+              "text-to-motion",
+              "retexture",
+              "text-to-image",
+              "image-to-image",
+              "print-multi-color",
+              "print-analyze",
+              "print-repair",
+              "print-split",
+              "relief"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "response": {
+        "status": 200,
+        "kind": "list",
+        "schema": "TaskList"
+      }
+    },
+    {
+      "path": [
+        "tasks",
+        "stream"
+      ],
+      "operation_id": "streamTask",
+      "method": "GET",
+      "http_path": "/v2/tasks/{id}/stream",
+      "summary": "Stream a task",
+      "description": "Streams a task's updates as Server-Sent Events until it reaches a final status. Each `message` event carries the full task object, the same JSON `GET /v2/tasks/{id}` returns. Once the stream is open the HTTP status stays `200`, and a problem with the task (such as an unknown ID) arrives as an `error` event, not as an HTTP error. Errors before the stream opens, such as a missing API key, are ordinary HTTP errors.",
+      "scopes": [
+        "task:task:read"
+      ],
+      "stream": {
+        "error_event": "error",
+        "terminal_events": [
+          "SUCCEEDED",
+          "FAILED",
+          "CANCELED"
+        ],
+        "ordering": "MONOTONIC_STATUS",
+        "reconnect": "RESEND_CURRENT",
+        "cancel": "CLIENT_CLOSE"
+      },
+      "args": [
+        {
+          "name": "id",
+          "field": "id",
+          "in": "path",
+          "required": true,
+          "description": "The task ID from the create response.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        }
+      ],
+      "response": {
+        "status": 200,
+        "kind": "stream"
+      }
+    },
+    {
+      "path": [
+        "text-to-3d",
+        "create"
+      ],
+      "operation_id": "createTextTo3DTask",
+      "method": "POST",
+      "http_path": "/v2/text-to-3d",
+      "summary": "Create a Text to 3D task",
+      "description": "Creates a Text to 3D task and returns the task object with `202`. The task runs in the\nbackground: read its result with `GET /v2/tasks/{id}`, stream it, or get it by webhook.\n\nOne route makes three kinds of task, picked by `mode` and `should_texture`:\n\n- Omit `mode` for a one-call task, `type` `text-to-3d`. `should_texture` (default `true`)\n  picks a textured model, which needs `texture_model`, or the mesh only (`false`).\n- `mode: preview` makes an untextured mesh, `type` `text-to-3d-preview`.\n- `mode: refine` with `preview_task_id` textures a preview's mesh, `type` `text-to-3d-refine`.\n\nThe `type` filter `text-to-3d` on `GET /v2/tasks` lists all three kinds; `text-to-3d-preview`\nand `text-to-3d-refine` list one kind each.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "ai-model",
+          "field": "ai_model",
+          "in": "body",
+          "description": "Pick the model from what the user is making. See the \"Choose by project\" table at https://docs.meshy.ai/api/v2/models.md. For a game asset, a character to rig, or a face-count budget, send `meshy-t2.5` (or `meshy-t2`) with `target_polycount`.\n\nThe model to use:\n\n- `latest` (Meshy 7.1), `meshy-7.1`, `meshy-6`, `meshy-6-lite`.\n- `meshy-standard-latest`: works like `latest`.\n- `meshy-t2.5` and `meshy-t2`: Smart Topology, a clean triangle mesh at the face count\n  you set with `target_polycount`. `meshy-t2.5` has sharper detail for game assets.\n- `meshy-smart-topology-latest`: Meshy T2.5, the newest Smart Topology model. Its\n  results can change; send `meshy-t2.5` for results that don't.\n\nThe `latest` default applies to one-call and preview tasks. On a refine, leave it out\nto texture with the model that matches the preview; a Smart Topology preview is then\ntextured with Meshy 7.\n\nOn a refine, `ai_model` picks the texture model only, because the mesh comes from the\npreview. It takes `meshy-7`, `latest` (the newest texture model, now Meshy 7),\n`meshy-6`, `meshy-6-lite` and `meshy-n1`. Meshy ignores `texture_model` on a refine.\n\nA Smart Topology preview (`meshy-t2`, `meshy-t2.5`) has no Meshy 6 Lite texturing: a\nrefine of one with `meshy-6-lite` textures with Meshy 6, so with `enable_pbr: true` it\nalso returns an emission map. A `meshy-6-lite` refine of a Meshy 6, Meshy 6 Lite or\nMeshy 7 preview returns none, and neither does a refine of a Smart Topology preview\nthat doesn't set `ai_model`.\n\nA refine also takes `meshy-n1`, which this list leaves out because a one-call or\npreview task with it returns `400`. It makes a 2K base color texture from\n`texture_image_url`, or from the reference image a `meshy-7.1` or `latest` preview\nstores. Any other preview returns `400` unless you send `texture_image_url`. With `meshy-n1`, `texture_prompt`, `enable_pbr: true`,\n`remove_lighting: true`, `texture_resolution` `4k` or `8k`, a preview remeshed to quads, and a preview of\nmore than 7,999,999 triangles return `400`.\n\nA one-call task with `meshy-7` returns `400`: send `meshy-7.1`.",
+          "schema": {
+            "default": "latest",
+            "enum": [
+              "latest",
+              "meshy-7.1",
+              "meshy-6",
+              "meshy-6-lite",
+              "meshy-t2.5",
+              "meshy-t2",
+              "meshy-standard-latest",
+              "meshy-smart-topology-latest"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "alpha-thumbnail",
+          "field": "alpha_thumbnail",
+          "in": "body",
+          "description": "Also render a preview with a transparent background, as `output.alpha_thumbnail_url`.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "auto-size",
+          "field": "auto_size",
+          "in": "body",
+          "description": "Estimate the object's real-world height and scale the model to it.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "decimation-mode",
+          "field": "decimation_mode",
+          "in": "body",
+          "description": "Adaptive face count for the remesh, from `1` (ultra) to `4` (low). Replaces\n`target_polycount` when set. One-call and preview tasks only. Ignored with Smart\nTopology.",
+          "schema": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "type": "integer"
+          }
+        },
+        {
+          "name": "enable-pbr",
+          "field": "enable_pbr",
+          "in": "body",
+          "description": "Also generate metallic, roughness, and normal maps. Refine and textured one-call\ntasks.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "geometry-resolution",
+          "field": "geometry_resolution",
+          "in": "body",
+          "description": "Geometry detail. `2k` adds the Ultra pass, and `4k` adds a super-resolution pass\nafter it. Both need `meshy-7.1` or `latest`; another model returns `400`. One-call and\npreview tasks only: a refine returns `400` for any value, `standard` included.",
+          "schema": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "2k",
+              "4k",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "mode",
+          "field": "mode",
+          "in": "body",
+          "description": "Send it without `should_texture` for a two-step task: `preview` makes an untextured\nmesh, and `refine` textures a preview's mesh.",
+          "schema": {
+            "enum": [
+              "preview",
+              "refine"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-type",
+          "field": "model_type",
+          "in": "body",
+          "description": "Leave it out: `ai_model` picks the model. Still accepted for backward compatibility:\n`standard`, or `smart-topology` with a Smart Topology `ai_model`. With\n`smart-topology` and no `ai_model`, the model `meshy-smart-topology-latest` points to\n(Meshy T2.5) is used. `standard` with a Smart Topology `ai_model`, or `smart-topology`\nwith any other `ai_model`, returns `400`. One-call and preview tasks only.",
+          "schema": {
+            "deprecated": true,
+            "enum": [
+              "standard",
+              "smart-topology"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "moderation",
+          "field": "moderation",
+          "in": "body",
+          "description": "Screen `prompt`, `texture_prompt`, and `texture_image_url` for harmful content before\ngenerating. Flagged input returns `400`.",
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        {
+          "name": "origin-at",
+          "field": "origin_at",
+          "in": "body",
+          "description": "Where the origin goes when `auto_size` is `true`.",
+          "schema": {
+            "default": "bottom",
+            "enum": [
+              "bottom",
+              "center"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "pose-mode",
+          "field": "pose_mode",
+          "in": "body",
+          "description": "Generate a character in a pose. Leave it out for no pose. One-call and preview tasks\nonly.",
+          "schema": {
+            "enum": [
+              "a-pose",
+              "t-pose"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "preview-task-id",
+          "field": "preview_task_id",
+          "in": "body",
+          "description": "Required for a refine: the `id` of a `SUCCEEDED` preview task of yours. Any other ID,\nsuch as a one-call task, a teammate's preview or a deleted preview, returns `400`.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "prompt",
+          "field": "prompt",
+          "in": "body",
+          "description": "What to make, up to 800 characters. Required for one-call and preview tasks. A refine\nignores it and uses its preview's prompt.",
+          "schema": {
+            "maxLength": 800,
+            "type": "string"
+          }
+        },
+        {
+          "name": "remove-lighting",
+          "field": "remove_lighting",
+          "in": "body",
+          "description": "Remove highlights and shadows from the base color texture. Applies to `meshy-6`, is\nignored with Meshy 7 (`latest`, `meshy-7.1`) and Smart Topology models, and returns\n`400` with `meshy-6-lite` for any value. Refine and textured one-call tasks.",
+          "schema": {
+            "default": true,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "should-remesh",
+          "field": "should_remesh",
+          "in": "body",
+          "description": "Whether to remesh the mesh after generation. Defaults to `true` for `meshy-6-lite` and\n`false` for every other model. `topology` and `decimation_mode` apply only when the\nremesh runs. One-call and preview tasks only. Ignored with Smart Topology.",
+          "schema": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "should-texture",
+          "field": "should_texture",
+          "in": "body",
+          "description": "One-call tasks: `true` for a textured model, `false` for the mesh only. With `false`,\n`texture_model` and the other texture fields are ignored. Ignored with `mode`.",
+          "schema": {
+            "default": true,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "target-formats",
+          "field": "target_formats",
+          "in": "body",
+          "description": "The files to produce. Unlike other v2 endpoints, Text to 3D produces every format but\n`3mf` by default, and doesn't apply the 150 mm print cap: STL files keep the model's\nsize, and a `3mf` file is scaled to 75 mm tall.",
+          "schema": {
+            "default": [
+              "glb",
+              "obj",
+              "fbx",
+              "stl",
+              "usdz"
+            ],
+            "items": {
+              "enum": [
+                "glb",
+                "obj",
+                "fbx",
+                "stl",
+                "usdz",
+                "3mf"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "name": "target-polycount",
+          "field": "target_polycount",
+          "in": "body",
+          "description": "For a game asset at a set face count, use a Smart Topology model (`meshy-t2.5` or `meshy-t2`) instead of a remesh of a standard model.\n\nTarget face count. With a remesh: 100 to 300,000, default 30,000. With `meshy-t2.5` or\n`meshy-smart-topology-latest`: 100 to 30,000, default 15,000. With `meshy-t2`: 100 to\n15,000, default 4,000. A value out of the model's range returns `400`. One-call and\npreview tasks only.",
+          "schema": {
+            "maximum": 300000,
+            "minimum": 100,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "texture-image-url",
+          "field": "texture_image_url",
+          "in": "body",
+          "description": "An image that guides the texture, as a public URL or a data URI\n(`data:image/png;base64,...`). JPEG, PNG or WebP, up to 20 MB and at least 32 pixels on\neach side and at most 178,956,970 pixels (width x height). Refine and textured one-call tasks. Send it or `texture_prompt`, not both:\nboth returns `400`.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-model",
+          "field": "texture_model",
+          "in": "body",
+          "description": "The texture model of a one-call task. Required unless `should_texture` is `false`, and\nignored with `mode` (a refine picks its texture model with `ai_model`). Every `ai_model`\ntakes each value. `meshy-7` makes PBR maps and textures up to 8K. `meshy-n1` makes a 2K\nbase color texture from reference images only: `texture_prompt`, `enable_pbr: true`,\n`4k` or `8k`, and a `quad` remesh return `400` with it, and with `meshy-6` or\n`meshy-6-lite` it needs `texture_image_url`. `meshy-6-lite` makes a 2K texture: `4k`\nand `8k` return `400` with it.",
+          "schema": {
+            "enum": [
+              "meshy-7",
+              "meshy-n1",
+              "meshy-6-lite"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-prompt",
+          "field": "texture_prompt",
+          "in": "body",
+          "description": "Text that guides the texture, up to 800 characters. Refine and textured one-call\ntasks. Send it or `texture_image_url`, not both: both returns `400`.",
+          "schema": {
+            "maxLength": 800,
+            "type": "string"
+          }
+        },
+        {
+          "name": "texture-resolution",
+          "field": "texture_resolution",
+          "in": "body",
+          "description": "Base color texture size. `4k` and `8k` aren't available with `meshy-6-lite` (`400`).\n`8k` on a `quad` mesh that wasn't remeshed returns `400`. Refine and textured one-call\ntasks; a preview returns `400` for any value.",
+          "schema": {
+            "default": "2k",
+            "enum": [
+              "2k",
+              "4k",
+              "8k",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "topology",
+          "field": "topology",
+          "in": "body",
+          "description": "The remesh's faces: `triangle` or `quad`. Smart Topology makes triangles only, so\n`quad` with a Smart Topology model returns `400`. One-call and preview tasks only.",
+          "schema": {
+            "default": "triangle",
+            "enum": [
+              "triangle",
+              "quad"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "One body for three kinds of task. `mode` and `should_texture` pick one:\n\n- One call: omit `mode`. `prompt` is required. `should_texture` (default `true`) picks a\n  textured model, which needs `texture_model`, or the mesh only (`false`).\n- Preview: `mode: preview`. `prompt` is required.\n- Refine: `mode: refine`. `preview_task_id` is required.\n\nA textured one-call request without `texture_model` returns `400` (`parameter_missing`).\n`should_texture` and `texture_model` sent with `mode` are ignored. On a refine or one-call\ntask, sending both `texture_prompt` and `texture_image_url` returns `400`.\n\nEach field says which kinds of task use it. A field another kind doesn't use is\nignored, except where its description says it returns `400`. A one-call request\nwith a field Text to 3D doesn't define returns `400` (`parameter_unknown`). With\n`mode`, such a field is ignored.",
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "TextTo3DCreated"
+      }
+    },
+    {
+      "path": [
+        "text-to-image",
+        "create"
+      ],
+      "operation_id": "createTextToImageTask",
+      "method": "POST",
+      "http_path": "/v2/text-to-image",
+      "summary": "Create a Text to Image task",
+      "description": "Generates an image from a text prompt. By default a single image comes back as a PNG with a transparent background; send `background: opaque` to keep the generated background. Sending v1's `remove_background` returns `400`. Returns `202` with the task object (`type` `text-to-image`, also for multi-view tasks). Read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "ai-model",
+          "field": "ai_model",
+          "in": "body",
+          "required": true,
+          "description": "The image model. `nano-banana-2-1` costs 4 credits per request. `nano-banana-pro` needs a Pro plan or higher (`402` otherwise). `gpt-image-2` is OpenAI GPT Image 2; `gpt-image-2-5-flare` and `gpt-image-2-5-sunburst` are OpenAI GPT Image 2.5; `gpt-image-2-6-flare` and `gpt-image-2-6-sunburst` are OpenAI GPT Image 2.6. Names are case-sensitive; any other value returns `400`.",
+          "schema": {
+            "enum": [
+              "nano-banana",
+              "nano-banana-2",
+              "nano-banana-2-lite",
+              "nano-banana-2-1",
+              "nano-banana-pro",
+              "gpt-image-2",
+              "gpt-image-2-5-flare",
+              "gpt-image-2-5-sunburst",
+              "gpt-image-2-6-flare",
+              "gpt-image-2-6-sunburst"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "aspect-ratio",
+          "field": "aspect_ratio",
+          "in": "body",
+          "description": "The image's shape. The `nano-banana` models take `1:1`, `16:9`, `9:16`, `4:3` and `3:4`; `3:2` and `2:3` return `400` for them. The GPT Image models take all seven. Can't be sent with `generate_multi_view: true` (`400`). With `pose_mode`, a `nano-banana` model always makes a `3:4` image, whatever this says.",
+          "schema": {
+            "default": "1:1",
+            "enum": [
+              "1:1",
+              "16:9",
+              "9:16",
+              "4:3",
+              "3:4",
+              "3:2",
+              "2:3"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "background",
+          "field": "background",
+          "in": "body",
+          "description": "`transparent` removes the background and returns a transparent PNG; `opaque` returns the image with the background it was generated with. Multi-view images always have a transparent background: `opaque` with `generate_multi_view: true` returns `400` (`background cannot be opaque when generate_multi_view is true`).",
+          "schema": {
+            "default": "transparent",
+            "enum": [
+              "transparent",
+              "opaque"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "generate-multi-view",
+          "field": "generate_multi_view",
+          "in": "body",
+          "description": "Generate the subject from the front, the side and the back, returned as separate images with a transparent background in `output.image_urls`: usually three, fewer if the views can't all be separated (the task still succeeds). Leave `aspect_ratio` out when this is `true`, and don't send `background: opaque` with it.",
+          "schema": {
+            "default": false,
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "pose-mode",
+          "field": "pose_mode",
+          "in": "body",
+          "description": "Generate a character standing in an A pose or a T pose. Leave it out for no pose. With any `nano-banana` model the image is always `3:4`, whatever `aspect_ratio` says; the GPT Image models keep your `aspect_ratio`. `nano-banana` then runs on `nano-banana-pro`, so a pose with `nano-banana` or `nano-banana-pro` needs a Pro plan or higher (`402` otherwise).",
+          "schema": {
+            "enum": [
+              "a-pose",
+              "t-pose"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "prompt",
+          "field": "prompt",
+          "in": "body",
+          "required": true,
+          "description": "A description of the image to generate. A prompt of only whitespace returns `400`.",
+          "schema": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Text to Image request.",
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "TextToImageTask"
+      }
+    },
+    {
+      "path": [
+        "text-to-motion",
+        "create"
+      ],
+      "operation_id": "createTextToMotionTask",
+      "method": "POST",
+      "http_path": "/v2/text-to-motion",
+      "summary": "Create a Text to Motion task",
+      "description": "Generates a character animation clip from a text prompt. To play it on a `biped` rig, pass the task's `id` as `motion_task_id` to `POST /v2/animations`. A prompt blocked by content moderation returns 403. Returns the task object (`type: text-to-motion`) with 202; read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "duration",
+          "field": "duration",
+          "in": "body",
+          "required": true,
+          "description": "The clip length in seconds, from 2 to 10 in steps of 0.5, such as `3` or `4.5`. Other values return 400 `duration must be between 2 and 10 seconds in 0.5 second steps`.",
+          "schema": {
+            "format": "float",
+            "maximum": 10,
+            "minimum": 2,
+            "multipleOf": 0.5,
+            "type": "number"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "mode",
+          "field": "mode",
+          "in": "body",
+          "description": "The motion model: `prime` returns an FBX clip, and `swift` returns a BVH clip. The two modes cost different amounts.",
+          "schema": {
+            "default": "prime",
+            "enum": [
+              "prime",
+              "swift"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "prompt",
+          "field": "prompt",
+          "in": "body",
+          "required": true,
+          "description": "The motion to generate, up to 400 characters, such as `A person waves with the right hand, then takes a bow`. A prompt of only spaces returns 400 `prompt must not be empty`. Prompts in other languages are translated to English.",
+          "schema": {
+            "maxLength": 400,
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "TextToMotionTask"
+      }
+    },
+    {
+      "path": [
+        "usage",
+        "tasks",
+        "list"
+      ],
+      "operation_id": "listUsageTasks",
+      "method": "GET",
+      "http_path": "/v2/usage/tasks",
+      "summary": "List usage records",
+      "description": "Returns one page of your team's finished API tasks and the credits each one used, newest first by default, for billing exports and cost reports. Calling it is free. The API key must belong to an active member of a Studio or Enterprise team (any member, not only owners and admins); other keys get `403`.\nListed: tasks that finished as `SUCCEEDED` or `FAILED` and were created inside the window, by everyone who is a member of the team now, from any of their API keys, including deleted and expired tasks. Not listed: `PENDING`, `IN_PROGRESS` and `CANCELED` tasks, Creative Lab tasks, tasks run by Meshy's AI agents, and work done in the Meshy web app. If the team has a data retention period, the window starts no earlier than that period allows.",
+      "scopes": [
+        "account:usage:read"
+      ],
+      "pagination": {
+        "kind": "PAGE",
+        "max": 100,
+        "params": [
+          "page_num",
+          "page_size",
+          "sort_by"
+        ]
+      },
+      "params": [
+        {
+          "name": "end-time",
+          "field": "end_time",
+          "in": "query",
+          "description": "The end of the window, as an RFC 3339 timestamp. Tasks created before this time are included. Defaults to now. Must be after `start_time`.",
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        {
+          "name": "endpoints",
+          "field": "endpoints",
+          "in": "query",
+          "description": "A comma-separated list of the endpoints to include, by the same names as the `type` values (see `TaskType`), for example `text-to-3d,image-to-3d`. `text-to-3d` covers preview, refine and one-call Text to 3D tasks. Leave it out to include every endpoint. An unknown name returns `400`.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "page-num",
+          "field": "page_num",
+          "in": "query",
+          "description": "The page to return, from 1 to 255. `0` means the first page.",
+          "schema": {
+            "default": 1,
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "page-size",
+          "field": "page_size",
+          "in": "query",
+          "description": "Items per page, up to 100. A larger value, up to 255, returns 100 items, and `0` means the default.",
+          "schema": {
+            "default": 10,
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        {
+          "name": "sort-by",
+          "field": "sort_by",
+          "in": "query",
+          "description": "`-created_at` (newest first) or `+created_at` (oldest first). In a URL, encode `+` as `%2B`; otherwise it is read as a space and returns `400`.",
+          "schema": {
+            "default": "-created_at",
+            "enum": [
+              "-created_at",
+              "+created_at"
+            ],
+            "type": "string"
+          }
+        },
+        {
+          "name": "start-time",
+          "field": "start_time",
+          "in": "query",
+          "description": "The start of the window, as an RFC 3339 timestamp such as `2026-09-01T00:00:00Z`. Tasks created at or after this time are included. Defaults to 30 days before `end_time`. The window can span at most 366 days. In a URL, encode the `+` of an offset such as `+08:00` as `%2B`, or use `Z`.",
+          "schema": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        {
+          "name": "status",
+          "field": "status",
+          "in": "query",
+          "description": "Only tasks that finished with this status. Leave it out to include both.",
+          "schema": {
+            "enum": [
+              "SUCCEEDED",
+              "FAILED"
+            ],
+            "type": "string"
+          }
+        }
+      ],
+      "response": {
+        "status": 200,
+        "kind": "list",
+        "schema": "UsageList"
+      }
+    },
+    {
+      "path": [
+        "uv-unwrap",
+        "create"
+      ],
+      "operation_id": "createUVUnwrapTask",
+      "method": "POST",
+      "http_path": "/v2/uv-unwrap",
+      "summary": "Create a UV Unwrap task",
+      "description": "Generates a fresh UV layout for a 3D model, ready to texture. UV Unwrap works on meshes up to a maximum face count: when the face count is known up front, a larger mesh returns 400 with the limit in the message; otherwise the task fails. Run Remesh first to lower the face count. Returns the task object (`type: uv-unwrap`) with 202; read the result with `GET /v2/tasks/{id}`.",
+      "scopes": [
+        "task:task:create"
+      ],
+      "params": [
+        {
+          "name": "input-task-id",
+          "field": "input_task_id",
+          "in": "body",
+          "description": "A `SUCCEEDED` task of yours, created with the API, that produced a 3D model, such as Text to 3D, Image to 3D or Remesh. UV Unwrap reads the task's GLB. Required unless `model_url` is sent.",
+          "schema": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        {
+          "name": "metadata",
+          "field": "X-Meshy-Metadata",
+          "in": "header",
+          "description": "Your own key-value pairs to store with the task, as comma-separated `key=value` pairs in the W3C Baggage format, for example `user=alex@example.com,team=fab`. At most 64 pairs and 8,192 bytes. Meshy reads it only from API keys of Studio and Enterprise teams and ignores it on other plans. On those teams, a malformed or oversized header returns `400` with the code `metadata_invalid` and creates no task. Returned as `metadata` on usage records.",
+          "schema": {
+            "maxLength": 8192,
+            "type": "string"
+          }
+        },
+        {
+          "name": "model-url",
+          "field": "model_url",
+          "in": "body",
+          "description": "The model to unwrap, as a public http(s) URL whose path ends in `.glb`, or a data URI (`data:model/gltf-binary;base64,...`), up to 400 MB from a URL or 100 MB as a `data:` URI. A GLB over 100 MB must not use Draco compression. Only GLB files are supported; to unwrap another format, run Convert to GLB first and pass that task's `id` as `input_task_id`. Required unless `input_task_id` is sent.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "body_description": "Send `input_task_id` or `model_url`; sending both returns `400` (`parameters_conflict`).",
+      "exclusive": [
+        [
+          "input_task_id",
+          "model_url"
+        ]
+      ],
+      "response": {
+        "status": 202,
+        "kind": "object",
+        "schema": "UVUnwrapTask"
+      }
+    }
+  ]
+}

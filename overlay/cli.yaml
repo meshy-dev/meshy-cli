@@ -1,0 +1,65 @@
+# What the CLI adds by hand to the commands generated from spec/openapi.v2.json.
+#
+# The overlay names operations (by operationId) and fields (by wire name). It
+# never restates a type, a list of values, a required flag or a limit: those
+# come only from the spec. cmd/catalog-gen fails when an entry names an
+# operation or field the spec does not have, or a name a generated command or
+# flag already uses.
+
+# Flags the CLI defines itself. No generated parameter may take one of these
+# names on a command the flag applies to. `on` limits a flag to commands whose
+# dotted name matches a path.Match pattern ("*.create"); without it the flag
+# is on every command.
+cli_flags:
+  - name: help
+  - name: version
+  - name: profile
+  - name: format
+  - name: workspace
+  - name: debug
+
+# Hand-written commands. No generated command may take one of these paths.
+commands:
+  - schema
+
+# Per operation:
+#   exclusive: groups of fields of which a request may send at most one. Only
+#     pairs the API refuses outright (the API reference says sending both
+#     returns 400); a pair it accepts, using one and ignoring the other, is
+#     not listed.
+operations:
+  createAnimationTask:
+    exclusive:
+      - [action_id, action_ids, motion_task_id]
+  createConvertTask:
+    exclusive:
+      - [input_task_id, model_url]
+  createImageTo3DTask:
+    exclusive:
+      - [texture_prompt, texture_image_url]
+  createPrintAnalyzeTask:
+    exclusive:
+      - [input_task_id, model_url]
+      - [intended_print_height_mm, intended_print_longest_side_mm]
+  createPrintMultiColorTask:
+    exclusive:
+      - [input_task_id, model_url]
+  createPrintRepairTask:
+    exclusive:
+      - [input_task_id, model_url]
+      - [intended_print_height_mm, intended_print_longest_side_mm]
+  createRemeshTask:
+    exclusive:
+      - [input_task_id, model_url]
+  createResizeTask:
+    exclusive:
+      - [input_task_id, model_url]
+  createRetextureTask:
+    exclusive:
+      - [input_task_id, model_url]
+  createRiggingTask:
+    exclusive:
+      - [input_task_id, model_url]
+  createUVUnwrapTask:
+    exclusive:
+      - [input_task_id, model_url]
