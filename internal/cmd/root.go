@@ -101,7 +101,7 @@ func RunE(action Action) func(*cobra.Command, []string) error {
 
 // Execute runs one invocation and returns its exit code.
 func Execute(ctx context.Context, o Options) int {
-	return execute(ctx, o)
+	return execute(ctx, o, builtins()...)
 }
 
 func execute(ctx context.Context, o Options, extra ...*cobra.Command) int {
