@@ -1,0 +1,14 @@
+{
+  "sha256": "4951461977efcbc906b76b07b77b0a643f52e992ac4484161ad718db6e913dff",
+  "sources": {
+    "contract": {
+      "sha256": "d9f73530553092b1453e31ccc242fedcc35a03cfbe40bf7b722080eecd5ff4ac",
+      "tag": "v0.162.0"
+    },
+    "docs": {
+      "commit": "982d7df908d76dc1ccb4ffd510951efc7fabf4c7",
+      "sha256": "8295a48527815e0311959aea5f0801ff36ae3d0b7d3487a07e77fb3abeeedcf0"
+    }
+  },
+  "version": "v0.162.0+982d7df90"
+}

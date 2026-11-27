@@ -1,2 +1,8 @@
 # SSE fixtures end with the blank line that terminates their last event; that is protocol, not stray whitespace.
 tests/fixtures/skill-parity/*.sse -whitespace
+
+# Generated files are compared byte for byte (spec/lock.json pins the spec's sha256, and CI
+# regenerates the catalog), so they keep LF line endings on every checkout.
+spec/** text eol=lf
+overlay/** text eol=lf
+internal/catalog/catalog.json text eol=lf
