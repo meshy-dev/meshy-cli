@@ -24,9 +24,14 @@
 //	GET    /v2/animations/library animations library list
 //	GET    /v2/balance            balance get (Singleton)
 //
-// Any other shape (POST or PUT on an item, DELETE on a collection, a segment
-// that is not lowercase kebab-case) is an error rather than a guessed name, so
-// the generator stops and a person decides.
+// A parameter is dropped wherever it sits, so GET /v2/x/{id}/{format} is
+// "x get" like GET /v2/x/{id}; two operations that land on one command path
+// are for the caller to catch. The shapes the rule has no verb for (any
+// method but GET, POST and DELETE, a POST on an item, a DELETE on a
+// collection, a GET of /v2/stream, a path that starts with a parameter, a
+// segment that is neither lowercase kebab-case nor a whole {parameter}) are
+// an error rather than a guessed name, so the generator stops and a person
+// decides.
 package cmdpath
 
 import (
